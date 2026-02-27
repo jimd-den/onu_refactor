@@ -39,3 +39,7 @@ pub trait CodegenPort {
     fn generate(&self, program: &MirProgram) -> Result<Vec<u8>, OnuError>;
     fn set_registry(&mut self, registry: crate::application::use_cases::registry_service::RegistryService);
 }
+
+pub trait ExtensionPort: crate::domain::entities::registry::BuiltInModule {
+    fn realization_id(&self) -> &str;
+}

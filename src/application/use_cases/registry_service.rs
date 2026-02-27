@@ -43,4 +43,12 @@ impl RegistryService {
     pub fn add_shape(&mut self, name: &str, behaviors: Vec<(String, BehaviorSignature)>) {
         self.shapes.insert(name.to_string(), behaviors);
     }
+
+    pub fn symbols_mut(&mut self) -> &mut SymbolTable {
+        &mut self.symbols
+    }
+
+    pub fn mark_implemented(&mut self, name: &str) {
+        self.symbols.mark_implemented(name);
+    }
 }

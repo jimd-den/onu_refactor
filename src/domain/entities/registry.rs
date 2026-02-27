@@ -59,3 +59,12 @@ impl SymbolTable {
         self.arities.get(name).copied()
     }
 }
+
+pub trait BuiltInModule {
+    fn name(&self) -> &str;
+    fn register(&self, table: &mut SymbolTable);
+}
+
+pub trait Extension: BuiltInModule {
+    fn realization_id(&self) -> &str;
+}

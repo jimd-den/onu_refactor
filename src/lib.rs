@@ -13,11 +13,14 @@ use crate::application::use_cases::analysis_service::AnalysisService;
 use crate::application::use_cases::lowering_service::LoweringService;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::layout_service::LayoutService;
+use crate::application::use_cases::module_service::ModuleService;
 use crate::application::ports::compiler_ports::{LexerPort, ParserPort, CodegenPort};
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::options::{CompilationOptions, CompilerStage};
 use crate::domain::entities::error::OnuError;
 use crate::domain::entities::ast::Discourse;
+use crate::domain::entities::core_module::{CoreModule, StandardMathModule};
+use crate::infrastructure::extensions::io::OnuIoModule;
 use crate::adapters::lexer::OnuLexer;
 use crate::adapters::parser::OnuParser;
 
@@ -28,17 +31,27 @@ pub struct CompilationPipeline<E: EnvironmentPort, C: CodegenPort> {
     pub registry: RegistryService,
     pub lexer: OnuLexer,
     pub parser: OnuParser,
+    pub module_service: ModuleService,
 }
 
 impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
     pub fn new(env: E, codegen: C, options: CompilationOptions) -> Self {
+        let mut registry = RegistryService::new();
+        let module_service = ModuleService::new();
+        
+        // Register Built-in Modules
+        module_service.register_module(&mut registry, &CoreModule);
+        module_service.register_module(&mut registry, &StandardMathModule);
+        module_service.register_module(&mut registry, &OnuIoModule);
+
         Self {
             env,
             codegen,
             options,
-            registry: RegistryService::new(),
+            registry,
             lexer: OnuLexer,
             parser: OnuParser,
+            module_service,
         }
     }
 
