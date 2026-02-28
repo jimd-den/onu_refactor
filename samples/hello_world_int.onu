@@ -1,0 +1,6 @@
+
+the effect behavior called main
+    receiving: nothing
+    delivers: nothing
+    as:
+        broadcasts "Hello, World!"

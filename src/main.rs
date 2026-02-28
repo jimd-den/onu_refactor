@@ -1,32 +1,35 @@
-/// Ọ̀nụ Refactor: Main Application
-///
-/// This is the entry point for the Ọ̀nụ compiler refactor.
-/// It uses the infrastructure layer to bootstrap the application.
-
+use onu_refactor::application::options::{CompilationOptions, CompilerStage, LogLevel};
 use onu_refactor::infrastructure::os::NativeOsEnvironment;
-use onu_refactor::infrastructure::cli::OnuCliParser;
 use onu_refactor::adapters::codegen::OnuCodegen;
 use onu_refactor::CompilationPipeline;
+use std::env as std_env;
 
 fn main() {
-    // 1. Parse CLI Arguments (Infrastructure)
-    let (source_file, options) = match OnuCliParser::parse() {
-        Ok(res) => res,
-        Err(e) => {
-            eprintln!("ERROR: {}", e);
-            std::process::exit(1);
+    let args: Vec<String> = std_env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <source_file> [--stop-after <stage>] [--verbose]", args[0]);
+        std::process::exit(1);
+    }
+
+    let source_file = &args[1];
+    let mut options = CompilationOptions::default();
+
+    let mut i = 2;
+    while i < args.len() {
+        if args[i] == "--stop-after" && i + 1 < args.len() {
+            options.stop_after = CompilerStage::from_str(&args[i+1]);
+            i += 1;
+        } else if args[i] == "--verbose" {
+            options.log_level = LogLevel::Debug;
         }
-    };
+        i += 1;
+    }
 
-    // 2. Setup Environment and Adapters
-    let env = NativeOsEnvironment;
+    let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-
-    // 3. Initialize Pipeline (Application)
     let mut pipeline = CompilationPipeline::new(env, codegen, options);
 
-    // 4. Run Execution
-    match pipeline.compile(&source_file) {
+    match pipeline.compile(source_file) {
         Ok(_) => println!("Discourse Realized Successfully."),
         Err(e) => {
             eprintln!("PIPELINE ERROR: {:?}", e);

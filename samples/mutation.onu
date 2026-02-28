@@ -1,0 +1,49 @@
+the behavior called repeat-text
+    with intent: create a large string efficiently using doubling
+    takes:
+        a string called input
+        an integer called count
+    delivers: a string
+    as:
+        if count matches 0
+            then ""
+            else if count matches 1
+                then input
+                else
+                    derivation: half derives-from count partitions-by 2
+                    derivation: rem  derives-from count decreased-by (half scales-by 2)
+                    
+                    derivation: base derives-from (input utilizes duplicated-as) receiving repeat-text half
+                    derivation: doubled derives-from (base utilizes duplicated-as) joined-with base
+                    
+                    if rem matches 0
+                        then doubled
+                        else doubled joined-with input
+
+the behavior called transform-at
+    takes:
+        a string called buf
+        an integer called index
+        an integer called total
+    delivers: a string
+    as:
+        if index matches total
+            then buf
+            else
+                derivation: current derives-from buf char-at index
+                derivation: updated derives-from current added-to 1
+                derivation: next-buf derives-from buf utilizes set-char index updated
+                
+                next-buf utilizes transform-at (index added-to 1) total
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        -- Create a string of 1,000,000 'A's
+        derivation: base derives-from "A" receiving repeat-text 1000000
+        
+        -- Perform 1,000,000 recursive transformations
+        derivation: result derives-from base utilizes transform-at 0 1000000
+        broadcasts "Done"
+        nothing

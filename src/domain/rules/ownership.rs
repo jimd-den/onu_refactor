@@ -17,7 +17,7 @@ pub enum VariableStatus {
 }
 
 pub struct OwnershipRule<'a> {
-    registry: &'a RegistryService,
+    pub registry: &'a RegistryService,
 }
 
 impl<'a> OwnershipRule<'a> {

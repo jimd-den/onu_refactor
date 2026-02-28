@@ -1,46 +1,41 @@
-/// Ọ̀nụ CLI Parser: Infrastructure Adapter
+/// CLI Parser Infrastructure: Infrastructure Implementation
 ///
-/// This implements a robust command-line argument parser.
-/// It translates OS-level arguments into Application-level Options.
+/// This module implements the command-line interface for the Ọ̀nụ compiler.
+/// It translates CLI arguments into CompilationOptions.
 
-use crate::application::options::{CompilationOptions, CompilerStage};
-use std::env;
+use crate::application::options::{CompilationOptions, CompilerStage, LogLevel};
+use crate::domain::entities::error::{OnuError, Span};
 
-pub struct OnuCliParser;
+pub struct CliParser;
 
-impl OnuCliParser {
-    pub fn parse() -> Result<(String, CompilationOptions), String> {
-        let args: Vec<String> = env::args().collect();
+impl CliParser {
+    pub fn parse_args(args: &[String]) -> Result<(String, CompilationOptions), OnuError> {
         if args.len() < 2 {
-            return Err("Usage: onu_refactor <source_file> [--verbose] [--emit-hir] [--emit-mir] [--stop-after <stage>]".to_string());
+            return Err(OnuError::GrammarViolation { 
+                message: "Usage: onu <source_file> [options]".to_string(), 
+                span: Span::default() 
+            });
         }
 
-        let mut source_file = String::new();
+        let source_file = args[1].clone();
         let mut options = CompilationOptions::default();
-        let mut i = 1;
 
+        let mut i = 2;
         while i < args.len() {
             match args[i].as_str() {
-                "--verbose" | "-v" => options.verbose = true,
-                "--emit-tokens" => options.emit_tokens = true,
-                "--emit-hir" => options.emit_hir = true,
-                "--emit-mir" => options.emit_mir = true,
+                "--verbose" | "-v" => options.log_level = LogLevel::Debug,
                 "--stop-after" => {
-                    i += 1;
-                    if i < args.len() {
-                        options.stop_after = CompilerStage::from_str(&args[i]);
-                    } else {
-                        return Err("Missing stage after --stop-after".to_string());
+                    if i + 1 < args.len() {
+                        options.stop_after = CompilerStage::from_str(&args[i+1]);
+                        i += 1;
                     }
                 }
-                arg if !arg.starts_with('-') => source_file = arg.to_string(),
-                _ => {} // Unknown flag
+                "--emit-hir" => options.emit_hir = true,
+                "--emit-mir" => options.emit_mir = true,
+                "--emit-tokens" => options.emit_tokens = true,
+                _ => {}
             }
             i += 1;
-        }
-
-        if source_file.is_empty() {
-            return Err("No source file specified.".to_string());
         }
 
         Ok((source_file, options))

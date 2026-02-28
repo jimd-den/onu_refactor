@@ -1,0 +1,48 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Accumulation of History (Factorial)
+-- Concern: Calculating the product of a descending sequence.
+--
+-- The factorial of a number is the product of itself and every number 
+-- that came before it, down to the original seed.
+-- 1. The Seed: The sequence terminates at 0, which delivers a value of 1.
+-- 2. The Product: For any other number, we derive its predecessor and 
+--                 deliver the product of current and previous values.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called ArithmeticHistory
+    with concern: sequential multiplication
+
+-- Rule 1: The Seed
+the behavior called terminal-seed
+    with intent: deliver the base value for the sequence
+    takes: nothing
+    delivers: an integer
+    as: 1
+
+-- Rule 2: Sequential Product
+the behavior called calculate-accumulation
+    with intent: determine the product of a descending sequence
+    takes:
+        an integer called current-value
+    delivers: an integer
+    with diminishing: current-value
+    as:
+        if current-value matches 0
+            then terminal-seed
+            else
+                derivation: previous-value derives-from an integer current-value decreased-by 1
+                derivation: historical-sum  derives-from previous-value utilizes calculate-accumulation
+                current-value scales-by historical-sum
+
+the effect behavior called run
+    with intent: demonstrate the accumulation of history
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: target derives-from an integer 5
+        derivation: result derives-from target utilizes calculate-accumulation
+        
+        derivation: msg derives-from a string "The accumulation of 5 steps is: "
+        derivation: d1  derives-from nothing broadcasts msg
+        derivation: d2  derives-from nothing broadcasts (result utilizes as-text)
+        nothing

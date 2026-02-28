@@ -1,2 +1,2 @@
 pub mod parser;
-pub use parser::OnuCliParser;
+pub use parser::CliParser;

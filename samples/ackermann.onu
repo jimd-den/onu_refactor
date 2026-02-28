@@ -1,0 +1,97 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Ackermann Growth Spiral
+-- Concern: Exploring the boundaries of recursive logic.
+--
+-- The Ackermann function is a "non-primitive recursive" sequence. 
+-- It grows faster than any standard mathematical notation (like exponents).
+-- It is defined by three active rules:
+-- 1. The Successor: When depth is zero, just add one.
+-- 2. The Descent: When intensity is zero, drop one depth and reset intensity.
+-- 3. The Spiral: When both exist, solve for a smaller intensity, then 
+--                use that result to solve for a smaller depth.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called RecursiveGrowth
+    with concern: exploring extreme mathematical sequences
+
+-- Rule 1: The Successor
+-- This is the "Base Case." When the growth tier reaches zero, we simply 
+-- deliver the next number in the sequence.
+the behavior called successor-of
+    with intent: increment a value to find its next neighbor
+    takes:
+        an integer called value
+    delivers: an integer
+    as:
+        value added-to 1
+
+-- Rule 2: Tier Descent
+-- When intensity is exhausted (zero), we descend to a lower tier of 
+-- recursive growth and reset our intensity to the starting value of 1.
+the behavior called descend-tier
+    with intent: move to a lower recursive depth with a base intensity
+    takes:
+        an integer called depth
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        derivation: lower-depth derives-from an integer depth decreased-by 1
+        lower-depth utilizes ackermann 1
+
+-- Rule 3: The Spiral
+-- This is the heart of the growth. We calculate the result for a 
+-- smaller intensity first, then feed that entire result back into 
+-- a lower tier of recursive depth.
+the behavior called spiral-down
+    with intent: execute the nested recursive spiral
+    takes:
+        an integer called depth
+        an integer called intensity
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        derivation: lower-depth derives-from an integer depth decreased-by 1
+        derivation: lower-intensity derives-from an integer intensity decreased-by 1
+        
+        -- First, find the "Inner Result" at the current depth
+        derivation: inner-result derives-from depth utilizes ackermann lower-intensity
+        
+        -- Then, use that result to descend to the lower depth
+        lower-depth utilizes ackermann inner-result
+
+-- The Orchestrator
+-- The Ackermann function coordinates our three rules based on current state.
+the behavior called ackermann
+    with intent: compute a value within the extreme growth spiral
+    takes:
+        an integer called depth
+        an integer called intensity
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if depth matches 0
+            then intensity utilizes successor-of
+            else if intensity matches 0
+                then depth utilizes descend-tier
+                else depth utilizes spiral-down intensity
+
+the effect behavior called run
+    with intent: demonstrate the explosive nature of the Ackermann function
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1   derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2   derives-from nothing broadcasts "  ACKERMANN GROWTH DEMONSTRATION"
+        derivation: d3   derives-from nothing broadcasts "  Rules: Successor, Descent, and Spiral"
+        derivation: d4   derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        derivation: msg1 derives-from nothing broadcasts "Solving Spiral(2, 2)..."
+        derivation: res1 derives-from an integer 2 utilizes ackermann 2
+        derivation: out1 derives-from nothing broadcasts (res1 utilizes as-text)
+
+        derivation: msg2 derives-from nothing broadcasts "Solving Spiral(3, 2)..."
+        derivation: res2 derives-from an integer 3 utilizes ackermann 2
+        derivation: out2 derives-from nothing broadcasts (res2 utilizes as-text)
+        
+        derivation: d5   derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing

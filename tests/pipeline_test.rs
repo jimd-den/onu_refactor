@@ -1,5 +1,5 @@
 use onu_refactor::application::use_cases::lowering_service::LoweringService;
-use onu_refactor::domain::entities::ast::{Discourse, BehaviorHeader, Expression, ReturnType, Argument, TypeInfo};
+use onu_refactor::domain::entities::ast::{Discourse, BehaviorHeader, Expression, ReturnType};
 use onu_refactor::domain::entities::hir::{HirDiscourse, HirExpression, HirLiteral};
 use onu_refactor::domain::entities::types::OnuType;
 
@@ -17,7 +17,8 @@ fn test_synthetic_argument_injection() {
     let body = Expression::Nothing;
     let discourse = Discourse::Behavior { header, body };
     
-    let hir = LoweringService::lower_discourse(&discourse);
+    let registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
+    let hir = LoweringService::lower_discourse(&discourse, &registry);
     
     if let HirDiscourse::Behavior { header, .. } = hir {
         assert_eq!(header.args.len(), 2);
@@ -39,10 +40,11 @@ fn test_broadcasts_lowering() {
         diminishing: None,
         skip_termination_check: false,
     };
-    let body = Expression::Broadcasts(Box::new(Expression::Text("Hello".to_string())));
+    let body = Expression::Emit(Box::new(Expression::Text("Hello".to_string())));
     let discourse = Discourse::Behavior { header, body };
     
-    let hir = LoweringService::lower_discourse(&discourse);
+    let registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
+    let hir = LoweringService::lower_discourse(&discourse, &registry);
     
     if let HirDiscourse::Behavior { body, .. } = hir {
         match body {
@@ -74,7 +76,8 @@ fn test_drop_lowering() {
     let body = Expression::Drop(Box::new(Expression::Identifier("x".to_string())));
     let discourse = Discourse::Behavior { header, body };
     
-    let hir = LoweringService::lower_discourse(&discourse);
+    let registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
+    let hir = LoweringService::lower_discourse(&discourse, &registry);
     
     if let HirDiscourse::Behavior { body, .. } = hir {
         match body {

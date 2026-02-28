@@ -14,8 +14,8 @@ use crate::adapters::codegen::strategies::*;
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::{Module, Linkage};
-use inkwell::values::{BasicValueEnum, PointerValue};
-use inkwell::types::{BasicTypeEnum, BasicType};
+use inkwell::values::{FunctionValue, PointerValue};
+use inkwell::types::{BasicTypeEnum, BasicMetadataTypeEnum, BasicType};
 use std::collections::HashMap;
 
 pub struct OnuCodegen {
@@ -26,10 +26,25 @@ impl OnuCodegen {
     pub fn new() -> Self {
         Self { registry: None }
     }
+
+    pub fn onu_type_to_llvm_static<'ctx>(context: &'ctx Context, typ: &OnuType) -> BasicTypeEnum<'ctx> {
+        match typ {
+            OnuType::I32 => context.i32_type().as_basic_type_enum(),
+            OnuType::I64 => context.i64_type().as_basic_type_enum(),
+            OnuType::Boolean => context.bool_type().as_basic_type_enum(),
+            OnuType::Strings => {
+                let i64_type = context.i64_type();
+                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).as_basic_type_enum()
+            }
+            OnuType::Nothing => context.i64_type().as_basic_type_enum(),
+            _ => context.i64_type().as_basic_type_enum(),
+        }
+    }
 }
 
 impl CodegenPort for OnuCodegen {
-    fn generate(&self, program: &MirProgram) -> Result<Vec<u8>, OnuError> {
+    fn generate(&self, program: &MirProgram) -> Result<String, OnuError> {
         let context = Context::create();
         let module = context.create_module("onu_discourse");
         let builder = context.create_builder();
@@ -45,10 +60,7 @@ impl CodegenPort for OnuCodegen {
 
         generator.generate(program)?;
 
-        let ir = generator.module.print_to_string().to_string();
-        eprintln!("--- LLVM IR ---\n{}\n---------------", ir);
-
-        Ok(generator.module.write_bitcode_to_memory().as_slice().to_vec())
+        Ok(generator.module.print_to_string().to_string())
     }
 
     fn set_registry(&mut self, registry: RegistryService) {
@@ -96,9 +108,9 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             .map(|arg| self.onu_type_to_llvm(&arg.typ).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
             .collect();
         
-        let llvm_name = if func.name == "run" || func.name == "main" { "main".to_string() } else { func.name.replace('-', "_") };
+        let llvm_name = if func.name == "run" || func.name == "main" { "main".to_string() } else { func.name.clone() };
         
-        if let Some(ret_type) = self.onu_type_to_llvm(&func.return_type) {
+if let Some(ret_type) = self.onu_type_to_llvm(&func.return_type) {
             let fn_type = ret_type.fn_type(&arg_types, false);
             self.module.add_function(&llvm_name, fn_type, Some(Linkage::External));
         } else {
@@ -108,7 +120,7 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     }
 
     fn generate_function(&mut self, func: &MirFunction) -> Result<(), OnuError> {
-        let llvm_name = if func.name == "run" || func.name == "main" { "main".to_string() } else { func.name.replace('-', "_") };
+        let llvm_name = if func.name == "run" || func.name == "main" { "main".to_string() } else { func.name.clone() };
         let function = self.module.get_function(&llvm_name).unwrap();
         self.ssa_storage.clear();
         self.blocks.clear();

@@ -1,0 +1,9 @@
+[package]
+name = "onu_refactor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = { version = "0.4.44", features = ["serde"] }
+either = "1.15.0"
+inkwell = { version = "0.8.0", features = ["llvm14-0"] }

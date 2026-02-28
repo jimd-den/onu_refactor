@@ -1,0 +1,44 @@
+the module called TuiModule
+    with concern: terminal user interface experimentation
+
+the behavior called sleep-loop
+    takes:
+        an integer called count
+    delivers: nothing
+    as:
+        if count matches 0
+            then nothing
+            else (count decreased-by 1) utilizes sleep-loop
+
+the behavior called draw-sprite
+    takes:
+        an integer called x
+        an integer called limit
+    delivers: nothing
+    with no guaranteed termination
+    as:
+        if x exceeds limit
+            then nothing
+            else
+                -- ANSI: Clear Screen (\x1b[2J) and Home Cursor (\x1b[H)
+                derivation: d1 derives-from nothing broadcasts "\x1b[2J\x1b[H"
+                
+                -- Move cursor to column x
+                derivation: pos derives-from "\x1b[1;" joined-with (x utilizes as-text)
+                derivation: pos2 derives-from pos joined-with "H"
+                derivation: d2 derives-from nothing broadcasts pos2
+                
+                -- Draw the sprite
+                derivation: d3 derives-from nothing broadcasts "@"
+                
+                -- Wait a bit (primitive sleep)
+                derivation: d4 derives-from nothing 10000000 utilizes sleep-loop
+                
+                (x added-to 1) utilizes draw-sprite limit
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        0 utilizes draw-sprite 40
+        nothing

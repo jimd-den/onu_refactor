@@ -1,0 +1,19 @@
+the module called ResearchSample
+    with concern: demonstrating simple derivation
+
+-- A basic example of how local state is derived and delivered.
+the behavior called example-derivation
+    with intent: derive a constant value and deliver it
+    takes:
+        an integer called x
+    delivers: an integer
+    as:
+        derivation: constant derives-from an integer 10
+        constant
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: result derives-from an integer 5 utilizes example-derivation
+        broadcasts result

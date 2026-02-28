@@ -1,0 +1,47 @@
+the module called GuessingGame
+    with concern: interactive user engagement
+
+the effect behavior called game-loop
+    with intent: prompt the user for guesses until they find the target
+    takes:
+        an integer called target
+        an integer called attempts
+    delivers: nothing
+    with no guaranteed termination
+    as:
+        broadcasts "Enter your guess: "
+        
+        derivation: input derives-from receives-line
+        derivation: guess derives-from input utilizes as-integer
+        
+        if guess matches target
+            then
+                derivation: msg  derives-from "SUCCESS! You found the number in "
+                derivation: msg2 derives-from msg joined-with (attempts utilizes as-text)
+                derivation: msg3 derives-from msg2 joined-with " attempts!"
+                broadcasts msg3
+            else
+                if guess exceeds target
+                    then broadcasts "Lower..."
+                    else broadcasts "Higher..."
+                
+                target utilizes game-loop (attempts added-to 1)
+
+the effect behavior called run
+    with intent: initialize the game with a random target
+    takes: nothing
+    delivers: nothing
+    as:
+        broadcasts "═══════════════════════════════════════════"
+        broadcasts "       THE Ọ̀NỤ GUESSING GAME"
+        broadcasts "═══════════════════════════════════════════"
+        broadcasts "I have chosen a number between 1 and 100."
+        
+        -- Get entropy and map to 1-100
+        derivation: raw derives-from receives-entropy
+        derivation: target derives-from (raw partitions-by 100)
+        derivation: actual derives-from raw decreased-by (target scales-by 100)
+        derivation: final  derives-from (actual added-to 1)
+        
+        final utilizes game-loop 1
+        nothing

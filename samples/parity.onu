@@ -1,0 +1,56 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Dance of Parity (Even and Odd)
+-- Concern: Mutual recursion and alternating states.
+--
+-- Parity is an alternating property. A number is even if its predecessor 
+-- is odd, and odd if its predecessor is even.
+-- 1. The Equilibrium: Zero is the origin of Even (1).
+-- 2. The Alternation: We determine state by asking the opposite question 
+--                      of the number that came before.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called ParityLogic
+    with concern: mutual recursive verification
+
+-- Rule 1: Origin of Even
+the behavior called is-even
+    with intent: determine if a number maintains even equilibrium
+    takes:
+        an integer called n
+    delivers: an integer
+    with diminishing: n
+    as:
+        if n matches 0
+            then 1
+            else (n decreased-by 1) utilizes is-odd
+
+-- Rule 2: Origin of Odd
+the behavior called is-odd
+    with intent: determine if a number maintains odd alternation
+    takes:
+        an integer called n
+    delivers: an integer
+    with diminishing: n
+    as:
+        if n matches 0
+            then 0
+            else (n decreased-by 1) utilizes is-even
+
+the effect behavior called run
+    with intent: demonstrate the dance of parity
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: target1 derives-from an integer 10
+        derivation: target2 derives-from an integer 7
+        
+        derivation: res1 derives-from target1 utilizes is-even
+        derivation: res2 derives-from target2 utilizes is-even
+        
+        derivation: d1 derives-from nothing broadcasts "PARITY VERIFICATION:"
+        derivation: m1 derives-from a string "Is 10 even? (1=yes): " joined-with (res1 utilizes as-text)
+        derivation: d2 derives-from nothing broadcasts m1
+        
+        derivation: m2 derives-from a string "Is 7 even?  (1=yes): " joined-with (res2 utilizes as-text)
+        derivation: d3 derives-from nothing broadcasts m2
+        nothing

@@ -4,21 +4,42 @@
 /// a sequence of Tokens that the ParserPort can consume.
 
 use crate::application::ports::compiler_ports::{LexerPort, Token, Literal};
+use crate::application::options::LogLevel;
 use crate::domain::entities::error::OnuError;
 use std::iter::Peekable;
 use std::str::Chars;
+use chrono::Local;
 
-pub struct OnuLexer;
+pub struct OnuLexer {
+    pub log_level: LogLevel,
+}
+
+impl OnuLexer {
+    pub fn new(log_level: LogLevel) -> Self {
+        Self { log_level }
+    }
+
+    fn log(&self, level: LogLevel, message: &str) {
+        if level <= self.log_level && level != LogLevel::None {
+            let timestamp = Local::now().to_rfc3339();
+            eprintln!("[{}] {:?}: [Lexer] {}", timestamp, level, message);
+        }
+    }
+}
 
 impl LexerPort for OnuLexer {
     fn lex(&self, source: &str) -> Result<Vec<Token>, OnuError> {
-        let mut lexer = LexerInternal::new(source);
+        self.log(LogLevel::Info, "Starting lexing process");
+        let mut lexer = LexerInternal::new(source, self.log_level);
         let mut tokens = Vec::new();
 
         while let Some(token_result) = lexer.next_token() {
-            tokens.push(token_result?);
+            let token = token_result?;
+            self.log(LogLevel::Trace, &format!("Lexed token: {:?}", token));
+            tokens.push(token);
         }
 
+        self.log(LogLevel::Info, &format!("Lexing successful: {} tokens", tokens.len()));
         Ok(tokens)
     }
 }
@@ -26,13 +47,22 @@ impl LexerPort for OnuLexer {
 struct LexerInternal<'a> {
     input: Peekable<Chars<'a>>,
     at_line_start: bool,
+    log_level: LogLevel,
 }
 
 impl<'a> LexerInternal<'a> {
-    fn new(input: &'a str) -> Self {
+    fn new(input: &'a str, log_level: LogLevel) -> Self {
         Self {
             input: input.chars().peekable(),
             at_line_start: true,
+            log_level,
+        }
+    }
+
+    fn log(&self, level: LogLevel, message: &str) {
+        if level <= self.log_level && level != LogLevel::None {
+            let timestamp = Local::now().to_rfc3339();
+            eprintln!("[{}] {:?}: [LexerInternal] {}", timestamp, level, message);
         }
     }
 
@@ -51,6 +81,7 @@ impl<'a> LexerInternal<'a> {
     }
 
     fn skip_comment(&mut self) {
+        self.log(LogLevel::Trace, "Skipping comment");
         self.input.next(); 
         while let Some(c) = self.input.next() {
             if c == '\n' { 
@@ -61,7 +92,6 @@ impl<'a> LexerInternal<'a> {
     }
 
     fn next_token(&mut self) -> Option<Result<Token, OnuError>> {
-        // Essential: handle at_line_start before skipping normal whitespace
         if self.at_line_start {
             self.at_line_start = false;
             let mut indent = 0;
@@ -80,7 +110,7 @@ impl<'a> LexerInternal<'a> {
                     let mut temp = self.input.clone();
                     temp.next();
                     if let Some('-') = temp.peek() {
-                        self.skip_comment(); // sets at_line_start = true
+                        self.skip_comment();
                         return self.next_token();
                     } else { break; }
                 } else if c.is_whitespace() {
@@ -119,7 +149,7 @@ impl<'a> LexerInternal<'a> {
             ':' => { self.input.next(); Token::Operator(":".to_string()) }
             '"' => self.lex_string(),
             c if c.is_ascii_digit() => self.lex_number(),
-            c if c.is_alphabetic() => self.lex_complex_keyword_or_id(),
+            c if c.is_alphanumeric() || c == '-' => self.lex_complex_keyword_or_id(),
             _ => {
                 self.input.next();
                 return self.next_token();
@@ -161,14 +191,34 @@ impl<'a> LexerInternal<'a> {
 
     fn lex_complex_keyword_or_id(&mut self) -> Token {
         let phrases = [
-            "the-module-called", "the-behavior-called", "the-effect-behavior-called",
-            "with-intent", "with-concern", "with-diminishing", "no-guaranteed-termination",
-            "derives-from", "decreased-by", "partitions-by", "scales-by", "added-to", "utilizes", "as", "takes", "delivers", "called"
+            ("the-module-called", Token::TheModuleCalled),
+            ("the-behavior-called", Token::TheBehaviorCalled),
+            ("the-effect-behavior-called", Token::TheEffectBehaviorCalled),
+            ("with-intent", Token::WithIntent),
+            ("with-concern", Token::WithConcern),
+            ("with-diminishing", Token::WithDiminishing),
+            ("no-guaranteed-termination", Token::NoGuaranteedTermination),
+            ("derives-from", Token::DerivesFrom),
+            ("decreased-by", Token::DecreasedBy),
+            ("partitions-by", Token::PartitionsBy),
+            ("scales-by", Token::ScalesBy),
+            ("added-to", Token::AddedTo),
+            ("utilizes", Token::Utilizes),
+            ("broadcasts", Token::Broadcasts),
+            ("derivation", Token::Derivation),
+            ("matches", Token::Matches),
+            ("exceeds", Token::Exceeds),
+            ("falls-short-of", Token::FallsShortOf),
+            ("unites-with", Token::UnitesWith),
+            ("joins-with", Token::JoinsWith),
+            ("opposes", Token::Opposes),
+            ("init-of", Token::InitOf),
+            ("tail-of", Token::TailOf),
         ];
 
         let mut current_pos = self.input.clone();
         let mut words = Vec::new();
-        let mut matched_phrase = None;
+        let mut matched_token = None;
 
         for _ in 0..4 {
             let mut word = String::new();
@@ -178,16 +228,20 @@ impl<'a> LexerInternal<'a> {
             if word.is_empty() { break; }
             words.push(word);
             let candidate = words.join("-");
-            if phrases.contains(&candidate.as_str()) {
-                matched_phrase = Some(candidate);
-                self.input = current_pos.clone();
+            
+            for (phrase, token) in &phrases {
+                if phrase == &candidate {
+                    matched_token = Some(token.clone());
+                    self.input = current_pos.clone();
+                }
             }
+
             while let Some(c) = current_pos.peek() {
                 if c.is_whitespace() && *c != '\n' { current_pos.next(); } else { break; }
             }
         }
 
-        if let Some(p) = matched_phrase { return Token::Identifier(p); }
+        if let Some(t) = matched_token { return t; }
 
         let mut s = String::new();
         while let Some(c) = self.peek_char() {
@@ -195,12 +249,16 @@ impl<'a> LexerInternal<'a> {
         }
         
         match s.as_str() {
-            "if" => Token::Identifier("if".to_string()),
-            "then" => Token::Identifier("then".to_string()),
-            "else" => Token::Identifier("else".to_string()),
+            "if" => Token::If,
+            "then" => Token::Then,
+            "else" => Token::Else,
+            "takes" => Token::Takes,
+            "delivers" => Token::Delivers,
+            "called" => Token::Called,
+            "as" => Token::As,
+            "nothing" => Token::Nothing,
             "true" => Token::Literal(Literal::Boolean(true)),
             "false" => Token::Literal(Literal::Boolean(false)),
-            "nothing" => Token::Keyword("nothing".to_string()),
             _ => Token::Identifier(s),
         }
     }

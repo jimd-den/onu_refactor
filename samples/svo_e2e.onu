@@ -1,0 +1,20 @@
+
+the module called EndToEndModule
+    with concern: validating the full pipeline
+
+the effect behavior called greet
+    with intent: display a formatted greeting
+    takes:
+        a string called name via observation
+    delivers: nothing
+    as:
+        derivation: msg derives-from "Greetings, "
+        derivation: full derives-from msg joined-with name
+        broadcasts full
+
+the effect behavior called main
+    with intent: entry point
+    takes: nothing
+    delivers: nothing
+    as:
+        "Conductor" utilizes greet

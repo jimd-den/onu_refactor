@@ -1,0 +1,110 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Grand Relocation (Towers of Hanoi)
+-- Concern: Orchestrating recursive inventory movement with total transparency.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called LogisticsOrchestration
+    with concern: coordinated movement of hierarchical assets
+
+-- Render the current state of a depot for the auditors.
+the effect behavior called inspect-depot
+    with intent: display the disks currently residing at a location
+    takes:
+        a string called depot-name via observation
+        a string called items      via observation
+    delivers: nothing
+    as:
+        derivation: header   derives-from a string depot-name joined-with ": ["
+        derivation: footer   derives-from a string header joined-with items
+        derivation: report   derives-from a string footer joined-with "]"
+        broadcasts report
+        nothing
+
+-- Identify the item currently at the top of the stack.
+the behavior called identify-top-item
+    with intent: extract the disk at the peak of the tower
+    takes:
+        a string called stack via observation
+    delivers: a string
+    as:
+        derivation: count derives-from an integer stack utilizes len
+        if count matches 0
+            then ""
+            else
+                derivation: last-index derives-from an integer count decreased-by 1
+                derivation: char-code  derives-from an integer stack char-at last-index
+                char-code utilizes char-from-code
+
+-- The core relocation logic.
+the effect behavior called relocate-stack
+    with intent: move a hierarchy of items while visualizing the state
+    takes:
+        an integer called hierarchy-size
+        a string called source-name      via observation
+        a string called source-items
+        a string called destination-name via observation
+        a string called destination-items
+        a string called transit-name     via observation
+        a string called transit-items
+    delivers: a tuple of (a string : a string : a string)
+    with diminishing: hierarchy-size
+    as:
+        if hierarchy-size matches 0
+            then (source-items : destination-items : transit-items)
+            else
+                derivation: sub-stack-size derives-from an integer hierarchy-size decreased-by 1
+                
+                -- PHASE 1: Move the sub-stack to the Transit Depot
+                derivation: phase1-state derives-from sub-stack-size utilizes relocate-stack source-name source-items transit-name transit-items destination-name destination-items
+                
+                derivation: s1 derives-from phase1-state char-at 0
+                derivation: t1 derives-from phase1-state char-at 1
+                derivation: d1 derives-from phase1-state char-at 2
+                
+                -- PHASE 2: Move the Anchor Disk to the Final Depot
+                derivation: anchor   derives-from s1 utilizes identify-top-item
+                derivation: s1-dup   derives-from s1 duplicated-as
+                derivation: s2       derives-from s1-dup utilizes init-of
+                derivation: d2       derives-from a string d1 joined-with anchor
+                
+                derivation: divider  derives-from a string "═══════════════════════════════════════════"
+                derivation: dump1    derives-from nothing broadcasts divider
+                derivation: msg      derives-from a string "Relocating [" joined-with anchor
+                derivation: msg2     derives-from a string msg joined-with "] from "
+                derivation: msg3     derives-from a string msg2 joined-with source-name
+                derivation: msg4     derives-from a string msg3 joined-with " to "
+                derivation: report   derives-from a string msg4 joined-with destination-name
+                derivation: dump2    derives-from nothing broadcasts report
+                
+                derivation: dump3    derives-from nothing source-name utilizes inspect-depot s2
+                derivation: dump4    derives-from nothing destination-name utilizes inspect-depot d2
+                derivation: dump5    derives-from nothing transit-name utilizes inspect-depot t1
+                
+                -- PHASE 3: Bring the sub-stack from Transit to the Final Depot
+                derivation: phase3-state derives-from sub-stack-size utilizes relocate-stack transit-name t1 destination-name d2 source-name s2
+                
+                derivation: t3 derives-from phase3-state char-at 0
+                derivation: d3 derives-from phase3-state char-at 1
+                derivation: s3 derives-from phase3-state char-at 2
+                
+                (s3 : d3 : t3)
+
+the effect behavior called run
+    with intent: execute the grand relocation plan
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: depot-a-start derives-from a string "321"
+        derivation: depot-b-start derives-from a string ""
+        derivation: depot-c-start derives-from a string ""
+        
+        derivation: d1 derives-from nothing broadcasts "COMMENCING LOGISTICS DISCOURSE:"
+        derivation: d2 derives-from nothing (a string "Depot-A") utilizes inspect-depot depot-a-start
+        derivation: d3 derives-from nothing (a string "Depot-C") utilizes inspect-depot depot-c-start
+        derivation: d4 derives-from nothing (a string "Depot-B") utilizes inspect-depot depot-b-start
+        
+        derivation: final-state derives-from 3 utilizes relocate-stack (a string "Depot-A") depot-a-start (a string "Depot-C") depot-c-start (a string "Depot-B") depot-b-start
+        
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d6 derives-from nothing broadcasts "RELOCATION COMPLETE."
+        nothing

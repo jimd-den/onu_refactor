@@ -1,0 +1,64 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Sequence of Natural Growth
+-- Concern: Modeling how populations expand through time.
+--
+-- The Fibonacci sequence describes a pattern where every new generation 
+-- is the sum of the two generations that came before it.
+-- 1. The Origin: Generation 0 begins with nothing (0).
+-- 2. The Spark: Generation 1 introduces the first unit (1).
+-- 3. The Summation: Every subsequent generation combines its parent 
+--                   and its grandparent to determine its size.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called GrowthModeling
+    with concern: biological and mathematical expansion
+
+-- Rule 1: The Origin
+the behavior called origin-size
+    with intent: deliver the starting value of the sequence
+    takes: nothing
+    delivers: an integer
+    as: 0
+
+-- Rule 2: The Spark
+the behavior called spark-size
+    with intent: deliver the initial growth value
+    takes: nothing
+    delivers: an integer
+    as: 1
+
+-- Rule 3: Generation Summation
+-- This behavior coordinates the recursive lookback into history.
+the behavior called calculate-growth
+    with intent: determine the size of a specific generation
+    takes:
+        an integer called generation
+    delivers: an integer
+    with diminishing: generation
+    as:
+        if generation matches 0
+            then origin-size
+            else if (generation decreased-by 1) matches 0
+                then spark-size
+                else
+                    derivation: parent      derives-from an integer generation decreased-by 1
+                    derivation: grandparent derives-from an integer generation decreased-by 2
+                    
+                    derivation: p-size derives-from parent      utilizes calculate-growth
+                    derivation: g-size derives-from grandparent utilizes calculate-growth
+                    
+                    p-size added-to g-size
+
+the effect behavior called run
+    with intent: demonstrate the sequence of growth
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: target derives-from an integer 40
+        derivation: result derives-from target utilizes calculate-growth
+        
+        derivation: msg derives-from a string "The population at generation " joined-with (target utilizes as-text)
+        derivation: msg2 derives-from a string msg joined-with " has reached: "
+        derivation: d1   derives-from nothing broadcasts msg2
+        broadcasts (result utilizes as-text)
+        nothing

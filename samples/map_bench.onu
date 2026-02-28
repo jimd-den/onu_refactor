@@ -1,0 +1,27 @@
+the module called MapBenchmark
+    with concern: testing dynamic collections
+
+the behavior called insert-loop
+    with intent: populate the map recursively
+    takes:
+        a map of (integer : integer) called m
+        an integer called current
+        an integer called target
+    delivers: a map of (integer : integer)
+    with no guaranteed termination
+    as:
+        if current matches target
+            then m
+            else
+                derivation: next-map derives-from m associated-with current current
+                next-map utilizes insert-loop (current added-to 1) target
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: initial-map derives-from creates-map
+        derivation: limit derives-from 10000000
+        derivation: final-map derives-from initial-map utilizes insert-loop 0 limit
+        broadcasts "Map Populated."
+        nothing

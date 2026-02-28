@@ -1,0 +1,146 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Esoteric Tape Machine (Brainfuck)
+-- Concern: Simulating a minimalist Turing machine.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called TapeMachine
+    with concern: esoteric language emulation
+
+-- Extract the current intensity from the tape at the given position.
+the behavior called read-tape
+    with intent: get the value at the current focus
+    takes:
+        a string called tape via observation
+        an integer called focus
+    delivers: an integer
+    as:
+        tape char-at focus
+
+-- Update the intensity at the given position on the tape.
+the behavior called write-tape
+    with intent: set a new value at the current focus
+    takes:
+        a string called tape
+        an integer called focus
+        an integer called value
+    delivers: a string
+    as:
+        tape utilizes set-char focus value
+
+-- Rule: Forward Jump Gate
+the behavior called navigate-forward-to-exit
+    with intent: find the matching closing bracket
+    takes:
+        a string called code via observation
+        an integer called instruction-pointer
+        an integer called depth-counter
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        derivation: current-instr derives-from an integer code char-at instruction-pointer
+        derivation: next-ip derives-from an integer instruction-pointer added-to 1
+        
+        if current-instr matches 91 -- '['
+            then code utilizes navigate-forward-to-exit next-ip (depth-counter added-to 1)
+            else 
+                if current-instr matches 93 -- ']'
+                    then
+                        if depth-counter matches 0
+                            then instruction-pointer
+                            else code utilizes navigate-forward-to-exit next-ip (depth-counter decreased-by 1)
+                    else code utilizes navigate-forward-to-exit next-ip depth-counter
+
+-- Rule: Backward Jump Gate
+the behavior called navigate-backward-to-entrance
+    with intent: find the matching opening bracket
+    takes:
+        a string called code via observation
+        an integer called instruction-pointer
+        an integer called depth-counter
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        derivation: current-instr derives-from an integer code char-at instruction-pointer
+        derivation: prev-ip derives-from an integer instruction-pointer decreased-by 1
+        
+        if current-instr matches 93 -- ']'
+            then code utilizes navigate-backward-to-entrance prev-ip (depth-counter added-to 1)
+            else
+                if current-instr matches 91 -- '['
+                    then
+                        if depth-counter matches 0
+                            then instruction-pointer
+                            else code utilizes navigate-backward-to-entrance prev-ip (depth-counter decreased-by 1)
+                    else code utilizes navigate-backward-to-entrance prev-ip depth-counter
+
+-- The Execution Engine
+the effect behavior called interpret
+    with intent: execute the sequence of tape instructions
+    takes:
+        a string called code via observation
+        an integer called ip
+        a string called tape
+        an integer called focus
+    delivers: nothing
+    with no guaranteed termination
+    as:
+        if ip falls-short-of (code utilizes len)
+            then
+                derivation: instr derives-from an integer code char-at ip
+                derivation: next-ip derives-from an integer ip added-to 1
+                
+                if instr matches 43 -- '+' (Oscillate Up)
+                    then
+                        derivation: val derives-from an integer tape utilizes read-tape focus
+                        derivation: new-tape derives-from a string tape utilizes write-tape focus (val added-to 1)
+                        code utilizes interpret next-ip new-tape focus
+                    else
+                if instr matches 45 -- '-' (Oscillate Down)
+                    then
+                        derivation: val derives-from an integer tape utilizes read-tape focus
+                        derivation: new-tape derives-from a string tape utilizes write-tape focus (val decreased-by 1)
+                        code utilizes interpret next-ip new-tape focus
+                    else
+                if instr matches 62 -- '>' (Shift Focus Right)
+                    then code utilizes interpret next-ip tape (focus added-to 1)
+                    else
+                if instr matches 60 -- '<' (Shift Focus Left)
+                    then code utilizes interpret next-ip tape (focus decreased-by 1)
+                    else
+                if instr matches 46 -- '.' (Broadcast State)
+                    then
+                        derivation: val derives-from an integer tape utilizes read-tape focus
+                        derivation: dummy derives-from nothing broadcasts (val utilizes char-from-code)
+                        code utilizes interpret next-ip tape focus
+                    else
+                if instr matches 91 -- '[' (Enter Gate)
+                    then
+                        derivation: val derives-from an integer tape utilizes read-tape focus
+                        if val matches 0
+                            then
+                                derivation: target derives-from an integer code utilizes navigate-forward-to-exit next-ip 0
+                                code utilizes interpret (target added-to 1) tape focus
+                            else code utilizes interpret next-ip tape focus
+                    else
+                if instr matches 93 -- ']' (Exit Gate)
+                    then
+                        derivation: val derives-from an integer tape utilizes read-tape focus
+                        if val matches 0
+                            then code utilizes interpret next-ip tape focus
+                            else
+                                derivation: target derives-from an integer code utilizes navigate-backward-to-entrance (ip decreased-by 1) 0
+                                code utilizes interpret (target added-to 1) tape focus
+                    else
+                        code utilizes interpret next-ip tape focus
+            else nothing
+
+the effect behavior called run
+    with intent: demonstrate the esoteric tape machine
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: empty-tape derives-from a string "          " 
+        derivation: program    derives-from a string "++>+++<[->+<]>." -- Result: 2 + 3 = 5 (char code 5)
+        derivation: d1         derives-from nothing broadcasts "Initializing Tape Machine..."
+        program utilizes interpret 0 empty-tape 0
+        nothing

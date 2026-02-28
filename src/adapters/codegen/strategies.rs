@@ -8,11 +8,12 @@ use crate::domain::entities::mir::{MirInstruction, MirBinOp, MirOperand, MirLite
 use crate::domain::entities::error::OnuError;
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::registry_service::RegistryService;
-use inkwell::builder::Builder;
+
 use inkwell::context::Context;
+use inkwell::builder::Builder;
 use inkwell::module::Module;
-use inkwell::values::{BasicValueEnum, PointerValue, BasicValue};
-use inkwell::types::{BasicTypeEnum, BasicType};
+use inkwell::values::{PointerValue, BasicValueEnum};
+use inkwell::types::{BasicTypeEnum};
 use std::collections::HashMap;
 
 pub trait InstructionStrategy<'ctx> {
@@ -27,8 +28,6 @@ pub trait InstructionStrategy<'ctx> {
     ) -> Result<(), OnuError>;
 }
 
-// --- Specific Strategies ---
-
 pub struct BinaryOpStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
     fn generate(
@@ -41,19 +40,26 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::BinaryOperation { dest, op, lhs, rhs } = inst {
-            let l = operand_to_llvm(context, builder, ssa_storage, lhs).into_int_value();
-            let r = operand_to_llvm(context, builder, ssa_storage, rhs).into_int_value();
-            
+            let l_val = operand_to_llvm(context, builder, ssa_storage, lhs);
+            let r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
+
             let res: BasicValueEnum = match op {
-                MirBinOp::Add => builder.build_int_add(l, r, "addtmp").unwrap().into(),
-                MirBinOp::Sub => builder.build_int_sub(l, r, "subtmp").unwrap().into(),
-                MirBinOp::Mul => builder.build_int_mul(l, r, "multmp").unwrap().into(),
-                MirBinOp::Div => builder.build_int_signed_div(l, r, "divtmp").unwrap().into(),
-                MirBinOp::Eq => builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eqtmp").unwrap().into(),
-                MirBinOp::Gt => builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gttmp").unwrap().into(),
-                MirBinOp::Lt => builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lttmp").unwrap().into(),
+                MirBinOp::Add => builder.build_int_add(l_val.into_int_value(), r_val.into_int_value(), "addtmp").unwrap().into(),
+                MirBinOp::Sub => builder.build_int_sub(l_val.into_int_value(), r_val.into_int_value(), "subtmp").unwrap().into(),
+                MirBinOp::Mul => builder.build_int_mul(l_val.into_int_value(), r_val.into_int_value(), "multmp").unwrap().into(),
+                MirBinOp::Div => builder.build_int_signed_div(l_val.into_int_value(), r_val.into_int_value(), "divtmp").unwrap().into(),
+                MirBinOp::Eq | MirBinOp::Gt | MirBinOp::Lt => {
+                    let pred = match op {
+                        MirBinOp::Eq => inkwell::IntPredicate::EQ,
+                        MirBinOp::Gt => inkwell::IntPredicate::SGT,
+                        MirBinOp::Lt => inkwell::IntPredicate::SLT,
+                        _ => unreachable!(),
+                    };
+                    let cond = builder.build_int_compare(pred, l_val.into_int_value(), r_val.into_int_value(), "cmptmp").unwrap();
+                    builder.build_int_z_extend(cond, context.i64_type(), "booltmp").unwrap().into()
+                }
             };
-            
+
             let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());
             builder.build_store(ptr, res).unwrap();
         }
@@ -68,42 +74,49 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
         context: &'ctx Context,
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        registry: &RegistryService,
+        _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Call { dest, name, args } = inst {
-            let c_name = name.replace('-', "_");
+            let llvm_name = name.clone(); // Use original hyphenated names
             
-            // Determine arity from registry
-            let arity = registry.get_signature(name).map(|s| s.input_types.len()).unwrap_or(args.len());
+            let mut llvm_args = Vec::new();
+            let mut arg_types = Vec::new();
+            for arg in args {
+                let val = operand_to_llvm(context, builder, ssa_storage, arg);
+                llvm_args.push(val.into());
+                arg_types.push(val.get_type().into());
+            }
 
-            let function = if let Some(f) = module.get_function(&c_name) {
+            let func = if let Some(f) = module.get_function(&llvm_name) {
                 f
             } else {
                 let i64_type = context.i64_type();
-                let mut arg_types = Vec::new();
-                for _ in 0..arity { arg_types.push(i64_type.as_basic_type_enum().into()); }
-                let fn_type = i64_type.fn_type(&arg_types, false);
-                module.add_function(&c_name, fn_type, Some(inkwell::module::Linkage::External))
+                let ret_type: BasicTypeEnum = if ["as-text", "joined-with", "char-from-code", "tail-of", "init-of", "duplicated-as", "receives-argument", "receives-line"].contains(&llvm_name.as_str()) {
+                    let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                    context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).into()
+                } else {
+                    i64_type.into()
+                };
+
+                let fn_type = if ret_type == i64_type.into() {
+                    i64_type.fn_type(&arg_types, false)
+                } else {
+                    ret_type.into_struct_type().fn_type(&arg_types, false)
+                };
+
+                module.add_function(&llvm_name, fn_type, Some(inkwell::module::Linkage::External))
+            };
+            
+            let call = builder.build_call(func, &llvm_args, "calltmp").unwrap();
+            let res = match call.try_as_basic_value() {
+                inkwell::values::ValueKind::Basic(val) => val,
+                _ => context.i64_type().const_int(0, false).into(),
             };
 
-            // Only pass the required number of arguments
-            let llvm_args: Vec<inkwell::values::BasicMetadataValueEnum> = args.iter().take(arity)
-                .map(|arg| {
-                    let mut val = operand_to_llvm(context, builder, ssa_storage, arg);
-                    // If passing a string struct to an i64 (as-text style), we might need to extract?
-                    // Original code passed {i64, i8*} as two i64s if bitcasted, but let's keep it simple.
-                    val.into()
-                })
-                .collect();
-
-            let call = builder.build_call(function, &llvm_args, "calltmp").unwrap();
-            let res_kind = call.try_as_basic_value();
-            if let inkwell::values::ValueKind::Basic(res) = res_kind {
-                let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());
-                builder.build_store(ptr, res).unwrap();
-            }
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());
+            builder.build_store(ptr, res).unwrap();
         }
         Ok(())
     }
@@ -123,40 +136,36 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
         if let MirInstruction::Emit(op) = inst {
             let val = operand_to_llvm(context, builder, ssa_storage, op);
             
-            let i8_ptr = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-            let void_type = context.void_type();
-            let broadcast_fn = if let Some(f) = module.get_function("onu_broadcast") {
-                f
-            } else {
-                let fn_type = void_type.fn_type(&[i8_ptr.into()], false);
-                module.add_function("onu_broadcast", fn_type, Some(inkwell::module::Linkage::External))
-            };
-
-            let arg = if val.is_struct_value() {
-                // To pass by pointer, we need the address of the SSA variable
-                if let MirOperand::Variable(id, _) = op {
-                    ssa_storage.get(id).unwrap().as_basic_value_enum()
-                } else {
-                    // Constant text: create a temp alloca
-                    let ptr = builder.build_alloca(val.get_type(), "emit_tmp").unwrap();
-                    builder.build_store(ptr, val).unwrap();
-                    ptr.into()
+            let str_val = if val.is_int_value() {
+                let i64_type = context.i64_type();
+                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                let str_struct_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false);
+                let as_text_fn = module.get_function("as-text").unwrap_or_else(|| {
+                    let fn_type = str_struct_type.fn_type(&[i64_type.into()], false);
+                    module.add_function("as-text", fn_type, Some(inkwell::module::Linkage::External))
+                });
+                let call_val = builder.build_call(as_text_fn, &[val.into()], "as_text_tmp").unwrap();
+                match call_val.try_as_basic_value() {
+                    inkwell::values::ValueKind::Basic(v) => v,
+                    _ => panic!("as-text call should return a basic value"),
                 }
             } else {
-                // For non-struct (like int as-text result), create a fake struct or pass as is?
-                // Runtime heuristic expects a pointer to a struct.
-                let i64_type = context.i64_type();
-                let string_struct_type = context.struct_type(&[i64_type.into(), i8_ptr.into()], false);
-                let mut fake_str = string_struct_type.get_undef();
-                fake_str = builder.build_insert_value(fake_str, i64_type.const_int(0, false), 0, "len").unwrap().into_struct_value();
-                fake_str = builder.build_insert_value(fake_str, builder.build_int_to_ptr(val.into_int_value(), i8_ptr, "ptr").unwrap(), 1, "data").unwrap().into_struct_value();
-                
-                let ptr = builder.build_alloca(string_struct_type, "fake_emit_tmp").unwrap();
-                builder.build_store(ptr, fake_str).unwrap();
-                ptr.into()
+                val
             };
 
-            builder.build_call(broadcast_fn, &[arg.into()], "emit").unwrap();
+            let arg = if str_val.is_struct_value() {
+                builder.build_extract_value(str_val.into_struct_value(), 1, "raw_ptr").unwrap()
+            } else {
+                str_val
+            };
+
+            let str_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+            let broadcasts_fn_type = context.void_type().fn_type(&[str_ptr_type.into()], false);
+            let broadcasts_fn = module.get_function("broadcasts").unwrap_or_else(|| {
+                module.add_function("broadcasts", broadcasts_fn_type, Some(inkwell::module::Linkage::External))
+            });
+
+            builder.build_call(broadcasts_fn, &[arg.into()], "emit").unwrap();
         }
         Ok(())
     }
@@ -191,13 +200,8 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
         _builder: &Builder<'ctx>,
         _registry: &RegistryService,
         _ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
-        inst: &MirInstruction,
+        _inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Drop { .. } = inst {
-            // Drop is a hint for memory management.
-            // In the current LLVM backend, we rely on automatic stack allocation
-            // or explicit runtime calls if we had a GC. For now, it's a no-op.
-        }
         Ok(())
     }
 }
@@ -230,14 +234,14 @@ impl<'ctx> InstructionStrategy<'ctx> for IndexStrategy {
 pub fn operand_to_llvm<'ctx>(
     context: &'ctx Context,
     builder: &Builder<'ctx>,
-    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    ssa_storage: &HashMap<usize, PointerValue<'ctx>>,
     op: &MirOperand,
 ) -> BasicValueEnum<'ctx> {
     match op {
         MirOperand::Constant(lit) => match lit {
             MirLiteral::I64(n) => context.i64_type().const_int(*n as u64, true).into(),
-            MirLiteral::F64(n) => context.f64_type().const_float(*n as f64).into(),
-            MirLiteral::Boolean(b) => context.bool_type().const_int(*b as u64, false).into(),
+            MirLiteral::F64(bits) => context.f64_type().const_float(f64::from_bits(*bits)).into(),
+            MirLiteral::Boolean(b) => context.bool_type().const_int(if *b { 1 } else { 0 }, false).into(),
             MirLiteral::Text(s) => {
                 let length = context.i64_type().const_int(s.len() as u64, false);
                 let global_str = builder.build_global_string_ptr(s, "strtmp").unwrap();
@@ -252,13 +256,8 @@ pub fn operand_to_llvm<'ctx>(
             MirLiteral::Nothing => context.i64_type().const_int(0, false).into(),
         },
         MirOperand::Variable(id, _) => {
-            if let Some(ptr) = ssa_storage.get(id) {
-                builder.build_load(*ptr, &format!("v{}", id)).unwrap()
-            } else {
-                let i64_type = context.i64_type().as_basic_type_enum();
-                let ptr = get_or_create_ssa(context, builder, ssa_storage, *id, i64_type);
-                builder.build_load(ptr, &format!("v{}", id)).unwrap()
-            }
+            let ptr = ssa_storage.get(id).expect(&format!("SSA variable {} not found", id));
+            builder.build_load(*ptr, &format!("v{}", id)).unwrap()
         }
     }
 }
@@ -273,9 +272,11 @@ pub fn get_or_create_ssa<'ctx>(
     if let Some(ptr) = ssa_storage.get(&id) {
         return *ptr;
     }
+
     let current_bb = builder.get_insert_block().unwrap();
     let function = current_bb.get_parent().unwrap();
     let entry_bb = function.get_first_basic_block().unwrap();
+    
     let temp_builder = context.create_builder();
     if let Some(first_inst) = entry_bb.get_first_instruction() {
         temp_builder.position_before(&first_inst);

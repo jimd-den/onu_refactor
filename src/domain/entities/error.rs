@@ -1,27 +1,33 @@
-/// Ọ̀nụ Core Errors: Domain Failure States
+/// Ọ̀nụ Errors: Domain Entities
 ///
-/// Clean Architecture specifies that errors are domain-specific
-/// and should describe "what went wrong" in terms of business logic.
+/// This module defines the formal error types of the Ọ̀nụ system.
+/// Errors are localized by Span (Line/Column).
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub line: usize,
     pub column: usize,
 }
 
+impl Default for Span {
+    fn default() -> Self {
+        Self { line: 0, column: 0 }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OnuError {
-    LexicalViolation { message: String, span: Span },
     GrammarViolation { message: String, span: Span },
-    RuntimeViolation { message: String, span: Span },
-    BehaviorConflict { name: String, other_name: String },
-    MonomorphizationViolation { message: String },
     ResourceViolation { message: String, span: Span },
-    RealizationViolation { message: String },
+    AgencyViolation { message: String, span: Span },
+    MonomorphizationError { message: String },
+    CodeGenError { message: String },
+    OwnershipViolation { message: String, span: Span },
+    BehaviorConflict { message: String, span: Span },
 }
 
 impl From<String> for OnuError {
     fn from(message: String) -> Self {
-        OnuError::RealizationViolation { message }
+        OnuError::ResourceViolation { message, span: Span::default() }
     }
 }

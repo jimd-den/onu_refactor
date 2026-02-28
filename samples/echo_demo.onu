@@ -1,0 +1,18 @@
+the module called EchoModule
+    with concern: testing CLI argument reception
+
+the effect behavior called run
+    with intent: echo the first argument provided
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: count derives-from argument-count
+        
+        if count exceeds 0
+            then
+                derivation: arg derives-from 0 utilizes receives-argument
+                broadcasts arg
+            else
+                broadcasts "No arguments provided."
+        
+        nothing

@@ -4,43 +4,39 @@
 /// It acts as the primary interface for the compiler's compilation stages.
 
 use crate::domain::entities::registry::{SymbolTable, BehaviorSignature};
-use crate::domain::rules::dry_enforcement::{SemanticEngine, SemanticHash};
-use crate::domain::entities::error::OnuError;
-use std::collections::{HashMap, HashSet};
+use crate::application::options::LogLevel;
+use std::collections::HashMap;
+use chrono::Local;
 
-#[derive(Debug, Clone)]
 pub struct RegistryService {
     symbols: SymbolTable,
-    semantic: SemanticEngine,
     shapes: HashMap<String, Vec<(String, BehaviorSignature)>>,
+    pub log_level: LogLevel,
 }
 
 impl RegistryService {
     pub fn new() -> Self {
         Self {
             symbols: SymbolTable::new(),
-            semantic: SemanticEngine::new(),
             shapes: HashMap::new(),
+            log_level: LogLevel::Info,
         }
     }
 
-    /// Registers a behavior and enforces DRY rules.
-    pub fn register_behavior(&mut self, name: String, hash: SemanticHash) -> Result<(), OnuError> {
-        self.semantic.register_behavior(name.clone(), hash)?;
-        self.symbols.add_name(&name, 0); // Arity should be updated later
-        self.symbols.mark_implemented(&name);
-        Ok(())
-    }
-
-    pub fn add_signature(&mut self, name: &str, signature: BehaviorSignature) {
-        self.symbols.add_signature(name, signature);
+    fn log(&self, level: LogLevel, message: &str) {
+        if level <= self.log_level && level != LogLevel::None {
+            let timestamp = Local::now().to_rfc3339();
+            eprintln!("[{}] {:?}: [Registry] {}", timestamp, level, message);
+        }
     }
 
     pub fn get_signature(&self, name: &str) -> Option<&BehaviorSignature> {
+        self.log(LogLevel::Trace, &format!("Looking up signature for: {}", name));
         self.symbols.get_signature(name)
     }
 
     pub fn add_shape(&mut self, name: &str, behaviors: Vec<(String, BehaviorSignature)>) {
+        self.log(LogLevel::Debug, &format!("Adding shape: {}", name));
         self.shapes.insert(name.to_string(), behaviors);
     }
 
@@ -49,6 +45,17 @@ impl RegistryService {
     }
 
     pub fn mark_implemented(&mut self, name: &str) {
+        self.log(LogLevel::Trace, &format!("Marking implemented: {}", name));
         self.symbols.mark_implemented(name);
+    }
+}
+
+impl Clone for RegistryService {
+    fn clone(&self) -> Self {
+        Self {
+            symbols: self.symbols.clone(),
+            shapes: self.shapes.clone(),
+            log_level: self.log_level,
+        }
     }
 }

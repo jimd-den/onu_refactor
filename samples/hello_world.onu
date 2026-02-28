@@ -1,0 +1,10 @@
+the module called GlobalBroadcast
+    with concern: initial greeting
+
+-- This is the first discourse encountered by many researchers.
+the effect behavior called run
+    with intent: deliver a greeting to the external environment
+    takes: nothing
+    delivers: nothing
+    as:
+        broadcasts "Hello, World!"

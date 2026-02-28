@@ -1,0 +1,11 @@
+the module called SharedStateModule
+    with concern: testing shared state
+
+-- This is ILLEGAL: derivations cannot exist at the module level.
+derivation: global-counter derives-from 0
+
+the behavior called main
+    takes: nothing
+    delivers: nothing
+    as:
+        global-counter added-to 1

@@ -1,37 +1,34 @@
 /// Ọ̀nụ DRY Enforcement: Domain Rule
 ///
-/// This implements the Principle of Non-Repetition.
-/// If two behaviors are semantically identical, it constitutes
-/// a violation of domain logic.
+/// This implements the formal "Strict Discourse" rules which 
+/// prevent duplicate definitions and semantic ambiguity.
 
-use crate::domain::entities::error::OnuError;
+use crate::domain::entities::ast::Discourse;
+use crate::domain::entities::error::{OnuError, Span};
 use std::collections::HashMap;
 
-/// A semantic hash represents the structural uniqueness of an AST node.
-pub type SemanticHash = u64;
-
-/// The SemanticEngine handles structural uniqueness and DRY enforcement.
-#[derive(Debug, Clone, Default)]
-pub struct SemanticEngine {
-    entries: HashMap<SemanticHash, String>,
+pub struct DryEnforcementRule {
+    defined_behaviors: HashMap<String, String>, // name -> original name (with hyphens)
 }
 
-impl SemanticEngine {
+impl DryEnforcementRule {
     pub fn new() -> Self {
-        Self::default()
+        Self { defined_behaviors: HashMap::new() }
     }
 
-    /// Registers a new behavior hash. Returns an error if the hash already exists.
-    pub fn register_behavior(&mut self, name: String, hash: SemanticHash) -> Result<(), OnuError> {
-        if let Some(existing_name) = self.entries.get(&hash) {
-            if *existing_name != name {
-                return Err(OnuError::BehaviorConflict {
-                    name,
-                    other_name: existing_name.clone(),
-                });
+    pub fn validate(&mut self, discourses: &[Discourse]) -> Result<(), OnuError> {
+        for discourse in discourses {
+            if let Discourse::Behavior { header, .. } = discourse {
+                let normalized = header.name.replace('-', "_");
+                if let Some(existing_name) = self.defined_behaviors.get(&normalized) {
+                    return Err(OnuError::BehaviorConflict {
+                        message: format!("Behavior conflict: '{}' normalized to '{}' conflicts with existing behavior '{}'", header.name, normalized, existing_name),
+                        span: Span::default(),
+                    });
+                }
+                self.defined_behaviors.insert(normalized, header.name.clone());
             }
         }
-        self.entries.insert(hash, name);
         Ok(())
     }
 }

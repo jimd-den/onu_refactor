@@ -1,0 +1,46 @@
+the module called CollatzBenchmark
+    with concern: recursive performance verification
+
+the behavior called collatz-steps
+    with intent: count steps to reach 1
+    takes:
+        an integer called n
+        an integer called count
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if n matches 1
+            then count
+            else
+                derivation: half    derives-from n partitions-by 2
+                derivation: is-even derives-from (half scales-by 2) matches n
+                derivation: next    derives-from if is-even then half else (n scales-by 3 added-to 1)
+                next utilizes collatz-steps (count added-to 1)
+
+the behavior called collatz-range
+    with intent: sum steps for a range of numbers
+    takes:
+        an integer called current
+        an integer called target
+        an integer called accumulator
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if current exceeds target
+            then accumulator
+            else
+                derivation: steps derives-from current utilizes collatz-steps 0
+                (current added-to 1) utilizes collatz-range target (accumulator added-to steps)
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: limit  derives-from 1000000
+        derivation: result derives-from 1 utilizes collatz-range limit 0
+        
+        derivation: msg derives-from "Total Collatz steps for 1 to " joined-with (limit utilizes as-text)
+        derivation: msg2 derives-from msg joined-with " is: "
+        derivation: d1 derives-from nothing broadcasts msg2
+        broadcasts (result utilizes as-text)
+        nothing
