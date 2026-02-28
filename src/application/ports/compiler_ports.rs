@@ -13,9 +13,6 @@ pub enum Token {
     Literal(Literal),
     Operator(String),
     Delimiter(char),
-    Indent,
-    Dedent,
-    LineStart(usize), // Indentation level
 
     // --- Keywords ---
     TheModuleCalled,

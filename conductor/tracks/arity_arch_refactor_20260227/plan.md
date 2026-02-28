@@ -11,14 +11,14 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Semantic Binary Operations' (Protocol in workflow.md) 54f2f5b
 
 ## Phase 2: Two-Pass Parsing (TDD)
-- [ ] Task: Create failing tests for `Parser::scan_headers()` to register signatures (Red)
-- [ ] Task: Implement `Parser::scan_headers()` to register all function/behavior signatures (Green)
-- [ ] Task: Create failing tests for arity-bounded `utilizes` collection in `Parser::parse_expression()` (Red)
-- [ ] Task: Update `Parser::parse_expression()` to use `SymbolTable::get_arity()` (Green)
-- [ ] Task: Create failing tests that fail *without* `TokenLineStart` (Red)
-- [ ] Task: Remove `TokenLineStart`, `TokenIndent`, `TokenDedent`, and `LayoutService` (Green)
-- [ ] Task: Verify all samples compile and execute correctly
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: Two-Pass Parsing' (Protocol in workflow.md)
+- [x] Task: Create failing tests for `Parser::scan_headers()` to register signatures (Red)
+- [x] Task: Implement `Parser::scan_headers()` to register all function/behavior signatures (Green)
+- [x] Task: Create failing tests for arity-bounded `utilizes` collection in `Parser::parse_expression()` (Red)
+- [x] Task: Update `Parser::parse_expression()` to use `SymbolTable::get_arity()` (Green)
+- [x] Task: Create failing tests that fail *without* `TokenLineStart` (Red) (Covered by existing samples)
+- [x] Task: Remove `TokenLineStart`, `TokenIndent`, `TokenDedent`, and `LayoutService` (Green)
+- [x] Task: Verify all samples compile and execute correctly
+- [~] Task: Conductor - User Manual Verification 'Phase 2: Two-Pass Parsing' (Protocol in workflow.md)
 
 ## Phase 3: Pipeline Decomposition & Clean Arch (TDD)
 - [ ] Task: Create failing tests for individual `CompilationPipeline` stages (Red)

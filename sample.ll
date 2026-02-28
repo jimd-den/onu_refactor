@@ -11,7 +11,8 @@ bb0:
   %x = alloca i64, align 8
   store i64 %0, i64* %x, align 4
   store i64 10, i64* %v1, align 4
-  ret i64 0
+  %v11 = load i64, i64* %v1, align 4
+  ret i64 %v11
 }
 
 define i32 @main(i32 %0, i64 %1) {

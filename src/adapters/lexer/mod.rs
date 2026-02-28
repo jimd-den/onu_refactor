@@ -46,7 +46,6 @@ impl LexerPort for OnuLexer {
 
 struct LexerInternal<'a> {
     input: Peekable<Chars<'a>>,
-    at_line_start: bool,
     log_level: LogLevel,
 }
 
@@ -54,7 +53,6 @@ impl<'a> LexerInternal<'a> {
     fn new(input: &'a str, log_level: LogLevel) -> Self {
         Self {
             input: input.chars().peekable(),
-            at_line_start: true,
             log_level,
         }
     }
@@ -70,78 +68,42 @@ impl<'a> LexerInternal<'a> {
         self.input.peek().copied()
     }
 
-    fn skip_whitespace_except_newline(&mut self) {
-        while let Some(c) = self.peek_char() {
-            if c.is_whitespace() && c != '\n' {
-                self.input.next();
-            } else {
-                break;
+    fn skip_whitespace_and_comments(&mut self) {
+        loop {
+            while let Some(c) = self.peek_char() {
+                if c.is_whitespace() {
+                    self.input.next();
+                } else {
+                    break;
+                }
             }
+
+            if let Some('-') = self.peek_char() {
+                let mut temp = self.input.clone();
+                temp.next();
+                if let Some('-') = temp.peek() {
+                    self.skip_comment();
+                    continue;
+                }
+            }
+            break;
         }
     }
 
     fn skip_comment(&mut self) {
         self.log(LogLevel::Trace, "Skipping comment");
         self.input.next(); 
+        self.input.next(); // skip both '-'
         while let Some(c) = self.input.next() {
             if c == '\n' { 
-                self.at_line_start = true;
                 break; 
             }
         }
     }
 
     fn next_token(&mut self) -> Option<Result<Token, OnuError>> {
-        if self.at_line_start {
-            self.at_line_start = false;
-            let mut indent = 0;
-            while let Some(c) = self.peek_char() {
-                if c == ' ' {
-                    indent += 1;
-                    self.input.next();
-                } else if c == '\t' {
-                    indent += 4;
-                    self.input.next();
-                } else if c == '\n' {
-                    self.input.next();
-                    self.at_line_start = true;
-                    indent = 0;
-                } else if c == '-' {
-                    let mut temp = self.input.clone();
-                    temp.next();
-                    if let Some('-') = temp.peek() {
-                        self.skip_comment();
-                        return self.next_token();
-                    } else { break; }
-                } else if c.is_whitespace() {
-                    self.input.next();
-                } else { break; }
-            }
-            
-            if self.peek_char().is_some() {
-                return Some(Ok(Token::LineStart(indent)));
-            } else {
-                return None;
-            }
-        }
-
-        self.skip_whitespace_except_newline();
+        self.skip_whitespace_and_comments();
         let first_char = self.peek_char()?;
-
-        if first_char == '\n' {
-            self.input.next();
-            self.at_line_start = true;
-            return self.next_token();
-        }
-
-        if first_char == '-' {
-            let mut temp = self.input.clone();
-            temp.next();
-            if let Some('-') = temp.peek() {
-                self.skip_comment();
-                return self.next_token();
-            }
-        }
 
         let token = match first_char {
             '(' => { self.input.next(); Token::Delimiter('(') }

@@ -7,7 +7,6 @@ use crate::application::use_cases::registry_service::RegistryService;
 use crate::application::use_cases::analysis_service::AnalysisService;
 use crate::application::use_cases::lowering_service::LoweringService;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
-use crate::application::use_cases::layout_service::LayoutService;
 use crate::application::use_cases::module_service::ModuleService;
 use crate::application::ports::compiler_ports::{LexerPort, ParserPort, CodegenPort};
 use crate::application::ports::environment::EnvironmentPort;
@@ -56,31 +55,17 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
 
         // 1. Lexing
         let source = self.env.read_file(path)?;
-        let raw_tokens = self.lexer.lex(&source)?;
-        
-        // 2. Layout (Linguistic Indentation)
-        let mut layout_service = LayoutService::new(self.options.log_level);
-        let tokens = layout_service.process(&source, raw_tokens);
+        let tokens = self.lexer.lex(&source)?;
         if self.options.stop_after == Some(CompilerStage::Lexing) { return Ok(()); }
 
+        // 2. Pre-scan behavior headers (Two-Pass Parsing)
+        self.parser.scan_headers(&tokens, &mut self.registry)?;
+
         // 3. Parsing (AST)
-        let discourses = self.parser.parse(tokens)?;
-        
-        // 2.5 Register signatures before analysis
-        for discourse in &discourses {
-            if let Discourse::Behavior { header, .. } = discourse {
-                let sig = crate::domain::entities::registry::BehaviorSignature {
-                    input_types: header.takes.iter().map(|a| a.type_info.onu_type.clone()).collect(),
-                    return_type: header.delivers.0.clone(),
-                    arg_is_observation: header.takes.iter().map(|a| a.type_info.is_observation).collect(),
-                };
-                self.registry.symbols_mut().add_signature(&header.name, sig);
-            }
-        }
-        
+        let discourses = self.parser.parse_with_registry(tokens, &self.registry)?;
         if self.options.stop_after == Some(CompilerStage::Parsing) { return Ok(()); }
 
-        // 3. Analysis & Semantic Validation (HIR)
+        // 4. Analysis & Semantic Validation (HIR)
         let analysis_service = AnalysisService::new(&self.registry);
         let mut hir_discourses = Vec::new();
         for discourse in discourses {
