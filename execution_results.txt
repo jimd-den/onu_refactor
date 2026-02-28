@@ -1,0 +1,20 @@
+COLLATZ SEQUENCE (Starting at 1,000,000):
+1000000
+500000
+250000
+125000
+62500
+31250
+15625
+46876
+23438
+11719
+The accumulation of 5 steps is:
+120
+The population at generation 40 has reached:
+102334155
+Hello, World!
+PARITY VERIFICATION:
+Is 10 even? (1=yes): 1
+Is 7 even?  (1=yes): 0
+10
