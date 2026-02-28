@@ -120,8 +120,8 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
 
     fn realize(&self, bitcode_path: &str, output_path: &str) -> Result<(), OnuError> {
         self.env.log(LogLevel::Info, &format!("Realizing binary: {} -> {}", bitcode_path, output_path));
-        // Link bitcode and the C runtime
-        self.env.run_command("clang", &[bitcode_path, "runtime.c", "-o", output_path, "-Wno-override-module"])?;
+        // Link bitcode natively
+        self.env.run_command("clang", &[bitcode_path, "-O3", "-o", output_path, "-Wno-override-module"])?;
         Ok(())
     }
 }

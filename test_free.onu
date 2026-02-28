@@ -1,0 +1,12 @@
+shape Testing
+  behavior test(x string) -> nothing
+  behavior main() -> integer
+
+module MyTest implements Testing
+  behavior test(x string) -> nothing
+    ejects x
+
+  behavior main() -> integer
+    derives s string = "Hello"
+    utilizes test(s)
+    ejects 0

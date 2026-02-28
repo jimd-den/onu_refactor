@@ -14,7 +14,9 @@ pub struct MirBuilder {
     blocks: Vec<BasicBlock>,
     current_block_idx: Option<usize>,
     next_ssa: usize,
-    scopes: Vec<HashMap<String, usize>>,
+    scopes: Vec<HashMap<String, (usize, OnuType)>>,
+    pending_drops: Vec<(usize, OnuType)>,
+    consumed_vars: std::collections::HashSet<usize>,
 }
 
 impl MirBuilder {
@@ -33,6 +35,8 @@ impl MirBuilder {
             current_block_idx: Some(0),
             next_ssa: 0,
             scopes: vec![HashMap::new()],
+            pending_drops: Vec::new(),
+            consumed_vars: std::collections::HashSet::new(),
         }
     }
 
@@ -46,19 +50,40 @@ impl MirBuilder {
         id
     }
 
-    pub fn define_variable(&mut self, name: &str, ssa_var: usize) {
+    pub fn define_variable(&mut self, name: &str, ssa_var: usize, typ: OnuType) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.to_string(), ssa_var);
+            scope.insert(name.to_string(), (ssa_var, typ));
         }
     }
 
     pub fn resolve_variable(&self, name: &str) -> Option<usize> {
         for scope in self.scopes.iter().rev() {
-            if let Some(id) = scope.get(name) {
+            if let Some((id, _)) = scope.get(name) {
                 return Some(*id);
             }
         }
         None
+    }
+
+    pub fn resolve_variable_type(&self, name: &str) -> Option<OnuType> {
+        for scope in self.scopes.iter().rev() {
+            if let Some((_, typ)) = scope.get(name) {
+                return Some(typ.clone());
+            }
+        }
+        None
+    }
+
+    pub fn get_current_scope_variables(&self) -> Vec<(usize, OnuType)> {
+        if let Some(scope) = self.scopes.last() {
+            scope.values().cloned().filter(|(id, _)| !self.consumed_vars.contains(id)).collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn mark_consumed(&mut self, ssa_var: usize) {
+        self.consumed_vars.insert(ssa_var);
     }
 
     pub fn enter_scope(&mut self) {
@@ -67,6 +92,14 @@ impl MirBuilder {
 
     pub fn exit_scope(&mut self) {
         self.scopes.pop();
+    }
+
+    pub fn schedule_drop(&mut self, ssa_var: usize, typ: OnuType) {
+        self.pending_drops.push((ssa_var, typ));
+    }
+
+    pub fn take_pending_drops(&mut self) -> Vec<(usize, OnuType)> {
+        std::mem::take(&mut self.pending_drops)
     }
 
     pub fn create_block(&mut self) -> usize {
