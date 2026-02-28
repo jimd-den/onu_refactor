@@ -91,23 +91,33 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
                 f
             } else {
                 let llvm_arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = arg_types.iter()
-                    .map(|t| crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, t).into())
+                    .map(|t| crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, t).unwrap_or(context.i64_type().as_basic_type_enum()).into())
                     .collect();
 
-                let ret_type = crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, return_type);
+                let ret_type_opt = crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, return_type);
                 
-                let fn_type = ret_type.fn_type(&llvm_arg_types, false);
+                let fn_type = if let Some(ret_type) = ret_type_opt {
+                    ret_type.fn_type(&llvm_arg_types, false)
+                } else {
+                    context.void_type().fn_type(&llvm_arg_types, false)
+                };
                 module.add_function(&llvm_name, fn_type, Some(inkwell::module::Linkage::External))
             };
             
             let call = builder.build_call(func, &llvm_args, "calltmp").unwrap();
-            let res = match call.try_as_basic_value() {
-                inkwell::values::ValueKind::Basic(val) => val,
-                _ => context.i64_type().const_int(0, false).into(),
-            };
-
-            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());
-            builder.build_store(ptr, res).unwrap();
+            
+            match call.try_as_basic_value() {
+                inkwell::values::ValueKind::Basic(res) => {
+                    let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());
+                    builder.build_store(ptr, res).unwrap();
+                }
+                _ => {
+                    // For void calls, we still satisfy SSA dest with 0
+                    let i64_res = context.i64_type().const_int(0, false);
+                    let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, i64_res.get_type().as_basic_type_enum());
+                    builder.build_store(ptr, i64_res).unwrap();
+                }
+            }
         }
         Ok(())
     }

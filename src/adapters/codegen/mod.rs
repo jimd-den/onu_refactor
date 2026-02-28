@@ -27,18 +27,18 @@ impl OnuCodegen {
         Self { registry: None }
     }
 
-    pub fn onu_type_to_llvm_static<'ctx>(context: &'ctx Context, typ: &OnuType) -> BasicTypeEnum<'ctx> {
+    pub fn onu_type_to_llvm_static<'ctx>(context: &'ctx Context, typ: &OnuType) -> Option<BasicTypeEnum<'ctx>> {
         match typ {
-            OnuType::I32 => context.i32_type().as_basic_type_enum(),
-            OnuType::I64 => context.i64_type().as_basic_type_enum(),
-            OnuType::Boolean => context.bool_type().as_basic_type_enum(),
+            OnuType::I32 => Some(context.i32_type().as_basic_type_enum()),
+            OnuType::I64 => Some(context.i64_type().as_basic_type_enum()),
+            OnuType::Boolean => Some(context.bool_type().as_basic_type_enum()),
             OnuType::Strings => {
                 let i64_type = context.i64_type();
                 let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).as_basic_type_enum()
+                Some(context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).as_basic_type_enum())
             }
-            OnuType::Nothing => context.i64_type().as_basic_type_enum(),
-            _ => context.i64_type().as_basic_type_enum(),
+            OnuType::Nothing => None,
+            _ => Some(context.i64_type().as_basic_type_enum()),
         }
     }
 }
