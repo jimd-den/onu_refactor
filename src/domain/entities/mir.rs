@@ -48,6 +48,9 @@ pub enum MirInstruction {
     Index { dest: usize, subject: MirOperand, index: usize },
     Emit(MirOperand),
     Drop { ssa_var: usize, typ: OnuType },
+    Alloc { dest: usize, size_bytes: MirOperand },
+    MemCopy { dest: MirOperand, src: MirOperand, size: MirOperand },
+    PointerOffset { dest: usize, ptr: MirOperand, offset: MirOperand },
 }
 
 #[derive(Debug, Clone, PartialEq)]

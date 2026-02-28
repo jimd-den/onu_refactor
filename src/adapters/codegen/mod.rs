@@ -79,19 +79,29 @@ struct LlvmGenerator<'ctx, 'a> {
 
 impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     fn generate(&mut self, program: &MirProgram) -> Result<(), OnuError> {
-        // Pre-declare runtime functions
+        // Pre-declare standard library and internal libc dependencies
         let i8_ptr = self.context.i8_type().ptr_type(inkwell::AddressSpace::default());
-        let void_type = self.context.void_type();
         let i64_type = self.context.i64_type();
         
-        // Runtime expects OnuString (which is struct {i64, i8*})
-        let string_struct = self.context.struct_type(&[i64_type.into(), i8_ptr.into()], false);
-        
-        let broadcasts_type = void_type.fn_type(&[i8_ptr.into()], false);
-        self.module.add_function("broadcasts", broadcasts_type, Some(Linkage::External));
+        let malloc_type = i8_ptr.fn_type(&[i64_type.into()], false);
+        self.module.add_function("malloc", malloc_type, Some(Linkage::External));
 
-        let as_text_type = string_struct.fn_type(&[i64_type.into()], false);
-        self.module.add_function("as-text", as_text_type, Some(Linkage::External));
+        let free_type = self.context.void_type().fn_type(&[i8_ptr.into()], false);
+        self.module.add_function("free", free_type, Some(Linkage::External));
+
+        let printf_type = self.context.i32_type().fn_type(&[i8_ptr.into()], true);
+        self.module.add_function("printf", printf_type, Some(Linkage::External));
+        
+        let puts_type = self.context.i32_type().fn_type(&[i8_ptr.into()], false);
+        self.module.add_function("puts", puts_type, Some(Linkage::External));
+
+        let sprintf_type = self.context.i32_type().fn_type(&[i8_ptr.into(), i8_ptr.into()], true);
+        self.module.add_function("sprintf", sprintf_type, Some(Linkage::External));
+
+        let strlen_type = self.context.i64_type().fn_type(&[i8_ptr.into()], false);
+        self.module.add_function("strlen", strlen_type, Some(Linkage::External));
+
+        // Runtime expects OnuString (which is struct {i64, i8*})
 
         for func in &program.functions {
             self.declare_function(func);
@@ -176,7 +186,18 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             MirInstruction::Index { .. } => {
                 IndexStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
             }
-            _ => Ok(()),
+            MirInstruction::Tuple { .. } => {
+                TupleStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
+            }
+            MirInstruction::Alloc { .. } => {
+                AllocStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
+            }
+            MirInstruction::MemCopy { .. } => {
+                MemCopyStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
+            }
+            MirInstruction::PointerOffset { .. } => {
+                PointerOffsetStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
+            }
         }
     }
 
@@ -228,7 +249,8 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             OnuType::Strings => {
                 let i64_type = self.context.i64_type();
                 let i8_ptr_type = self.context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                Some(self.context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).as_basic_type_enum())
+                let bool_type = self.context.bool_type();
+                Some(self.context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false).as_basic_type_enum())
             }
             OnuType::Nothing => None,
             _ => Some(self.context.i64_type().as_basic_type_enum()),
