@@ -37,7 +37,13 @@ pub struct BasicBlock {
 pub enum MirInstruction {
     Assign { dest: usize, src: MirOperand },
     BinaryOperation { dest: usize, op: MirBinOp, lhs: MirOperand, rhs: MirOperand },
-    Call { dest: usize, name: String, args: Vec<MirOperand> },
+    Call { 
+        dest: usize, 
+        name: String, 
+        args: Vec<MirOperand>,
+        return_type: OnuType,
+        arg_types: Vec<OnuType>,
+    },
     Tuple { dest: usize, elements: Vec<MirOperand> },
     Index { dest: usize, subject: MirOperand, index: usize },
     Emit(MirOperand),

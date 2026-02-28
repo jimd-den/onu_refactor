@@ -5,9 +5,9 @@ use onu_refactor::application::options::CompilationOptions;
 
 #[test]
 fn test_module_registration() {
-    let env = NativeOsEnvironment;
-    let codegen = OnuCodegen::new();
     let options = CompilationOptions::default();
+    let env = NativeOsEnvironment::new(options.log_level);
+    let codegen = OnuCodegen::new();
     
     let pipeline = CompilationPipeline::new(env, codegen, options);
     

@@ -92,7 +92,7 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         if self.options.stop_after == Some(CompilerStage::Analysis) { return Ok(()); }
 
         // 4. MIR Lowering
-        let mir_lowering_service = MirLoweringService::new(&self.env);
+        let mir_lowering_service = MirLoweringService::new(&self.env, &self.registry);
         let mir = mir_lowering_service.lower_program(&hir_discourses)?;
         if self.options.stop_after == Some(CompilerStage::Mir) { return Ok(()); }
 

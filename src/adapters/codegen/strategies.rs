@@ -13,7 +13,7 @@ use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::Module;
 use inkwell::values::{PointerValue, BasicValueEnum};
-use inkwell::types::{BasicTypeEnum};
+use inkwell::types::{BasicTypeEnum, BasicType};
 use std::collections::HashMap;
 
 pub trait InstructionStrategy<'ctx> {
@@ -78,34 +78,25 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Call { dest, name, args } = inst {
+        if let MirInstruction::Call { dest, name, args, return_type, arg_types } = inst {
             let llvm_name = name.clone(); // Use original hyphenated names
             
             let mut llvm_args = Vec::new();
-            let mut arg_types = Vec::new();
             for arg in args {
                 let val = operand_to_llvm(context, builder, ssa_storage, arg);
                 llvm_args.push(val.into());
-                arg_types.push(val.get_type().into());
             }
 
             let func = if let Some(f) = module.get_function(&llvm_name) {
                 f
             } else {
-                let i64_type = context.i64_type();
-                let ret_type: BasicTypeEnum = if ["as-text", "joined-with", "char-from-code", "tail-of", "init-of", "duplicated-as", "receives-argument", "receives-line"].contains(&llvm_name.as_str()) {
-                    let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                    context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).into()
-                } else {
-                    i64_type.into()
-                };
+                let llvm_arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = arg_types.iter()
+                    .map(|t| crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, t).into())
+                    .collect();
 
-                let fn_type = if ret_type == i64_type.into() {
-                    i64_type.fn_type(&arg_types, false)
-                } else {
-                    ret_type.into_struct_type().fn_type(&arg_types, false)
-                };
-
+                let ret_type = crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, return_type);
+                
+                let fn_type = ret_type.fn_type(&llvm_arg_types, false);
                 module.add_function(&llvm_name, fn_type, Some(inkwell::module::Linkage::External))
             };
             

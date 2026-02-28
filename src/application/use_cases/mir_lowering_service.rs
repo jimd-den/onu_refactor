@@ -7,17 +7,19 @@ use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeade
 use crate::domain::entities::mir::*;
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
+use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::options::LogLevel;
 
 pub struct MirLoweringService<'a, E: EnvironmentPort> {
     pub env: &'a E,
+    pub registry: &'a RegistryService,
 }
 
 impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
-    pub fn new(env: &'a E) -> Self {
-        Self { env }
+    pub fn new(env: &'a E, registry: &'a RegistryService) -> Self {
+        Self { env, registry }
     }
 
     fn log(&self, level: LogLevel, message: &str) {
@@ -104,7 +106,19 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
                         rhs: mir_args[1].clone(),
                     });
                 } else {
-                    builder.emit(MirInstruction::Call { dest, name: name.clone(), args: mir_args });
+                    let (return_type, arg_types) = if let Some(sig) = self.registry.get_signature(name) {
+                        (sig.return_type.clone(), sig.input_types.clone())
+                    } else {
+                        (OnuType::Nothing, Vec::new())
+                    };
+
+                    builder.emit(MirInstruction::Call { 
+                        dest, 
+                        name: name.clone(), 
+                        args: mir_args,
+                        return_type,
+                        arg_types,
+                    });
                 }
                 Ok(MirOperand::Variable(dest, false))
             }
