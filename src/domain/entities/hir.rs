@@ -28,10 +28,27 @@ pub struct HirArgument {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum HirBinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum HirExpression {
     Literal(HirLiteral),
     Variable(String, bool), // (name, is_consuming)
     Call { name: String, args: Vec<HirExpression> },
+    BinaryOp {
+        op: HirBinOp,
+        left: Box<HirExpression>,
+        right: Box<HirExpression>,
+    },
     Derivation { 
         name: String, 
         typ: OnuType, 

@@ -96,12 +96,13 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
 
                 let ret_type_opt = crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, return_type);
                 
-                let fn_type = if let Some(ret_type) = ret_type_opt {
-                    ret_type.fn_type(&llvm_arg_types, false)
+                if let Some(ret_type) = ret_type_opt {
+                    let fn_type = ret_type.fn_type(&llvm_arg_types, false);
+                    module.add_function(&llvm_name, fn_type, Some(inkwell::module::Linkage::External))
                 } else {
-                    context.void_type().fn_type(&llvm_arg_types, false)
-                };
-                module.add_function(&llvm_name, fn_type, Some(inkwell::module::Linkage::External))
+                    let fn_type = context.void_type().fn_type(&llvm_arg_types, false);
+                    module.add_function(&llvm_name, fn_type, Some(inkwell::module::Linkage::External))
+                }
             };
             
             let call = builder.build_call(func, &llvm_args, "calltmp").unwrap();
@@ -138,13 +139,7 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
             let val = operand_to_llvm(context, builder, ssa_storage, op);
             
             let str_val = if val.is_int_value() {
-                let i64_type = context.i64_type();
-                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                let str_struct_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false);
-                let as_text_fn = module.get_function("as-text").unwrap_or_else(|| {
-                    let fn_type = str_struct_type.fn_type(&[i64_type.into()], false);
-                    module.add_function("as-text", fn_type, Some(inkwell::module::Linkage::External))
-                });
+                let as_text_fn = module.get_function("as-text").expect("as-text not pre-declared");
                 let call_val = builder.build_call(as_text_fn, &[val.into()], "as_text_tmp").unwrap();
                 match call_val.try_as_basic_value() {
                     inkwell::values::ValueKind::Basic(v) => v,
@@ -160,12 +155,7 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
                 str_val
             };
 
-            let str_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-            let broadcasts_fn_type = context.void_type().fn_type(&[str_ptr_type.into()], false);
-            let broadcasts_fn = module.get_function("broadcasts").unwrap_or_else(|| {
-                module.add_function("broadcasts", broadcasts_fn_type, Some(inkwell::module::Linkage::External))
-            });
-
+            let broadcasts_fn = module.get_function("broadcasts").expect("broadcasts not pre-declared");
             builder.build_call(broadcasts_fn, &[arg.into()], "emit").unwrap();
         }
         Ok(())

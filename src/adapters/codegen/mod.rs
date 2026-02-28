@@ -84,15 +84,14 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
         let void_type = self.context.void_type();
         let i64_type = self.context.i64_type();
         
-        // Runtime expects OnuString* (which is struct {i64, i8*} *)
+        // Runtime expects OnuString (which is struct {i64, i8*})
         let string_struct = self.context.struct_type(&[i64_type.into(), i8_ptr.into()], false);
-        let string_ptr = string_struct.ptr_type(inkwell::AddressSpace::default());
         
-        let broadcast_type = void_type.fn_type(&[string_ptr.into()], false);
-        self.module.add_function("onu_broadcast", broadcast_type, Some(Linkage::External));
+        let broadcasts_type = void_type.fn_type(&[i8_ptr.into()], false);
+        self.module.add_function("broadcasts", broadcasts_type, Some(Linkage::External));
 
-        let as_text_type = i64_type.fn_type(&[i64_type.into()], false);
-        self.module.add_function("as_text", as_text_type, Some(Linkage::External));
+        let as_text_type = string_struct.fn_type(&[i64_type.into()], false);
+        self.module.add_function("as-text", as_text_type, Some(Linkage::External));
 
         for func in &program.functions {
             self.declare_function(func);
@@ -108,9 +107,13 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             .map(|arg| self.onu_type_to_llvm(&arg.typ).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
             .collect();
         
-        let llvm_name = if func.name == "run" || func.name == "main" { "main".to_string() } else { func.name.clone() };
+        let is_main = func.name == "run" || func.name == "main";
+        let llvm_name = if is_main { "main".to_string() } else { func.name.clone() };
         
-if let Some(ret_type) = self.onu_type_to_llvm(&func.return_type) {
+        if is_main {
+            let fn_type = self.context.i32_type().fn_type(&arg_types, false);
+            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External));
+        } else if let Some(ret_type) = self.onu_type_to_llvm(&func.return_type) {
             let fn_type = ret_type.fn_type(&arg_types, false);
             self.module.add_function(&llvm_name, fn_type, Some(Linkage::External));
         } else {
@@ -180,11 +183,14 @@ if let Some(ret_type) = self.onu_type_to_llvm(&func.return_type) {
     fn generate_terminator(&mut self, term: &MirTerminator) -> Result<(), OnuError> {
         let current_bb = self.builder.get_insert_block().unwrap();
         let function = current_bb.get_parent().unwrap();
+        let is_main = function.get_name().to_str().unwrap() == "main";
         let is_void = function.get_type().get_return_type().is_none();
 
         match term {
             MirTerminator::Return(op) => {
-                if is_void {
+                if is_main {
+                    self.builder.build_return(Some(&self.context.i32_type().const_int(0, false))).unwrap();
+                } else if is_void {
                     self.builder.build_return(None).unwrap();
                 } else {
                     let val = strategies::operand_to_llvm(self.context, &self.builder, &mut self.ssa_storage, op);

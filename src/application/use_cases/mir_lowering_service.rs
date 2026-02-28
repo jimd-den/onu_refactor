@@ -3,7 +3,7 @@
 /// This service orchestrates the translation of HIR into MIR.
 /// It delegates low-level construction details to the MirBuilder.
 
-use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeader, HirLiteral};
+use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeader, HirLiteral, HirBinOp};
 use crate::domain::entities::mir::*;
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
@@ -78,48 +78,48 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
                     })?;
                 Result::<MirOperand, OnuError>::Ok(MirOperand::Variable(ssa_var, *is_consuming))
             }
+            HirExpression::BinaryOp { op, left, right } => {
+                let lhs = self.lower_expression(left, builder, false)?;
+                let rhs = self.lower_expression(right, builder, false)?;
+                let dest = builder.new_ssa();
+                let mir_op = match op {
+                    HirBinOp::Add => MirBinOp::Add,
+                    HirBinOp::Sub => MirBinOp::Sub,
+                    HirBinOp::Mul => MirBinOp::Mul,
+                    HirBinOp::Div => MirBinOp::Div,
+                    HirBinOp::Equal => MirBinOp::Eq,
+                    HirBinOp::NotEqual => MirBinOp::Eq, // FIXME: Add NotEqual to MirBinOp if needed
+                    HirBinOp::LessThan => MirBinOp::Lt,
+                    HirBinOp::GreaterThan => MirBinOp::Gt,
+                };
+                builder.emit(MirInstruction::BinaryOperation {
+                    dest,
+                    op: mir_op,
+                    lhs,
+                    rhs,
+                });
+                Ok(MirOperand::Variable(dest, false))
+            }
             HirExpression::Call { name, args } => {
                 let mut mir_args = Vec::new();
                 for arg in args {
                     mir_args.push(self.lower_expression(arg, builder, false)?);
                 }
                 
-                let bin_op = if mir_args.len() == 2 {
-                    match name.as_str() {
-                        "added-to" | "added_to" => Some(MirBinOp::Add),
-                        "decreased-by" | "decreased_by" => Some(MirBinOp::Sub),
-                        "scales-by" | "scales_by" => Some(MirBinOp::Mul),
-                        "partitions-by" | "partitions_by" => Some(MirBinOp::Div),
-                        "matches" => Some(MirBinOp::Eq),
-                        "exceeds" => Some(MirBinOp::Gt),
-                        "falls-short-of" | "falls_short_of" => Some(MirBinOp::Lt),
-                        _ => None,
-                    }
-                } else { None };
-
                 let dest = builder.new_ssa();
-                if let Some(op) = bin_op {
-                    builder.emit(MirInstruction::BinaryOperation {
-                        dest,
-                        op,
-                        lhs: mir_args[0].clone(),
-                        rhs: mir_args[1].clone(),
-                    });
+                let (return_type, arg_types) = if let Some(sig) = self.registry.get_signature(name) {
+                    (sig.return_type.clone(), sig.input_types.clone())
                 } else {
-                    let (return_type, arg_types) = if let Some(sig) = self.registry.get_signature(name) {
-                        (sig.return_type.clone(), sig.input_types.clone())
-                    } else {
-                        (OnuType::Nothing, Vec::new())
-                    };
+                    (OnuType::Nothing, Vec::new())
+                };
 
-                    builder.emit(MirInstruction::Call { 
-                        dest, 
-                        name: name.clone(), 
-                        args: mir_args,
-                        return_type,
-                        arg_types,
-                    });
-                }
+                builder.emit(MirInstruction::Call { 
+                    dest, 
+                    name: name.clone(), 
+                    args: mir_args,
+                    return_type,
+                    arg_types,
+                });
                 Ok(MirOperand::Variable(dest, false))
             }
             HirExpression::Derivation { name, value, body, .. } => {

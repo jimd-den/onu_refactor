@@ -3,8 +3,8 @@
 /// This service translates Domain Entities (AST) into more
 /// detailed Domain Entities (HIR).
 
-use crate::domain::entities::ast::{Discourse, Expression, BehaviorHeader, Argument};
-use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeader, HirArgument, HirLiteral};
+use crate::domain::entities::ast::{Discourse, Expression, BehaviorHeader, Argument, BinOp};
+use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeader, HirArgument, HirLiteral, HirBinOp};
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::registry_service::RegistryService;
 
@@ -53,11 +53,25 @@ impl LoweringService {
         }
     }
 
-    fn lower_expression(expr: &Expression, registry: &RegistryService) -> HirExpression {
+    pub fn lower_expression(expr: &Expression, registry: &RegistryService) -> HirExpression {
         match expr {
             Expression::I128(n) => HirExpression::Literal(HirLiteral::I64(*n as i64)),
             Expression::F64(n) => HirExpression::Literal(HirLiteral::F64(*n)),
             Expression::Boolean(b) => HirExpression::Literal(HirLiteral::Boolean(*b)),
+            Expression::BinaryOp { op, left, right } => HirExpression::BinaryOp {
+                op: match op {
+                    BinOp::Add => HirBinOp::Add,
+                    BinOp::Sub => HirBinOp::Sub,
+                    BinOp::Mul => HirBinOp::Mul,
+                    BinOp::Div => HirBinOp::Div,
+                    BinOp::Equal => HirBinOp::Equal,
+                    BinOp::NotEqual => HirBinOp::NotEqual,
+                    BinOp::LessThan => HirBinOp::LessThan,
+                    BinOp::GreaterThan => HirBinOp::GreaterThan,
+                },
+                left: Box::new(Self::lower_expression(left, registry)),
+                right: Box::new(Self::lower_expression(right, registry)),
+            },
             Expression::Text(s) => HirExpression::Literal(HirLiteral::Text(s.clone())),
             Expression::Nothing => HirExpression::Literal(HirLiteral::Nothing),
             Expression::Identifier(s) => {
@@ -68,9 +82,34 @@ impl LoweringService {
                     HirExpression::Variable(s.clone(), false)
                 }
             },
-            Expression::BehaviorCall { name, args } => HirExpression::Call {
-                name: name.clone(),
-                args: args.iter().map(|e| Self::lower_expression(e, registry)).collect(),
+            Expression::BehaviorCall { name, args } => {
+                // Handle legacy string-based binary operations
+                let op = match name.as_str() {
+                    "added-to" | "addedto" => Some(HirBinOp::Add),
+                    "decreased-by" | "decreasedby" => Some(HirBinOp::Sub),
+                    "scales-by" | "scalesby" => Some(HirBinOp::Mul),
+                    "partitions-by" | "partitionsby" => Some(HirBinOp::Div),
+                    "matches" => Some(HirBinOp::Equal),
+                    "opposes" => Some(HirBinOp::NotEqual),
+                    "falls-short-of" => Some(HirBinOp::LessThan),
+                    "exceeds" => Some(HirBinOp::GreaterThan),
+                    _ => None,
+                };
+
+                if let Some(bin_op) = op {
+                    if args.len() == 2 {
+                        return HirExpression::BinaryOp {
+                            op: bin_op,
+                            left: Box::new(Self::lower_expression(&args[0], registry)),
+                            right: Box::new(Self::lower_expression(&args[1], registry)),
+                        };
+                    }
+                }
+
+                HirExpression::Call {
+                    name: name.clone(),
+                    args: args.iter().map(|e| Self::lower_expression(e, registry)).collect(),
+                }
             },
             Expression::Derivation { name, type_info, value, body, .. } => HirExpression::Derivation {
                 name: name.clone(),
