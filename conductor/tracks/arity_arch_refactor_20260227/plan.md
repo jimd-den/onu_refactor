@@ -1,6 +1,6 @@
 # Implementation Plan: Onu Compiler Refactor (Arity & Architecture)
 
-## Phase 1: Semantic Binary Operations (TDD)
+## Phase 1: Semantic Binary Operations (TDD) [checkpoint: 54f2f5b]
 - [x] Task: Create failing tests for `HirBinOp` and `HirExpression::BinaryOp` in `hir.rs`
 - [x] Task: Define `HirBinOp` and `HirExpression::BinaryOp` in `domain/entities/hir.rs` (Green)
 - [x] Task: Create failing tests for `LoweringService` to map strings to `HirBinOp` (Red)
@@ -8,7 +8,7 @@
 - [x] Task: Create failing tests for `MirLoweringService` to map `HirBinOp` to `MirBinOp` (Red)
 - [x] Task: Update `MirLoweringService` to map `HirBinOp` to `MirBinOp` exhaustively (Green)
 - [x] Task: Verify all samples pass with new `HirBinOp` structure
-- [~] Task: Conductor - User Manual Verification 'Phase 1: Semantic Binary Operations' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: Semantic Binary Operations' (Protocol in workflow.md) 54f2f5b
 
 ## Phase 2: Two-Pass Parsing (TDD)
 - [ ] Task: Create failing tests for `Parser::scan_headers()` to register signatures (Red)
