@@ -20,7 +20,7 @@
 - [x] Task: Verify all samples compile and execute correctly
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Two-Pass Parsing' (Protocol in workflow.md) d387639
 
-## Phase 3: Pipeline Decomposition & Clean Arch (TDD)
+## Phase 3: Pipeline Decomposition ## Phase 3: Pipeline Decomposition & Clean Arch (TDD) Clean Arch (TDD) [checkpoint: eed1d89]
 - [x] Task: Create failing tests for individual `CompilationPipeline` stages (Red)
 - [x] Task: Decompose `CompilationPipeline::compile()` into stage methods (Green)
 - [x] Task: Create failing tests for injected `EnvironmentPort` in `AnalysisService` and `ModuleService` (Red)
@@ -28,7 +28,7 @@
 - [x] Task: Create failing tests for `OwnershipRule` using `BehaviorRegistryPort` (Red)
 - [x] Task: Define `BehaviorRegistryPort` and refactor `OwnershipRule` (Green)
 - [x] Task: Verify all tests and samples pass with the refactored architecture
-- [~] Task: Conductor - User Manual Verification 'Phase 3: Pipeline Decomposition & Clean Arch' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 3: Pipeline Decomposition - [~] Task: Conductor - User Manual Verification 'Phase 3: Pipeline Decomposition & Clean Arch' (Protocol in workflow.md) Clean Arch' (Protocol in workflow.md) eed1d89
 
 ## Phase 4: Final Validation & Cleanup
 - [ ] Task: Run full regression suite on all samples and unit tests
