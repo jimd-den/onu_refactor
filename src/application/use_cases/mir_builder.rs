@@ -124,6 +124,41 @@ impl MirBuilder {
         }
     }
 
+    pub fn build_index(&mut self, dest: usize, subject: crate::domain::entities::mir::MirOperand, index: usize) {
+        self.emit(MirInstruction::Index { dest, subject, index });
+    }
+
+    pub fn build_alloc(&mut self, dest: usize, size_bytes: crate::domain::entities::mir::MirOperand) {
+        self.emit(MirInstruction::Alloc { dest, size_bytes });
+    }
+
+    pub fn build_memcpy(&mut self, dest: crate::domain::entities::mir::MirOperand, src: crate::domain::entities::mir::MirOperand, size: crate::domain::entities::mir::MirOperand) {
+        self.emit(MirInstruction::MemCopy { dest, src, size });
+    }
+
+    pub fn build_pointer_offset(&mut self, dest: usize, ptr: crate::domain::entities::mir::MirOperand, offset: crate::domain::entities::mir::MirOperand) {
+        self.emit(MirInstruction::PointerOffset { dest, ptr, offset });
+    }
+
+    pub fn build_string_tuple(&mut self, dest: usize, len: crate::domain::entities::mir::MirOperand, ptr: crate::domain::entities::mir::MirOperand, is_dynamic: bool) {
+        self.emit(MirInstruction::Tuple {
+            dest,
+            elements: vec![
+                len,
+                ptr,
+                crate::domain::entities::mir::MirOperand::Constant(crate::domain::entities::mir::MirLiteral::Boolean(is_dynamic)),
+            ],
+        });
+    }
+
+    pub fn build_binop(&mut self, dest: usize, op: crate::domain::entities::mir::MirBinOp, lhs: crate::domain::entities::mir::MirOperand, rhs: crate::domain::entities::mir::MirOperand) {
+        self.emit(MirInstruction::BinaryOperation { dest, op, lhs, rhs });
+    }
+
+    pub fn build_assign(&mut self, dest: usize, src: crate::domain::entities::mir::MirOperand) {
+        self.emit(MirInstruction::Assign { dest, src });
+    }
+
     pub fn terminate(&mut self, term: MirTerminator) {
         if let Some(idx) = self.current_block_idx {
             self.blocks[idx].terminator = term;

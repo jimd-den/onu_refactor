@@ -119,164 +119,21 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
                 }
                 
                 if name == "as-text" && mir_args.len() == 1 {
-                    let dest = builder.new_ssa();
-                    let a = &mir_args[0];
-
-                    // Alloc buffer: 32 bytes should be enough for i64
-                    let alloc_size_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Assign { dest: alloc_size_ssa, src: MirOperand::Constant(MirLiteral::I64(32)) });
-
-                    let buf_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Alloc {
-                        dest: buf_ssa,
-                        size_bytes: MirOperand::Variable(alloc_size_ssa, false),
-                    });
-
-                    // Call snprintf(buf, 32, "%lld", a)
-                    // Wait, do we have snprintf or sprintf? Let's assume sprintf.
-                    // Instead, let's just emit a call to snprintf.
-                    // We need "%lld" string literal.
-                    let fmt_str_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Assign { dest: fmt_str_ssa, src: MirOperand::Constant(MirLiteral::Text("%lld".to_string())) });
-
-                    let fmt_str_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Index { dest: fmt_str_ptr_ssa, subject: MirOperand::Variable(fmt_str_ssa, false), index: 1 });
-
-                    let sprintf_ret_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Call {
-                        dest: sprintf_ret_ssa,
-                        name: "sprintf".to_string(),
-                        args: vec![
-                            MirOperand::Variable(buf_ssa, false),
-                            MirOperand::Variable(fmt_str_ptr_ssa, false),
-                            a.clone()
-                        ],
-                        return_type: OnuType::I32,
-                        arg_types: vec![OnuType::Nothing, OnuType::Nothing, OnuType::I64],
-                    });
-
-                    // sprintf_ret is the length (i32). Let's cast it to i64? Or just use it? Wait, sprintf_ret is i32, but MIR only has I64.
-                    // We can just assume sprintf returns i64 or let's assume it works.
-                    // For now, let's just use sprintf_ret_ssa (which is I32 in LLVM, so might be problematic). Let's use strlen instead?
-                    // Actually, let's just create a tuple.
-                    let cast_len_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Call {
-                        dest: cast_len_ssa,
-                        name: "strlen".to_string(),
-                        args: vec![MirOperand::Variable(buf_ssa, false)],
-                        return_type: OnuType::I64,
-                        arg_types: vec![OnuType::Nothing],
-                    });
-
-                    builder.emit(MirInstruction::Tuple {
-                        dest,
-                        elements: vec![
-                            MirOperand::Variable(cast_len_ssa, false),
-                            MirOperand::Variable(buf_ssa, false),
-                            MirOperand::Constant(MirLiteral::Boolean(true)), // is_dynamic
-                        ],
-                    });
-
-                    return Ok(MirOperand::Variable(dest, false));
+                    let result = self.lower_as_text(&mir_args[0], builder);
+                    let pending = builder.take_pending_drops();
+                    for (var, typ) in pending {
+                        builder.emit(MirInstruction::Drop { ssa_var: var, typ });
+                    }
+                    return Ok(result);
                 }
 
                 if name == "joined-with" && mir_args.len() == 2 {
-                    let dest = builder.new_ssa();
-                    let a = &mir_args[0];
-                    let b = &mir_args[1];
-
-                    // a.len
-                    let a_len_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Index { dest: a_len_ssa, subject: a.clone(), index: 0 });
-                    // b.len
-                    let b_len_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Index { dest: b_len_ssa, subject: b.clone(), index: 0 });
-
-                    // sum len = a.len + b.len
-                    let sum_len_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::BinaryOperation {
-                        dest: sum_len_ssa,
-                        op: MirBinOp::Add,
-                        lhs: MirOperand::Variable(a_len_ssa, false),
-                        rhs: MirOperand::Variable(b_len_ssa, false),
-                    });
-
-                    // a.ptr
-                    let a_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Index { dest: a_ptr_ssa, subject: a.clone(), index: 1 });
-                    // b.ptr
-                    let b_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Index { dest: b_ptr_ssa, subject: b.clone(), index: 1 });
-
-                    // alloc_size = sum_len + 1
-                    let alloc_size_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::BinaryOperation {
-                        dest: alloc_size_ssa,
-                        op: MirBinOp::Add,
-                        lhs: MirOperand::Variable(sum_len_ssa, false),
-                        rhs: MirOperand::Constant(MirLiteral::I64(1)),
-                    });
-
-                    // Alloc buffer
-                    let buf_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Alloc {
-                        dest: buf_ssa,
-                        size_bytes: MirOperand::Variable(alloc_size_ssa, false),
-                    });
-
-                    // MemCopy a
-                    builder.emit(MirInstruction::MemCopy {
-                        dest: MirOperand::Variable(buf_ssa, false),
-                        src: MirOperand::Variable(a_ptr_ssa, false),
-                        size: MirOperand::Variable(a_len_ssa, false),
-                    });
-
-                    // Offset buffer for b
-                    let b_dest_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::PointerOffset {
-                        dest: b_dest_ptr_ssa,
-                        ptr: MirOperand::Variable(buf_ssa, false),
-                        offset: MirOperand::Variable(a_len_ssa, false),
-                    });
-
-                    // MemCopy b
-                    builder.emit(MirInstruction::MemCopy {
-                        dest: MirOperand::Variable(b_dest_ptr_ssa, false),
-                        src: MirOperand::Variable(b_ptr_ssa, false),
-                        size: MirOperand::Variable(b_len_ssa, false),
-                    });
-
-                    // Null terminator (size 1)
-                    let null_dest_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::PointerOffset {
-                        dest: null_dest_ptr_ssa,
-                        ptr: MirOperand::Variable(buf_ssa, false),
-                        offset: MirOperand::Variable(sum_len_ssa, false),
-                    });
-
-                    // To keep it simple, we can copy a 1-byte null terminator
-                    let null_char_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Assign { dest: null_char_ptr_ssa, src: MirOperand::Constant(MirLiteral::Text("".to_string())) });
-                    let null_char_str_ptr_ssa = builder.new_ssa();
-                    builder.emit(MirInstruction::Index { dest: null_char_str_ptr_ssa, subject: MirOperand::Variable(null_char_ptr_ssa, false), index: 1 });
-
-                    builder.emit(MirInstruction::MemCopy {
-                        dest: MirOperand::Variable(null_dest_ptr_ssa, false),
-                        src: MirOperand::Variable(null_char_str_ptr_ssa, false),
-                        size: MirOperand::Constant(MirLiteral::I64(1)),
-                    });
-
-                    // Let's create a tuple of {sum_len, buf_ssa, is_dynamic}
-                    builder.emit(MirInstruction::Tuple {
-                        dest,
-                        elements: vec![
-                            MirOperand::Variable(sum_len_ssa, false),
-                            MirOperand::Variable(buf_ssa, false),
-                            MirOperand::Constant(MirLiteral::Boolean(true)), // is_dynamic
-                        ],
-                    });
-
-                    return Ok(MirOperand::Variable(dest, false));
+                    let result = self.lower_joined_with(&mir_args[0], &mir_args[1], builder);
+                    let pending = builder.take_pending_drops();
+                    for (var, typ) in pending {
+                        builder.emit(MirInstruction::Drop { ssa_var: var, typ });
+                    }
+                    return Ok(result);
                 }
 
                 let dest = builder.new_ssa();
@@ -422,5 +279,116 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         }?;
         self.log(LogLevel::Trace, &format!("Expression result: {:?}", res));
         Ok(res)
+    }
+
+    fn lower_as_text(&self, arg: &MirOperand, builder: &mut MirBuilder) -> MirOperand {
+        let dest = builder.new_ssa();
+
+        let alloc_size_ssa = builder.new_ssa();
+        builder.build_assign(alloc_size_ssa, MirOperand::Constant(MirLiteral::I64(32)));
+
+        let buf_ssa = builder.new_ssa();
+        builder.build_alloc(buf_ssa, MirOperand::Variable(alloc_size_ssa, false));
+
+        let fmt_str_ssa = builder.new_ssa();
+        builder.build_assign(fmt_str_ssa, MirOperand::Constant(MirLiteral::Text("%lld".to_string())));
+
+        let fmt_str_ptr_ssa = builder.new_ssa();
+        builder.build_index(fmt_str_ptr_ssa, MirOperand::Variable(fmt_str_ssa, false), 1);
+
+        let sprintf_ret_ssa = builder.new_ssa();
+        builder.emit(MirInstruction::Call {
+            dest: sprintf_ret_ssa,
+            name: "sprintf".to_string(),
+            args: vec![
+                MirOperand::Variable(buf_ssa, false),
+                MirOperand::Variable(fmt_str_ptr_ssa, false),
+                arg.clone()
+            ],
+            return_type: OnuType::I32,
+            arg_types: vec![OnuType::Nothing, OnuType::Nothing, OnuType::I64],
+        });
+
+        let cast_len_ssa = builder.new_ssa();
+        builder.emit(MirInstruction::Call {
+            dest: cast_len_ssa,
+            name: "strlen".to_string(),
+            args: vec![MirOperand::Variable(buf_ssa, false)],
+            return_type: OnuType::I64,
+            arg_types: vec![OnuType::Nothing],
+        });
+
+        builder.build_string_tuple(
+            dest,
+            MirOperand::Variable(cast_len_ssa, false),
+            MirOperand::Variable(buf_ssa, false),
+            true
+        );
+
+        MirOperand::Variable(dest, false)
+    }
+
+    fn lower_joined_with(&self, a: &MirOperand, b: &MirOperand, builder: &mut MirBuilder) -> MirOperand {
+        let dest = builder.new_ssa();
+
+        let a_len_ssa = builder.new_ssa();
+        builder.build_index(a_len_ssa, a.clone(), 0);
+
+        let b_len_ssa = builder.new_ssa();
+        builder.build_index(b_len_ssa, b.clone(), 0);
+
+        let sum_len_ssa = builder.new_ssa();
+        builder.build_binop(sum_len_ssa, MirBinOp::Add, MirOperand::Variable(a_len_ssa, false), MirOperand::Variable(b_len_ssa, false));
+
+        let a_ptr_ssa = builder.new_ssa();
+        builder.build_index(a_ptr_ssa, a.clone(), 1);
+
+        let b_ptr_ssa = builder.new_ssa();
+        builder.build_index(b_ptr_ssa, b.clone(), 1);
+
+        let alloc_size_ssa = builder.new_ssa();
+        builder.build_binop(alloc_size_ssa, MirBinOp::Add, MirOperand::Variable(sum_len_ssa, false), MirOperand::Constant(MirLiteral::I64(1)));
+
+        let buf_ssa = builder.new_ssa();
+        builder.build_alloc(buf_ssa, MirOperand::Variable(alloc_size_ssa, false));
+
+        builder.build_memcpy(
+            MirOperand::Variable(buf_ssa, false),
+            MirOperand::Variable(a_ptr_ssa, false),
+            MirOperand::Variable(a_len_ssa, false)
+        );
+
+        let b_dest_ptr_ssa = builder.new_ssa();
+        builder.build_pointer_offset(b_dest_ptr_ssa, MirOperand::Variable(buf_ssa, false), MirOperand::Variable(a_len_ssa, false));
+
+        builder.build_memcpy(
+            MirOperand::Variable(b_dest_ptr_ssa, false),
+            MirOperand::Variable(b_ptr_ssa, false),
+            MirOperand::Variable(b_len_ssa, false)
+        );
+
+        let null_dest_ptr_ssa = builder.new_ssa();
+        builder.build_pointer_offset(null_dest_ptr_ssa, MirOperand::Variable(buf_ssa, false), MirOperand::Variable(sum_len_ssa, false));
+
+        let null_char_ptr_ssa = builder.new_ssa();
+        builder.build_assign(null_char_ptr_ssa, MirOperand::Constant(MirLiteral::Text("".to_string())));
+
+        let null_char_str_ptr_ssa = builder.new_ssa();
+        builder.build_index(null_char_str_ptr_ssa, MirOperand::Variable(null_char_ptr_ssa, false), 1);
+
+        builder.build_memcpy(
+            MirOperand::Variable(null_dest_ptr_ssa, false),
+            MirOperand::Variable(null_char_str_ptr_ssa, false),
+            MirOperand::Constant(MirLiteral::I64(1))
+        );
+
+        builder.build_string_tuple(
+            dest,
+            MirOperand::Variable(sum_len_ssa, false),
+            MirOperand::Variable(buf_ssa, false),
+            true
+        );
+
+        MirOperand::Variable(dest, false)
     }
 }
