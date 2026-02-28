@@ -8,6 +8,10 @@
 - **chrono**: Utilized for time-related operations.
 - **either**: Used for functional-style error handling and branching.
 
+## Compiler Architecture
+- **Two-Pass Parsing**: Implements a header scan pre-pass to register behavior signatures before full body parsing, enabling arity-bounded argument collection.
+- **Type-Driven Lowering**: Moves from string-based resolution to purely type-driven transformations across HIR and MIR stages.
+
 ## Build & Test Infrastructure
 - **cargo**: The standard Rust build tool and package manager.
 - **rustc**: The underlying Rust compiler.
