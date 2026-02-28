@@ -7,7 +7,7 @@
 use crate::domain::entities::hir::{HirExpression, HirBehaviorHeader, HirArgument};
 use crate::domain::entities::types::OnuType;
 use crate::domain::entities::error::OnuError;
-use crate::application::use_cases::registry_service::RegistryService;
+use crate::domain::entities::registry::BehaviorRegistryPort;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,11 +17,11 @@ pub enum VariableStatus {
 }
 
 pub struct OwnershipRule<'a> {
-    pub registry: &'a RegistryService,
+    pub registry: &'a dyn BehaviorRegistryPort,
 }
 
 impl<'a> OwnershipRule<'a> {
-    pub fn new(registry: &'a RegistryService) -> Self {
+    pub fn new(registry: &'a dyn BehaviorRegistryPort) -> Self {
         Self { registry }
     }
 

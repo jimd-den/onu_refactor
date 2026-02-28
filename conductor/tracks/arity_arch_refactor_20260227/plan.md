@@ -21,14 +21,14 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Two-Pass Parsing' (Protocol in workflow.md) d387639
 
 ## Phase 3: Pipeline Decomposition & Clean Arch (TDD)
-- [ ] Task: Create failing tests for individual `CompilationPipeline` stages (Red)
-- [ ] Task: Decompose `CompilationPipeline::compile()` into stage methods (Green)
-- [ ] Task: Create failing tests for injected `EnvironmentPort` in `AnalysisService` and `ModuleService` (Red)
-- [ ] Task: Inject `&dyn EnvironmentPort` and update logging in services (Green)
-- [ ] Task: Create failing tests for `OwnershipRule` using `BehaviorRegistryPort` (Red)
-- [ ] Task: Define `BehaviorRegistryPort` and refactor `OwnershipRule` (Green)
-- [ ] Task: Verify all tests and samples pass with the refactored architecture
-- [ ] Task: Conductor - User Manual Verification 'Phase 3: Pipeline Decomposition & Clean Arch' (Protocol in workflow.md)
+- [x] Task: Create failing tests for individual `CompilationPipeline` stages (Red)
+- [x] Task: Decompose `CompilationPipeline::compile()` into stage methods (Green)
+- [x] Task: Create failing tests for injected `EnvironmentPort` in `AnalysisService` and `ModuleService` (Red)
+- [x] Task: Inject `&dyn EnvironmentPort` and update logging in services (Green)
+- [x] Task: Create failing tests for `OwnershipRule` using `BehaviorRegistryPort` (Red)
+- [x] Task: Define `BehaviorRegistryPort` and refactor `OwnershipRule` (Green)
+- [x] Task: Verify all tests and samples pass with the refactored architecture
+- [~] Task: Conductor - User Manual Verification 'Phase 3: Pipeline Decomposition & Clean Arch' (Protocol in workflow.md)
 
 ## Phase 4: Final Validation & Cleanup
 - [ ] Task: Run full regression suite on all samples and unit tests

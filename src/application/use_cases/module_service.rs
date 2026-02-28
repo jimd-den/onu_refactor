@@ -6,21 +6,21 @@
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::registry::BuiltInModule;
 use crate::application::options::LogLevel;
-use chrono::Local;
+use crate::application::ports::environment::EnvironmentPort;
 
-pub struct ModuleService {
+pub struct ModuleService<'a> {
+    pub env: &'a dyn EnvironmentPort,
     pub log_level: LogLevel,
 }
 
-impl ModuleService {
-    pub fn new(log_level: LogLevel) -> Self {
-        Self { log_level }
+impl<'a> ModuleService<'a> {
+    pub fn new(env: &'a dyn EnvironmentPort, log_level: LogLevel) -> Self {
+        Self { env, log_level }
     }
 
     fn log(&self, level: LogLevel, message: &str) {
-        if level <= self.log_level && level != LogLevel::None {
-            let timestamp = Local::now().to_rfc3339();
-            eprintln!("[{}] {:?}: [ModuleService] {}", timestamp, level, message);
+        if level <= self.log_level {
+            self.env.log(level, &format!("[ModuleService] {}", message));
         }
     }
 

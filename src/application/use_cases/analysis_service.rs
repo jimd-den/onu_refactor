@@ -9,17 +9,20 @@ use crate::domain::rules::ownership::OwnershipRule;
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 use crate::application::options::LogLevel;
-use chrono::Local;
+
+use crate::application::ports::environment::EnvironmentPort;
 
 pub struct AnalysisService<'a> {
+    env: &'a dyn EnvironmentPort,
     registry: &'a RegistryService,
     liveness_rule: LivenessRule,
     ownership_rule: OwnershipRule<'a>,
 }
 
 impl<'a> AnalysisService<'a> {
-    pub fn new(registry: &'a RegistryService) -> Self {
+    pub fn new(env: &'a dyn EnvironmentPort, registry: &'a RegistryService) -> Self {
         Self {
+            env,
             registry,
             liveness_rule: LivenessRule,
             ownership_rule: OwnershipRule { registry },
@@ -27,11 +30,7 @@ impl<'a> AnalysisService<'a> {
     }
 
     fn log(&self, level: LogLevel, message: &str) {
-        // Since AnalysisService doesn't have env, we log to stderr with timestamp
-        if level != LogLevel::None {
-            let timestamp = Local::now().to_rfc3339();
-            eprintln!("[{}] {:?}: [Analysis] {}", timestamp, level, message);
-        }
+        self.env.log(level, &format!("[Analysis] {}", message));
     }
 
     pub fn analyze_discourse(&self, discourse: &mut HirDiscourse) -> Result<(), OnuError> {

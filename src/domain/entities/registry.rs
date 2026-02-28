@@ -15,6 +15,16 @@ pub struct BehaviorSignature {
     pub arg_is_observation: Vec<bool>,
 }
 
+pub trait BehaviorRegistryPort {
+    fn get_signature(&self, name: &str) -> Option<&BehaviorSignature>;
+}
+
+impl BehaviorRegistryPort for SymbolTable {
+    fn get_signature(&self, name: &str) -> Option<&BehaviorSignature> {
+        self.signatures.get(name)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     names: HashSet<String>,
