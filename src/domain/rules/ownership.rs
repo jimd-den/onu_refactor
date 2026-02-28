@@ -4,7 +4,7 @@
 /// It ensures that resources (Strings, Matrices, Arrays) are not
 /// used after their custody has been relinquished.
 
-use crate::domain::entities::hir::{HirExpression, HirBehaviorHeader, HirArgument};
+use crate::domain::entities::hir::{HirExpression, HirBehaviorHeader};
 use crate::domain::entities::types::OnuType;
 use crate::domain::entities::error::OnuError;
 use crate::domain::entities::registry::BehaviorRegistryPort;

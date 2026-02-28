@@ -6,7 +6,7 @@
 use crate::domain::entities::hir::HirDiscourse;
 use crate::domain::rules::liveness::LivenessRule;
 use crate::domain::rules::ownership::OwnershipRule;
-use crate::application::use_cases::registry_service::RegistryService;
+use crate::domain::entities::registry::BehaviorRegistryPort;
 use crate::domain::entities::error::OnuError;
 use crate::application::options::LogLevel;
 
@@ -14,18 +14,16 @@ use crate::application::ports::environment::EnvironmentPort;
 
 pub struct AnalysisService<'a> {
     env: &'a dyn EnvironmentPort,
-    registry: &'a RegistryService,
     liveness_rule: LivenessRule,
     ownership_rule: OwnershipRule<'a>,
 }
 
 impl<'a> AnalysisService<'a> {
-    pub fn new(env: &'a dyn EnvironmentPort, registry: &'a RegistryService) -> Self {
+    pub fn new(env: &'a dyn EnvironmentPort, registry: &'a dyn BehaviorRegistryPort) -> Self {
         Self {
             env,
-            registry,
             liveness_rule: LivenessRule,
-            ownership_rule: OwnershipRule { registry },
+            ownership_rule: OwnershipRule::new(registry),
         }
     }
 

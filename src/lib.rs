@@ -8,7 +8,7 @@ use crate::application::use_cases::analysis_service::AnalysisService;
 use crate::application::use_cases::lowering_service::LoweringService;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::module_service::ModuleService;
-use crate::application::ports::compiler_ports::{LexerPort, ParserPort, CodegenPort};
+use crate::application::ports::compiler_ports::{LexerPort, CodegenPort};
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::options::{CompilationOptions, CompilerStage, LogLevel};
 use crate::domain::entities::error::OnuError;

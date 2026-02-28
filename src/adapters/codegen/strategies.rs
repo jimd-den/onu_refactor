@@ -6,7 +6,6 @@
 
 use crate::domain::entities::mir::{MirInstruction, MirBinOp, MirOperand, MirLiteral};
 use crate::domain::entities::error::OnuError;
-use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::registry_service::RegistryService;
 
 use inkwell::context::Context;

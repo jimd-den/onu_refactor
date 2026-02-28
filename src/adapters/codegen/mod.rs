@@ -14,8 +14,8 @@ use crate::adapters::codegen::strategies::*;
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::{Module, Linkage};
-use inkwell::values::{FunctionValue, PointerValue};
-use inkwell::types::{BasicTypeEnum, BasicMetadataTypeEnum, BasicType};
+use inkwell::values::PointerValue;
+use inkwell::types::{BasicTypeEnum, BasicType};
 use std::collections::HashMap;
 
 pub struct OnuCodegen {
