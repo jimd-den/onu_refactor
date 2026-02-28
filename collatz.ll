@@ -29,7 +29,9 @@ bb0:
   %v14 = alloca i64, align 8
   %v13 = alloca i64, align 8
   %v12 = alloca i64, align 8
+  %v23 = alloca i64, align 8
   %v11 = alloca i64, align 8
+  %v24 = alloca i64, align 8
   %v10 = alloca i64, align 8
   %v3 = alloca { i64, i8*, i1 }, align 8
   %v9 = alloca i64, align 8
@@ -78,7 +80,8 @@ bb0:
   br i1 %bool_cast, label %bb1, label %bb2
 
 bb1:                                              ; preds = %bb0
-  ret void
+  store i64 0, i64* %v24, align 4
+  br label %bb9
 
 bb2:                                              ; preds = %bb0
   %v1 = load i64, i64* %terms-remaining, align 4
@@ -90,7 +93,8 @@ bb2:                                              ; preds = %bb0
   br i1 %bool_cast15, label %bb3, label %bb4
 
 bb3:                                              ; preds = %bb2
-  ret void
+  store i64 0, i64* %v23, align 4
+  br label %bb8
 
 bb4:                                              ; preds = %bb2
   %v016 = load i64, i64* %n, align 4
@@ -138,6 +142,16 @@ bb7:                                              ; preds = %bb6, %bb5
   %v2134 = load i64, i64* %v21, align 4
   call void @broadcast-sequence(i64 %v2033, i64 %v2134)
   store i64 0, i64* %v22, align 4
+  %v2235 = load i64, i64* %v22, align 4
+  store i64 %v2235, i64* %v23, align 4
+  br label %bb8
+
+bb8:                                              ; preds = %bb7, %bb3
+  %v2336 = load i64, i64* %v23, align 4
+  store i64 %v2336, i64* %v24, align 4
+  br label %bb9
+
+bb9:                                              ; preds = %bb8, %bb1
   ret void
 }
 

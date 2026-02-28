@@ -28,6 +28,7 @@ bb0:
   %v5 = alloca i64, align 8
   %v4 = alloca i64, align 8
   %v3 = alloca i64, align 8
+  %v8 = alloca i64, align 8
   %v2 = alloca i64, align 8
   %v1 = alloca i64, align 8
   %current-value = alloca i64, align 8
@@ -44,7 +45,8 @@ bb1:                                              ; preds = %bb0
   %calltmp = call i64 @terminal-seed()
   store i64 %calltmp, i64* %v2, align 4
   %v22 = load i64, i64* %v2, align 4
-  ret i64 %v22
+  store i64 %v22, i64* %v8, align 4
+  br label %bb3
 
 bb2:                                              ; preds = %bb0
   %v03 = load i64, i64* %current-value, align 4
@@ -61,7 +63,13 @@ bb2:                                              ; preds = %bb0
   %v69 = load i64, i64* %v6, align 4
   %multmp = mul i64 %v08, %v69
   store i64 %multmp, i64* %v7, align 4
-  ret i64 0
+  %v710 = load i64, i64* %v7, align 4
+  store i64 %v710, i64* %v8, align 4
+  br label %bb3
+
+bb3:                                              ; preds = %bb2, %bb1
+  %v811 = load i64, i64* %v8, align 4
+  ret i64 %v811
 }
 
 define i32 @main(i32 %0, i64 %1) {
@@ -94,6 +102,19 @@ bb0:
   %v53 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v5, align 8
   %raw_ptr = extractvalue { i64, i8*, i1 } %v53, 1
   %emit = call i32 @puts(i8* %raw_ptr)
+  %load_for_drop = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v5, align 8
+  %str_ptr_for_drop = extractvalue { i64, i8*, i1 } %load_for_drop, 1
+  %is_dynamic_flag = extractvalue { i64, i8*, i1 } %load_for_drop, 2
+  %is_dynamic_cmp = icmp ne i1 %is_dynamic_flag, false
+  br i1 %is_dynamic_cmp, label %free_bb, label %cont_bb
+
+free_bb:                                          ; preds = %bb0
+  call void @free(i8* %str_ptr_for_drop)
+  %zero_flag = insertvalue { i64, i8*, i1 } %load_for_drop, i1 false, 2
+  store { i64, i8*, i1 } %zero_flag, { i64, i8*, i1 }* %v5, align 8
+  br label %cont_bb
+
+cont_bb:                                          ; preds = %free_bb, %bb0
   store i64 0, i64* %v7, align 4
   store i64 32, i64* %v9, align 4
   %v94 = load i64, i64* %v9, align 4

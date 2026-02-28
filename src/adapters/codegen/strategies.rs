@@ -181,13 +181,46 @@ pub struct DropStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
     fn generate(
         &self,
-        _context: &'ctx Context,
-        _module: &Module<'ctx>,
-        _builder: &Builder<'ctx>,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
         _registry: &RegistryService,
-        _ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
-        _inst: &MirInstruction,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
     ) -> Result<(), OnuError> {
+        if let MirInstruction::Drop { ssa_var, typ } = inst {
+            if typ.is_resource() {
+                if let Some(ptr) = ssa_storage.get(ssa_var) {
+                    let val = builder.build_load(*ptr, "load_for_drop").unwrap();
+                    if let BasicValueEnum::StructValue(s) = val {
+                        if typ == &crate::domain::entities::types::OnuType::Strings {
+                            let str_ptr = builder.build_extract_value(s, 1, "str_ptr_for_drop").unwrap();
+                            let is_dynamic = builder.build_extract_value(s, 2, "is_dynamic_flag").unwrap().into_int_value();
+
+                            // Check if dynamically allocated before freeing
+                            let free_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "free_bb");
+                            let cont_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "cont_bb");
+
+                            let is_true = builder.build_int_compare(inkwell::IntPredicate::NE, is_dynamic, context.bool_type().const_int(0, false), "is_dynamic_cmp").unwrap();
+                            builder.build_conditional_branch(is_true, free_bb, cont_bb).unwrap();
+
+                            builder.position_at_end(free_bb);
+                            let free_fn = module.get_function("free").expect("free not pre-declared");
+                            builder.build_call(free_fn, &[str_ptr.into()], "free_call").unwrap();
+
+                            // Prevent double free by zeroing out the flag
+                            let false_val = context.bool_type().const_int(0, false);
+                            let new_s = builder.build_insert_value(s, false_val, 2, "zero_flag").unwrap().into_struct_value();
+                            builder.build_store(*ptr, new_s).unwrap();
+
+                            builder.build_unconditional_branch(cont_bb).unwrap();
+
+                            builder.position_at_end(cont_bb);
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

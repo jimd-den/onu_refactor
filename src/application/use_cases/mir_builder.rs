@@ -95,7 +95,10 @@ impl MirBuilder {
     }
 
     pub fn schedule_drop(&mut self, ssa_var: usize, typ: OnuType) {
-        self.pending_drops.push((ssa_var, typ));
+        // Prevent double frees in the same expression by checking if already pending
+        if !self.pending_drops.iter().any(|(id, _)| *id == ssa_var) {
+            self.pending_drops.push((ssa_var, typ));
+        }
     }
 
     pub fn take_pending_drops(&mut self) -> Vec<(usize, OnuType)> {

@@ -43,9 +43,11 @@ bb0:
   %v8 = alloca i64, align 8
   %v7 = alloca i64, align 8
   %v6 = alloca i64, align 8
+  %v15 = alloca i64, align 8
   %v5 = alloca i64, align 8
   %v4 = alloca i64, align 8
   %v3 = alloca i64, align 8
+  %v16 = alloca i64, align 8
   %v2 = alloca i64, align 8
   %v1 = alloca i64, align 8
   %generation = alloca i64, align 8
@@ -62,7 +64,8 @@ bb1:                                              ; preds = %bb0
   %calltmp = call i64 @origin-size()
   store i64 %calltmp, i64* %v2, align 4
   %v22 = load i64, i64* %v2, align 4
-  ret i64 %v22
+  store i64 %v22, i64* %v16, align 4
+  br label %bb6
 
 bb2:                                              ; preds = %bb0
   %v03 = load i64, i64* %generation, align 4
@@ -80,7 +83,8 @@ bb3:                                              ; preds = %bb2
   %calltmp9 = call i64 @spark-size()
   store i64 %calltmp9, i64* %v5, align 4
   %v510 = load i64, i64* %v5, align 4
-  ret i64 %v510
+  store i64 %v510, i64* %v15, align 4
+  br label %bb5
 
 bb4:                                              ; preds = %bb2
   %v011 = load i64, i64* %generation, align 4
@@ -107,7 +111,18 @@ bb4:                                              ; preds = %bb2
   %v1325 = load i64, i64* %v13, align 4
   %addtmp = add i64 %v1124, %v1325
   store i64 %addtmp, i64* %v14, align 4
-  ret i64 0
+  %v1426 = load i64, i64* %v14, align 4
+  store i64 %v1426, i64* %v15, align 4
+  br label %bb5
+
+bb5:                                              ; preds = %bb4, %bb3
+  %v1527 = load i64, i64* %v15, align 4
+  store i64 %v1527, i64* %v16, align 4
+  br label %bb6
+
+bb6:                                              ; preds = %bb5, %bb1
+  %v1628 = load i64, i64* %v16, align 4
+  ret i64 %v1628
 }
 
 define i32 @main(i32 %0, i64 %1) {
@@ -284,37 +299,63 @@ bb0:
   %insert_177 = insertvalue { i64, i8*, i1 } %insert_076, i8* %v3275, 1
   %insert_278 = insertvalue { i64, i8*, i1 } %insert_177, i1 true, 2
   store { i64, i8*, i1 } %insert_278, { i64, i8*, i1 }* %v25, align 8
+  %load_for_drop = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v24, align 8
+  %str_ptr_for_drop = extractvalue { i64, i8*, i1 } %load_for_drop, 1
+  %is_dynamic_flag = extractvalue { i64, i8*, i1 } %load_for_drop, 2
+  %is_dynamic_cmp = icmp ne i1 %is_dynamic_flag, false
+  br i1 %is_dynamic_cmp, label %free_bb, label %cont_bb
+
+free_bb:                                          ; preds = %bb0
+  call void @free(i8* %str_ptr_for_drop)
+  %zero_flag = insertvalue { i64, i8*, i1 } %load_for_drop, i1 false, 2
+  store { i64, i8*, i1 } %zero_flag, { i64, i8*, i1 }* %v24, align 8
+  br label %cont_bb
+
+cont_bb:                                          ; preds = %free_bb, %bb0
   %v2579 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v25, align 8
   store { i64, i8*, i1 } %v2579, { i64, i8*, i1 }* %v37, align 8
   store i64 0, i64* %v38, align 4
   %v3780 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v37, align 8
   %raw_ptr = extractvalue { i64, i8*, i1 } %v3780, 1
   %emit = call i32 @puts(i8* %raw_ptr)
+  %load_for_drop81 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v37, align 8
+  %str_ptr_for_drop82 = extractvalue { i64, i8*, i1 } %load_for_drop81, 1
+  %is_dynamic_flag83 = extractvalue { i64, i8*, i1 } %load_for_drop81, 2
+  %is_dynamic_cmp86 = icmp ne i1 %is_dynamic_flag83, false
+  br i1 %is_dynamic_cmp86, label %free_bb84, label %cont_bb85
+
+free_bb84:                                        ; preds = %cont_bb
+  call void @free(i8* %str_ptr_for_drop82)
+  %zero_flag87 = insertvalue { i64, i8*, i1 } %load_for_drop81, i1 false, 2
+  store { i64, i8*, i1 } %zero_flag87, { i64, i8*, i1 }* %v37, align 8
+  br label %cont_bb85
+
+cont_bb85:                                        ; preds = %free_bb84, %cont_bb
   store i64 32, i64* %v40, align 4
-  %v4081 = load i64, i64* %v40, align 4
-  %malloc_call82 = call i8* @malloc(i64 %v4081)
-  store i8* %malloc_call82, i8** %v41, align 8
+  %v4088 = load i64, i64* %v40, align 4
+  %malloc_call89 = call i8* @malloc(i64 %v4088)
+  store i8* %malloc_call89, i8** %v41, align 8
   store { i64, i8*, i1 } { i64 4, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @strtmp.7, i32 0, i32 0), i1 false }, { i64, i8*, i1 }* %v42, align 8
-  %v4283 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v42, align 8
-  %index_tmp84 = extractvalue { i64, i8*, i1 } %v4283, 1
-  store i8* %index_tmp84, i8** %v43, align 8
-  %v4185 = load i8*, i8** %v41, align 8
-  %v4386 = load i8*, i8** %v43, align 8
-  %v487 = load i64, i64* %v4, align 4
-  %calltmp88 = call i32 (i8*, i8*, ...) @sprintf(i8* %v4185, i8* %v4386, i64 %v487)
-  store i32 %calltmp88, i32* %v44, align 4
-  %v4189 = load i8*, i8** %v41, align 8
-  %calltmp90 = call i64 @strlen(i8* %v4189)
-  store i64 %calltmp90, i64* %v45, align 4
-  %v4591 = load i64, i64* %v45, align 4
+  %v4290 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v42, align 8
+  %index_tmp91 = extractvalue { i64, i8*, i1 } %v4290, 1
+  store i8* %index_tmp91, i8** %v43, align 8
   %v4192 = load i8*, i8** %v41, align 8
-  %insert_093 = insertvalue { i64, i8*, i1 } undef, i64 %v4591, 0
-  %insert_194 = insertvalue { i64, i8*, i1 } %insert_093, i8* %v4192, 1
-  %insert_295 = insertvalue { i64, i8*, i1 } %insert_194, i1 true, 2
-  store { i64, i8*, i1 } %insert_295, { i64, i8*, i1 }* %v39, align 8
-  %v3996 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v39, align 8
-  %raw_ptr97 = extractvalue { i64, i8*, i1 } %v3996, 1
-  %emit98 = call i32 @puts(i8* %raw_ptr97)
+  %v4393 = load i8*, i8** %v43, align 8
+  %v494 = load i64, i64* %v4, align 4
+  %calltmp95 = call i32 (i8*, i8*, ...) @sprintf(i8* %v4192, i8* %v4393, i64 %v494)
+  store i32 %calltmp95, i32* %v44, align 4
+  %v4196 = load i8*, i8** %v41, align 8
+  %calltmp97 = call i64 @strlen(i8* %v4196)
+  store i64 %calltmp97, i64* %v45, align 4
+  %v4598 = load i64, i64* %v45, align 4
+  %v4199 = load i8*, i8** %v41, align 8
+  %insert_0100 = insertvalue { i64, i8*, i1 } undef, i64 %v4598, 0
+  %insert_1101 = insertvalue { i64, i8*, i1 } %insert_0100, i8* %v4199, 1
+  %insert_2102 = insertvalue { i64, i8*, i1 } %insert_1101, i1 true, 2
+  store { i64, i8*, i1 } %insert_2102, { i64, i8*, i1 }* %v39, align 8
+  %v39103 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v39, align 8
+  %raw_ptr104 = extractvalue { i64, i8*, i1 } %v39103, 1
+  %emit105 = call i32 @puts(i8* %raw_ptr104)
   ret i32 0
 }
 

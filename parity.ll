@@ -27,6 +27,7 @@ define i64 @is-even(i64 %0) {
 bb0:
   %v3 = alloca i64, align 8
   %v2 = alloca i64, align 8
+  %v4 = alloca i64, align 8
   %v1 = alloca i64, align 8
   %n = alloca i64, align 8
   store i64 %0, i64* %n, align 4
@@ -39,7 +40,8 @@ bb0:
   br i1 %bool_cast, label %bb1, label %bb2
 
 bb1:                                              ; preds = %bb0
-  ret i64 1
+  store i64 1, i64* %v4, align 4
+  br label %bb3
 
 bb2:                                              ; preds = %bb0
   %v02 = load i64, i64* %n, align 4
@@ -48,13 +50,20 @@ bb2:                                              ; preds = %bb0
   %v23 = load i64, i64* %v2, align 4
   %calltmp = call i64 @is-odd(i64 %v23)
   store i64 %calltmp, i64* %v3, align 4
-  ret i64 0
+  %v34 = load i64, i64* %v3, align 4
+  store i64 %v34, i64* %v4, align 4
+  br label %bb3
+
+bb3:                                              ; preds = %bb2, %bb1
+  %v45 = load i64, i64* %v4, align 4
+  ret i64 %v45
 }
 
 define i64 @is-odd(i64 %0) {
 bb0:
   %v3 = alloca i64, align 8
   %v2 = alloca i64, align 8
+  %v4 = alloca i64, align 8
   %v1 = alloca i64, align 8
   %n = alloca i64, align 8
   store i64 %0, i64* %n, align 4
@@ -67,7 +76,8 @@ bb0:
   br i1 %bool_cast, label %bb1, label %bb2
 
 bb1:                                              ; preds = %bb0
-  ret i64 0
+  store i64 0, i64* %v4, align 4
+  br label %bb3
 
 bb2:                                              ; preds = %bb0
   %v02 = load i64, i64* %n, align 4
@@ -76,7 +86,13 @@ bb2:                                              ; preds = %bb0
   %v23 = load i64, i64* %v2, align 4
   %calltmp = call i64 @is-even(i64 %v23)
   store i64 %calltmp, i64* %v3, align 4
-  ret i64 0
+  %v34 = load i64, i64* %v3, align 4
+  store i64 %v34, i64* %v4, align 4
+  br label %bb3
+
+bb3:                                              ; preds = %bb2, %bb1
+  %v45 = load i64, i64* %v4, align 4
+  ret i64 %v45
 }
 
 define i32 @main(i32 %0, i64 %1) {
@@ -223,6 +239,19 @@ bb0:
   %v2848 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v28, align 8
   %raw_ptr = extractvalue { i64, i8*, i1 } %v2848, 1
   %emit49 = call i32 @puts(i8* %raw_ptr)
+  %load_for_drop = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v28, align 8
+  %str_ptr_for_drop = extractvalue { i64, i8*, i1 } %load_for_drop, 1
+  %is_dynamic_flag = extractvalue { i64, i8*, i1 } %load_for_drop, 2
+  %is_dynamic_cmp = icmp ne i1 %is_dynamic_flag, false
+  br i1 %is_dynamic_cmp, label %free_bb, label %cont_bb
+
+free_bb:                                          ; preds = %bb0
+  call void @free(i8* %str_ptr_for_drop)
+  %zero_flag = insertvalue { i64, i8*, i1 } %load_for_drop, i1 false, 2
+  store { i64, i8*, i1 } %zero_flag, { i64, i8*, i1 }* %v28, align 8
+  br label %cont_bb
+
+cont_bb:                                          ; preds = %free_bb, %bb0
   store i64 32, i64* %v31, align 4
   %v3150 = load i64, i64* %v31, align 4
   %malloc_call51 = call i8* @malloc(i64 %v3150)
@@ -298,6 +327,19 @@ bb0:
   %v49100 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v49, align 8
   %raw_ptr101 = extractvalue { i64, i8*, i1 } %v49100, 1
   %emit102 = call i32 @puts(i8* %raw_ptr101)
+  %load_for_drop103 = load { i64, i8*, i1 }, { i64, i8*, i1 }* %v49, align 8
+  %str_ptr_for_drop104 = extractvalue { i64, i8*, i1 } %load_for_drop103, 1
+  %is_dynamic_flag105 = extractvalue { i64, i8*, i1 } %load_for_drop103, 2
+  %is_dynamic_cmp108 = icmp ne i1 %is_dynamic_flag105, false
+  br i1 %is_dynamic_cmp108, label %free_bb106, label %cont_bb107
+
+free_bb106:                                       ; preds = %cont_bb
+  call void @free(i8* %str_ptr_for_drop104)
+  %zero_flag109 = insertvalue { i64, i8*, i1 } %load_for_drop103, i1 false, 2
+  store { i64, i8*, i1 } %zero_flag109, { i64, i8*, i1 }* %v49, align 8
+  br label %cont_bb107
+
+cont_bb107:                                       ; preds = %free_bb106, %cont_bb
   ret i32 0
 }
 

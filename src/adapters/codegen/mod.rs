@@ -249,7 +249,8 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             OnuType::Strings => {
                 let i64_type = self.context.i64_type();
                 let i8_ptr_type = self.context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                Some(self.context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).as_basic_type_enum())
+                let bool_type = self.context.bool_type();
+                Some(self.context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false).as_basic_type_enum())
             }
             OnuType::Nothing => None,
             _ => Some(self.context.i64_type().as_basic_type_enum()),
