@@ -15,10 +15,10 @@ pub struct MirBuilder {
     current_block_idx: Option<usize>,
     next_ssa: usize,
     scopes: Vec<HashMap<String, (usize, OnuType)>>,
-    pending_drops: Vec<(usize, OnuType)>,
+    pending_drops: Vec<(usize, OnuType, String)>,
     consumed_vars: std::collections::HashSet<usize>,
     ssa_types: HashMap<usize, OnuType>,
-    survivors: std::collections::HashSet<usize>,
+    survivors: HashMap<usize, String>,
 }
 
 impl MirBuilder {
@@ -40,13 +40,13 @@ impl MirBuilder {
             pending_drops: Vec::new(),
             consumed_vars: std::collections::HashSet::new(),
             ssa_types: HashMap::new(),
-            survivors: std::collections::HashSet::new(),
+            survivors: HashMap::new(),
         }
     }
 
     pub fn add_arg(&mut self, name: String, typ: OnuType, ssa_var: usize) {
         self.ssa_types.insert(ssa_var, typ.clone());
-        if typ.is_resource() { self.survivors.insert(ssa_var); }
+        if typ.is_resource() { self.survivors.insert(ssa_var, name.clone()); }
         self.args.push(crate::domain::entities::mir::MirArgument { name, typ, ssa_var });
     }
 
@@ -58,7 +58,7 @@ impl MirBuilder {
 
     pub fn define_variable(&mut self, name: &str, ssa_var: usize, typ: OnuType) {
         self.ssa_types.insert(ssa_var, typ.clone());
-        if typ.is_resource() { self.survivors.insert(ssa_var); }
+        if typ.is_resource() { self.survivors.insert(ssa_var, name.to_string()); }
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name.to_string(), (ssa_var, typ));
         }
@@ -69,13 +69,13 @@ impl MirBuilder {
     }
 
     pub fn set_ssa_type(&mut self, ssa_var: usize, typ: OnuType) {
-        if typ.is_resource() { self.survivors.insert(ssa_var); }
+        if typ.is_resource() { self.survivors.insert(ssa_var, format!("ssa_{}", ssa_var)); }
         self.ssa_types.insert(ssa_var, typ);
     }
 
-    pub fn get_surviving_resources(&self) -> Vec<(usize, OnuType)> {
+    pub fn get_surviving_resources(&self) -> Vec<(usize, OnuType, String)> {
         self.survivors.iter()
-            .filter_map(|id| self.ssa_types.get(id).map(|t| (*id, t.clone())))
+            .filter_map(|(id, name)| self.ssa_types.get(id).map(|t| (*id, t.clone(), name.clone())))
             .collect()
     }
 
@@ -121,8 +121,6 @@ impl MirBuilder {
     }
 
     pub fn set_consumed_vars(&mut self, consumed: std::collections::HashSet<usize>) {
-        // When setting consumed vars (e.g. after branching), 
-        // we must also update survivors to match the new consumed state.
         for id in &consumed {
             self.survivors.remove(id);
         }
@@ -138,13 +136,13 @@ impl MirBuilder {
     }
 
     pub fn schedule_drop(&mut self, ssa_var: usize, typ: OnuType) {
-        // Prevent double frees in the same expression by checking if already pending
-        if !self.pending_drops.iter().any(|(id, _)| *id == ssa_var) {
-            self.pending_drops.push((ssa_var, typ));
+        if !self.pending_drops.iter().any(|(id, _, _)| *id == ssa_var) {
+            let name = self.survivors.get(&ssa_var).cloned().unwrap_or_else(|| format!("ssa_{}", ssa_var));
+            self.pending_drops.push((ssa_var, typ, name));
         }
     }
 
-    pub fn take_pending_drops(&mut self) -> Vec<(usize, OnuType)> {
+    pub fn take_pending_drops(&mut self) -> Vec<(usize, OnuType, String)> {
         std::mem::take(&mut self.pending_drops)
     }
 
@@ -166,19 +164,6 @@ impl MirBuilder {
 
     pub fn clear_current_block(&mut self) {
         self.current_block_idx = None;
-    }
-
-    /// Executes a closure and automatically emits any pending drops 
-    /// scheduled during its execution. This enforces the Parent-Cleans-Up-Children policy.
-    pub fn with_resource_cleanup<F, R>(&mut self, f: F) -> R 
-    where F: FnOnce(&mut Self) -> R 
-    {
-        let result = f(self);
-        let pending = self.take_pending_drops();
-        for (var, typ) in pending {
-            self.emit(MirInstruction::Drop { ssa_var: var, typ });
-        }
-        result
     }
 
     pub fn emit(&mut self, inst: MirInstruction) {
@@ -242,3 +227,20 @@ impl MirBuilder {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_variable_consumed() {
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing);
+        builder.enter_scope();
+        builder.define_variable("x", 10, OnuType::I64);
+        
+        assert_eq!(builder.resolve_variable("x"), Some(10));
+        
+        builder.mark_consumed(10);
+        
+        assert_eq!(builder.resolve_variable("x"), None, "resolve_variable should return None for consumed variables");
+    }
+}

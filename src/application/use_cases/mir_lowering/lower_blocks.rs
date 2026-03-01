@@ -27,21 +27,16 @@ impl ExprLowerer for BlockLowerer {
                 // Cleanup handled centrally by each lower_expression call
                 last_op = context.lower_expression(e, builder, is_tail && is_last)?;
                 
-                // If it's not the last expression in the block, we must drop the result 
-                // because it's an intermediate that won't be used by anyone.
-                if !is_last {
-                    if let MirOperand::Variable(ssa_id, _) = &last_op {
-                        if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                            if typ.is_resource() {
-                                builder.mark_consumed(*ssa_id);
-                                builder.schedule_drop(*ssa_id, typ);
-                            }
-                        }
-                    }
-                }
-                
                 if builder.get_current_block_id().is_none() { break; }
             }
+            
+            // CUSTODY TRANSFER: Mark the final result as consumed so the parent owns it
+            if let MirOperand::Variable(ssa_id, _) = &last_op {
+                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*ssa_id);
+                }
+            }
+
             Ok(last_op)
         } else {
             Err(OnuError::GrammarViolation {
@@ -63,13 +58,10 @@ impl ExprLowerer for DerivationLowerer {
         if let HirExpression::Derivation { name, typ, value, body } = expr {
             let val_op = context.lower_expression(value, builder, false)?;
             
-            // Mark original value as consumed and schedule drop (transfer to derivation variable)
+            // CUSTODY TRANSFER: Mark original value as consumed (transfer to derivation variable)
             if let MirOperand::Variable(ssa_id, _) = &val_op {
-                if let Some(vt) = builder.resolve_ssa_type(*ssa_id) {
-                    if vt.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, vt);
-                    }
+                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*ssa_id);
                 }
             }
 
@@ -82,7 +74,7 @@ impl ExprLowerer for DerivationLowerer {
 
             let res = context.lower_expression(body, builder, is_tail)?;
 
-            // If result is a resource variable and it's being returned, mark it consumed
+            // CUSTODY TRANSFER: If result is a resource variable and it's being returned, mark it consumed
             // to transfer ownership to the parent.
             if let MirOperand::Variable(res_id, _) = &res {
                 if builder.resolve_ssa_type(*res_id).map(|t| t.is_resource()).unwrap_or(false) {

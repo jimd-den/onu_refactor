@@ -2,9 +2,9 @@
 ///
 /// This module encapsulates the logic for lowering specific built-in standard library
 /// functions directly into raw zero-cost MIR memory operations, bypassing the need
-/// for a C runtime environment. This represents true separation of concerns.
+/// for a heavy C-based runtime library.
 
-use crate::domain::entities::mir::{MirInstruction, MirBinOp, MirOperand, MirLiteral};
+use crate::domain::entities::mir::{MirInstruction, MirOperand, MirLiteral, MirBinOp};
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
 
@@ -63,7 +63,7 @@ impl StdlibLowering {
         );
 
         // Cleanup temporary constant string metadata to prevent leaks
-        builder.emit(MirInstruction::Drop { ssa_var: fmt_str_ssa, typ: OnuType::Strings });
+        builder.emit(MirInstruction::Drop { ssa_var: fmt_str_ssa, typ: OnuType::Strings, name: "fmt_str_metadata".to_string() });
 
         MirOperand::Variable(dest, false)
     }
@@ -142,7 +142,7 @@ impl StdlibLowering {
         );
 
         // Cleanup temporary constant string metadata
-        builder.emit(MirInstruction::Drop { ssa_var: null_char_ptr_ssa, typ: OnuType::Strings });
+        builder.emit(MirInstruction::Drop { ssa_var: null_char_ptr_ssa, typ: OnuType::Strings, name: "null_char_metadata".to_string() });
 
         MirOperand::Variable(dest, false)
     }

@@ -24,14 +24,9 @@ impl ExprLowerer for IndexLowerer {
         if let HirExpression::Index { subject, index } = expr {
             let op = context.lower_expression(subject, builder, false)?;
 
-            let dest = builder.new_ssa();
-            builder.emit(MirInstruction::Index { 
-                dest, 
-                subject: op.clone(), 
-                index: *index 
-            });
-            
-            // Parent cleanup: mark consumed and schedule drop if it's a resource variable
+            // CUSTODY TRANSFER: Index doesn't take custody, but we must mark consumed 
+            // if it's an intermediate resource so the orchestrator doesn't drop it.
+            // We schedule the drop ourselves to ensure it happens AFTER the index.
             if let MirOperand::Variable(ssa_id, _) = &op {
                 if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
                     if typ.is_resource() {
@@ -41,6 +36,13 @@ impl ExprLowerer for IndexLowerer {
                 }
             }
 
+            let dest = builder.new_ssa();
+            builder.emit(MirInstruction::Index { 
+                dest, 
+                subject: op.clone(), 
+                index: *index 
+            });
+            
             Ok(MirOperand::Variable(dest, false))
         } else {
             Err(OnuError::GrammarViolation {
@@ -62,9 +64,7 @@ impl ExprLowerer for EmitLowerer {
         if let HirExpression::Emit(e) = expr {
             let op = context.lower_expression(e, builder, false)?;
 
-            builder.emit(MirInstruction::Emit(op.clone()));
-            
-            // Parent cleanup: Emit takes custody
+            // CUSTODY TRANSFER: Emit takes custody of the resource.
             if let MirOperand::Variable(ssa_id, _) = &op {
                 if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
                     if typ.is_resource() {
@@ -74,6 +74,8 @@ impl ExprLowerer for EmitLowerer {
                 }
             }
 
+            builder.emit(MirInstruction::Emit(op.clone()));
+            
             Ok(MirOperand::Constant(MirLiteral::Nothing))
         } else {
             Err(OnuError::GrammarViolation {
@@ -96,6 +98,24 @@ impl ExprLowerer for BinaryOpLowerer {
             let lhs = context.lower_expression(left, builder, false)?;
             let rhs = context.lower_expression(right, builder, false)?;
 
+            // CUSTODY TRANSFER: BinaryOp consumes its inputs if they are resources.
+            if let MirOperand::Variable(ssa_id, _) = &lhs {
+                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                    if typ.is_resource() {
+                        builder.mark_consumed(*ssa_id);
+                        builder.schedule_drop(*ssa_id, typ);
+                    }
+                }
+            }
+            if let MirOperand::Variable(ssa_id, _) = &rhs {
+                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                    if typ.is_resource() {
+                        builder.mark_consumed(*ssa_id);
+                        builder.schedule_drop(*ssa_id, typ);
+                    }
+                }
+            }
+
             let dest = builder.new_ssa();
             let mir_op = match op {
                 HirBinOp::Add => MirBinOp::Add,
@@ -115,25 +135,7 @@ impl ExprLowerer for BinaryOpLowerer {
                 rhs: rhs.clone() 
             });
             
-            // Parent cleanup: mark inputs as consumed and schedule drop if they are resource variables
-            if let MirOperand::Variable(ssa_id, _) = &lhs {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
-                }
-            }
-            if let MirOperand::Variable(ssa_id, _) = &rhs {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
-                }
-            }
-
-            // Register type for the result (assume I64/Boolean for now as per current binops)
+            // Register type for the result
             let res_type = match op {
                 HirBinOp::Equal | HirBinOp::NotEqual | HirBinOp::LessThan | HirBinOp::GreaterThan => OnuType::Boolean,
                 _ => OnuType::I64,
@@ -190,11 +192,15 @@ impl ExprLowerer for VariableLowerer {
                     message: format!("Unresolved variable: {}", name),
                     span: crate::domain::entities::error::Span::default()
                 })?;
-            let typ = builder.resolve_variable_type(name).unwrap_or(OnuType::Nothing);
-            if *is_consuming && typ.is_resource() {
-                builder.schedule_drop(ssa_var, typ.clone());
-                builder.mark_consumed(ssa_var);
+            
+            if *is_consuming {
+                let typ = builder.resolve_variable_type(name).unwrap_or(OnuType::Nothing);
+                if typ.is_resource() {
+                    // CUSTODY TRANSFER: The parent expression now owns this variable.
+                    builder.mark_consumed(ssa_var);
+                }
             }
+            
             Ok(MirOperand::Variable(ssa_var, *is_consuming))
         } else {
             Err(OnuError::GrammarViolation {

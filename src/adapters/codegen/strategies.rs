@@ -189,7 +189,7 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Drop { ssa_var, typ } = inst {
+        if let MirInstruction::Drop { ssa_var, typ, name } = inst {
             if typ.is_resource() {
                 if let Some(ptr) = ssa_storage.get(ssa_var) {
                     let val = builder.build_load(*ptr, "load_for_drop").unwrap();
@@ -217,6 +217,16 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
                             builder.build_conditional_branch(is_true, free_bb, cont_bb).unwrap();
 
                             builder.position_at_end(free_bb);
+                            
+                            // DIAGNOSTIC LOGGING: Print the pointer, variable name, and function name being freed
+                            let printf_fn = module.get_function("printf").expect("printf not pre-declared");
+                            let func = builder.get_insert_block().unwrap().get_parent().unwrap();
+                            let func_name = func.get_name();
+                            let func_name_str = func_name.to_str().unwrap();
+                            let log_msg = format!("DEBUG FREE [{}]: variable '{}' (v{}) at %p\n", func_name_str, name, ssa_var);
+                            let fmt_str = builder.build_global_string_ptr(&log_msg, "free_log_fmt").unwrap();
+                            builder.build_call(printf_fn, &[fmt_str.as_pointer_value().into(), str_ptr.into()], "free_log").unwrap();
+
                             let free_fn = module.get_function("free").expect("free not pre-declared");
                             builder.build_call(free_fn, &[str_ptr.into()], "free_call").unwrap();
 

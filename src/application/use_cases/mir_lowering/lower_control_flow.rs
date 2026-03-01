@@ -72,16 +72,29 @@ impl ExprLowerer for IfLowerer {
 
             if let Some(id) = then_end_id {
                 builder.switch_to_block(id);
+                // CUSTODY TRANSFER: If branch result is a resource, mark it consumed as it moves to 'dest'
+                if let MirOperand::Variable(ssa_id, _) = &then_res {
+                    if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                        builder.mark_consumed(*ssa_id);
+                    }
+                }
                 builder.emit(MirInstruction::Assign { dest, src: then_res });
                 builder.terminate(MirTerminator::Branch(merge_id));
             }
             if let Some(id) = else_end_id {
                 builder.switch_to_block(id);
+                // CUSTODY TRANSFER: If branch result is a resource, mark it consumed as it moves to 'dest'
+                if let MirOperand::Variable(ssa_id, _) = &else_res {
+                    if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                        builder.mark_consumed(*ssa_id);
+                    }
+                }
                 builder.emit(MirInstruction::Assign { dest, src: else_res });
                 builder.terminate(MirTerminator::Branch(merge_id));
             }
 
             builder.switch_to_block(merge_id);
+            // Result consumption handled by parent caller
             Ok(MirOperand::Variable(dest, false))
         } else {
             Err(OnuError::GrammarViolation {
