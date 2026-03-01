@@ -91,10 +91,10 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
                 f
             } else {
                 let llvm_arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = arg_types.iter()
-                    .map(|t| crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, t).unwrap_or(context.i64_type().as_basic_type_enum()).into())
+                    .map(|t| crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, t).unwrap_or(context.i64_type().as_basic_type_enum()).into())
                     .collect();
 
-                let ret_type_opt = crate::adapters::codegen::OnuCodegen::onu_type_to_llvm_static(context, return_type);
+                let ret_type_opt = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, return_type);
                 
                 if let Some(ret_type) = ret_type_opt {
                     let fn_type = ret_type.fn_type(&llvm_arg_types, false);
@@ -107,6 +107,12 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
             
             let call = builder.build_call(func, &llvm_args, "calltmp").unwrap();
             
+            let is_extern = ["malloc", "free", "printf", "puts", "sprintf", "strlen"].contains(&llvm_name.as_str());
+            if !is_extern {
+                // LLVM fastcc is calling convention 8
+                call.set_call_convention(8);
+            }
+
             match call.try_as_basic_value() {
                 inkwell::values::ValueKind::Basic(res) => {
                     let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());

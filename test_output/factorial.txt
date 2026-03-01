@@ -1,0 +1,2 @@
+The accumulation of 5 steps is:
+120

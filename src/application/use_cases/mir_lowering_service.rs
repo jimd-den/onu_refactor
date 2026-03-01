@@ -21,16 +21,23 @@ use super::mir_lowering::lower_control_flow::IfLowerer;
 pub struct LoweringContext<'a, E: EnvironmentPort> {
     pub env: &'a E,
     pub registry: &'a RegistryService,
+    pub stdlib_registry: crate::application::use_cases::stdlib::StdlibOpRegistry,
 }
 
 impl<'a, E: EnvironmentPort> LoweringContext<'a, E> {
     pub fn lower_expression(&self, expr: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
-        let service = MirLoweringService::new(self.env, self.registry);
+        let service = MirLoweringService {
+            context: LoweringContext {
+                env: self.env,
+                registry: self.registry,
+                stdlib_registry: crate::application::use_cases::stdlib::StdlibOpRegistry::new(), // We're reconstructing it here to avoid borrowing issues for now.
+            }
+        };
         let res = service.lower_expression(expr, builder, is_tail)?;
         
         // GLOBAL POLICY: The parent caller is responsible for the result of this evaluation.
         // We schedule it for drop so the caller's next `take_pending_drops` emits it.
-        service.collect_resource_drop(&res, builder);
+        crate::domain::rules::droppolicy::DropPolicy::collect_resource_drop(&res, builder);
         
         Ok(res)
     }
@@ -42,7 +49,13 @@ pub struct MirLoweringService<'a, E: EnvironmentPort> {
 
 impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
     pub fn new(env: &'a E, registry: &'a RegistryService) -> Self {
-        Self { context: LoweringContext { env, registry } }
+        Self {
+            context: LoweringContext {
+                env,
+                registry,
+                stdlib_registry: crate::application::use_cases::stdlib::StdlibOpRegistry::new()
+            }
+        }
     }
 
     pub(crate) fn log(&self, level: LogLevel, message: &str) {
@@ -75,27 +88,11 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         
         if builder.get_current_block_id().is_some() {
             // Drop all surviving resources (intermediate results, unconsumed arguments, etc.)
-            for (var_id, var_typ, var_name, is_dyn) in builder.get_surviving_resources() {
-                if is_dyn && !builder.is_consumed(var_id) {
-                    builder.emit(MirInstruction::Drop { ssa_var: var_id, typ: var_typ, name: var_name, is_dynamic: is_dyn });
-                }
-            }
+            crate::domain::rules::droppolicy::DropPolicy::emit_surviving_drops(&mut builder);
             builder.terminate(MirTerminator::Return(result_op));
         }
 
         Ok(builder.build())
-    }
-
-    pub(crate) fn collect_resource_drop(&self, op: &MirOperand, builder: &mut MirBuilder) {
-        if let MirOperand::Variable(ssa_id, is_consuming) = op {
-            if *is_consuming {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
-                }
-            }
-        }
     }
 
     pub(crate) fn lower_expression(&self, expr: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
@@ -169,7 +166,7 @@ mod tests {
         let res = service.lower_expression(&expr, &mut builder, false).unwrap();
         
         // 4. Trigger manual cleanup (simulation of parent or function exit)
-        service.collect_resource_drop(&res, &mut builder);
+        crate::domain::rules::droppolicy::DropPolicy::collect_resource_drop(&res, &mut builder);
         let pending = builder.take_pending_drops();
         for (var, typ, name, is_dyn) in pending {
             if is_dyn && !builder.is_consumed(var) {
@@ -218,7 +215,7 @@ mod tests {
         let res = service.lower_expression(&expr, &mut builder, false).unwrap();
         
         // Manual cleanup simulation
-        service.collect_resource_drop(&res, &mut builder);
+        crate::domain::rules::droppolicy::DropPolicy::collect_resource_drop(&res, &mut builder);
         let pending = builder.take_pending_drops();
         for (var, typ, name, is_dyn) in pending {
             if is_dyn && !builder.is_consumed(var) {

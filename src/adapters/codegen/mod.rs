@@ -4,6 +4,8 @@
 /// to translate MIR into LLVM Bitcode.
 
 pub mod strategies;
+pub mod typemapper;
+pub mod stdlibdeclarator;
 
 use crate::application::ports::compiler_ports::CodegenPort;
 use crate::application::use_cases::registry_service::RegistryService;
@@ -11,6 +13,7 @@ use crate::domain::entities::error::OnuError;
 use crate::domain::entities::mir::*;
 use crate::domain::entities::types::OnuType;
 use crate::adapters::codegen::strategies::*;
+use crate::adapters::codegen::typemapper::LlvmTypeMapper;
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::{Module, Linkage};
@@ -25,21 +28,6 @@ pub struct OnuCodegen {
 impl OnuCodegen {
     pub fn new() -> Self {
         Self { registry: None }
-    }
-
-    pub fn onu_type_to_llvm_static<'ctx>(context: &'ctx Context, typ: &OnuType) -> Option<BasicTypeEnum<'ctx>> {
-        match typ {
-            OnuType::I32 => Some(context.i32_type().as_basic_type_enum()),
-            OnuType::I64 => Some(context.i64_type().as_basic_type_enum()),
-            OnuType::Boolean => Some(context.bool_type().as_basic_type_enum()),
-            OnuType::Strings => {
-                let i64_type = context.i64_type();
-                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                Some(context.struct_type(&[i64_type.into(), i8_ptr_type.into()], false).as_basic_type_enum())
-            }
-            OnuType::Nothing => None,
-            _ => Some(context.i64_type().as_basic_type_enum()),
-        }
     }
 }
 
@@ -60,6 +48,15 @@ impl CodegenPort for OnuCodegen {
 
         generator.generate(program)?;
 
+        use inkwell::passes::PassManager;
+        let fpm: PassManager<Module> = PassManager::create(());
+        fpm.add_promote_memory_to_register_pass();
+        fpm.add_instruction_combining_pass();
+        fpm.add_reassociate_pass();
+        fpm.add_gvn_pass();
+        fpm.add_cfg_simplification_pass();
+        fpm.run_on(&generator.module);
+
         Ok(generator.module.print_to_string().to_string())
     }
 
@@ -79,29 +76,7 @@ struct LlvmGenerator<'ctx, 'a> {
 
 impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     fn generate(&mut self, program: &MirProgram) -> Result<(), OnuError> {
-        // Pre-declare standard library and internal libc dependencies
-        let i8_ptr = self.context.i8_type().ptr_type(inkwell::AddressSpace::default());
-        let i64_type = self.context.i64_type();
-        
-        let malloc_type = i8_ptr.fn_type(&[i64_type.into()], false);
-        self.module.add_function("malloc", malloc_type, Some(Linkage::External));
-
-        let free_type = self.context.void_type().fn_type(&[i8_ptr.into()], false);
-        self.module.add_function("free", free_type, Some(Linkage::External));
-
-        let printf_type = self.context.i32_type().fn_type(&[i8_ptr.into()], true);
-        self.module.add_function("printf", printf_type, Some(Linkage::External));
-        
-        let puts_type = self.context.i32_type().fn_type(&[i8_ptr.into()], false);
-        self.module.add_function("puts", puts_type, Some(Linkage::External));
-
-        let sprintf_type = self.context.i32_type().fn_type(&[i8_ptr.into(), i8_ptr.into()], true);
-        self.module.add_function("sprintf", sprintf_type, Some(Linkage::External));
-
-        let strlen_type = self.context.i64_type().fn_type(&[i8_ptr.into()], false);
-        self.module.add_function("strlen", strlen_type, Some(Linkage::External));
-
-        // Runtime expects OnuString (which is struct {i64, i8*})
+        crate::adapters::codegen::stdlibdeclarator::StdlibDeclarator::declare_all(self.context, &self.module);
 
         for func in &program.functions {
             self.declare_function(func);
@@ -114,21 +89,28 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
 
     fn declare_function(&self, func: &MirFunction) {
         let arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = func.args.iter()
-            .map(|arg| self.onu_type_to_llvm(&arg.typ).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
+            .map(|arg| LlvmTypeMapper::onu_to_llvm(self.context, &arg.typ).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
             .collect();
         
         let is_main = func.name == "run" || func.name == "main";
         let llvm_name = if is_main { "main".to_string() } else { func.name.clone() };
         
-        if is_main {
+        let fn_val = if is_main {
             let fn_type = self.context.i32_type().fn_type(&arg_types, false);
-            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External));
-        } else if let Some(ret_type) = self.onu_type_to_llvm(&func.return_type) {
+            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
+        } else if let Some(ret_type) = LlvmTypeMapper::onu_to_llvm(self.context, &func.return_type) {
             let fn_type = ret_type.fn_type(&arg_types, false);
-            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External));
+            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
         } else {
             let fn_type = self.context.void_type().fn_type(&arg_types, false);
-            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External));
+            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
+        };
+
+        if !is_main {
+            fn_val.set_call_conventions(inkwell::module::Linkage::External as u32);
+            // wait, CallConventions isn't in inkwell::values. It might not exist in inkwell 0.8
+            // Let's use a raw u32 for fastcc, which is 8 in LLVM
+            fn_val.set_call_conventions(8);
         }
     }
 
@@ -241,19 +223,4 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
         Ok(())
     }
 
-    fn onu_type_to_llvm(&self, typ: &OnuType) -> Option<BasicTypeEnum<'ctx>> {
-        match typ {
-            OnuType::I32 => Some(self.context.i32_type().as_basic_type_enum()),
-            OnuType::I64 => Some(self.context.i64_type().as_basic_type_enum()),
-            OnuType::Boolean => Some(self.context.bool_type().as_basic_type_enum()),
-            OnuType::Strings => {
-                let i64_type = self.context.i64_type();
-                let i8_ptr_type = self.context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                let bool_type = self.context.bool_type();
-                Some(self.context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false).as_basic_type_enum())
-            }
-            OnuType::Nothing => None,
-            _ => Some(self.context.i64_type().as_basic_type_enum()),
-        }
-    }
 }
