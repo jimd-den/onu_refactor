@@ -1,8 +1,0 @@
-{
-  "track_id": "mir_lowering_decomp_20260301",
-  "type": "refactor",
-  "status": "new",
-  "created_at": "2026-03-01T01:44:03Z",
-  "updated_at": "2026-03-01T01:44:03Z",
-  "description": "Decompose the monolithic MirLoweringService (God Class) into trait-based strategies using a Parent-Cleans-Up-Children resource policy and RAII guards."
-}

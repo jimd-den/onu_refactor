@@ -1,8 +1,0 @@
-{
-  "track_id": "mir_type_enrichment_20260227",
-  "type": "feature",
-  "status": "new",
-  "created_at": "2026-02-27T10:00:00Z",
-  "updated_at": "2026-02-27T10:00:00Z",
-  "description": "Enrich MirInstruction::Call with resolved type information to eliminate string-matching in CallStrategy."
-}
