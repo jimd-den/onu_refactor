@@ -3,45 +3,116 @@ use crate::domain::entities::mir::{MirInstruction, MirOperand, MirLiteral};
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
 use crate::domain::entities::error::OnuError;
-use super::super::mir_lowering_service::MirLoweringService;
+use super::super::mir_lowering_service::{MirLoweringService, LoweringContext};
 use crate::application::ports::environment::EnvironmentPort;
+use super::ExprLowerer;
 
+pub struct BlockLowerer;
+pub struct DerivationLowerer;
+
+impl ExprLowerer for BlockLowerer {
+    fn lower<'a, E: EnvironmentPort>(
+        &self,
+        expr: &HirExpression,
+        context: &LoweringContext<'a, E>,
+        builder: &mut MirBuilder,
+        is_tail: bool,
+    ) -> Result<MirOperand, OnuError> {
+        if let HirExpression::Block(exprs) = expr {
+            let mut last_op = MirOperand::Constant(MirLiteral::Nothing);
+            let len = exprs.len();
+            for (i, e) in exprs.iter().enumerate() {
+                let is_last = i == len - 1;
+                
+                // Cleanup handled centrally by each lower_expression call
+                last_op = context.lower_expression(e, builder, is_tail && is_last)?;
+                
+                // If it's not the last expression in the block, we must drop the result 
+                // because it's an intermediate that won't be used by anyone.
+                if !is_last {
+                    if let MirOperand::Variable(ssa_id, _) = &last_op {
+                        if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                            if typ.is_resource() {
+                                builder.mark_consumed(*ssa_id);
+                                builder.schedule_drop(*ssa_id, typ);
+                            }
+                        }
+                    }
+                }
+                
+                if builder.get_current_block_id().is_none() { break; }
+            }
+            Ok(last_op)
+        } else {
+            Err(OnuError::GrammarViolation {
+                message: "Expected Block expression".to_string(),
+                span: Default::default(),
+            })
+        }
+    }
+}
+
+impl ExprLowerer for DerivationLowerer {
+    fn lower<'a, E: EnvironmentPort>(
+        &self,
+        expr: &HirExpression,
+        context: &LoweringContext<'a, E>,
+        builder: &mut MirBuilder,
+        is_tail: bool,
+    ) -> Result<MirOperand, OnuError> {
+        if let HirExpression::Derivation { name, typ, value, body } = expr {
+            let val_op = context.lower_expression(value, builder, false)?;
+            
+            // Mark original value as consumed and schedule drop (transfer to derivation variable)
+            if let MirOperand::Variable(ssa_id, _) = &val_op {
+                if let Some(vt) = builder.resolve_ssa_type(*ssa_id) {
+                    if vt.is_resource() {
+                        builder.mark_consumed(*ssa_id);
+                        builder.schedule_drop(*ssa_id, vt);
+                    }
+                }
+            }
+
+            let ssa_var = builder.new_ssa();
+            builder.emit(MirInstruction::Assign { dest: ssa_var, src: val_op });
+            builder.set_ssa_type(ssa_var, typ.clone());
+            
+            builder.enter_scope();
+            builder.define_variable(name, ssa_var, typ.clone());
+
+            let res = context.lower_expression(body, builder, is_tail)?;
+
+            // If result is a resource variable and it's being returned, mark it consumed
+            // to transfer ownership to the parent.
+            if let MirOperand::Variable(res_id, _) = &res {
+                if builder.resolve_ssa_type(*res_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*res_id);
+                }
+            }
+
+            builder.exit_scope();
+            Ok(res)
+        } else {
+            Err(OnuError::GrammarViolation {
+                message: "Expected Derivation expression".to_string(),
+                span: Default::default(),
+            })
+        }
+    }
+}
+
+// --- Legacy Compatibility ---
 impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
     pub fn lower_block(&self, exprs: &[HirExpression], builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
-        let mut last_op = MirOperand::Constant(MirLiteral::Nothing);
-        let len = exprs.len();
-        for (i, expr) in exprs.iter().enumerate() {
-            let is_last = i == len - 1;
-            last_op = self.lower_expression(expr, builder, is_tail && is_last)?;
-            
-            if builder.get_current_block_id() == Some(9999) { break; }
-        }
-        Ok(last_op)
+        BlockLowerer.lower(&HirExpression::Block(exprs.to_vec()), &self.context, builder, is_tail)
     }
 
     pub fn lower_derivation(&self, name: &str, typ: &OnuType, value: &HirExpression, body: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
-        let val_op = self.lower_expression(value, builder, false)?;
-        
-        // If the value is a resource variable, mark it as consumed to transfer ownership
-        if let MirOperand::Variable(ssa_id, _) = val_op {
-            if typ.is_resource() {
-                builder.mark_consumed(ssa_id);
-            }
-        }
-
-        let ssa_var = builder.new_ssa();
-        builder.emit(MirInstruction::Assign { dest: ssa_var, src: val_op });
-        builder.enter_scope();
-        builder.define_variable(name, ssa_var, typ.clone());
-
-        let res = self.lower_expression(body, builder, is_tail)?;
-
-        // If the result is a resource variable, mark it as consumed to transfer ownership to the caller
-        if let MirOperand::Variable(res_id, _) = &res {
-            builder.mark_consumed(*res_id);
-        }
-
-        builder.exit_scope();
-        Ok(res)
+        DerivationLowerer.lower(&HirExpression::Derivation { 
+            name: name.to_string(), 
+            typ: typ.clone(), 
+            value: Box::new(value.clone()), 
+            body: Box::new(body.clone()) 
+        }, &self.context, builder, is_tail)
     }
 }

@@ -3,7 +3,7 @@
 /// This service orchestrates the translation of HIR into MIR.
 /// It delegates low-level construction details to the MirBuilder.
 
-use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeader, HirBinOp};
+use crate::domain::entities::hir::{HirDiscourse, HirExpression, HirBehaviorHeader};
 use crate::domain::entities::mir::*;
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
@@ -12,18 +12,40 @@ use crate::domain::entities::error::OnuError;
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::options::LogLevel;
 
-pub struct MirLoweringService<'a, E: EnvironmentPort> {
+use super::mir_lowering::ExprLowerer;
+use super::mir_lowering::lower_expr::{LiteralLowerer, VariableLowerer, BinaryOpLowerer, IndexLowerer, EmitLowerer};
+use super::mir_lowering::lower_calls::CallLowerer;
+use super::mir_lowering::lower_blocks::{BlockLowerer, DerivationLowerer};
+use super::mir_lowering::lower_control_flow::IfLowerer;
+
+pub struct LoweringContext<'a, E: EnvironmentPort> {
     pub env: &'a E,
     pub registry: &'a RegistryService,
 }
 
+impl<'a, E: EnvironmentPort> LoweringContext<'a, E> {
+    pub fn lower_expression(&self, expr: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
+        let service = MirLoweringService::new(self.env, self.registry);
+        service.lower_expression(expr, builder, is_tail)
+    }
+}
+
+pub struct LoweringContext<'a, E: EnvironmentPort> {
+    pub env: &'a E,
+    pub registry: &'a RegistryService,
+}
+
+pub struct MirLoweringService<'a, E: EnvironmentPort> {
+    pub context: LoweringContext<'a, E>,
+}
+
 impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
     pub fn new(env: &'a E, registry: &'a RegistryService) -> Self {
-        Self { env, registry }
+        Self { context: LoweringContext { env, registry } }
     }
 
     pub(crate) fn log(&self, level: LogLevel, message: &str) {
-        self.env.log(level, &format!("[MirLowering] {}", message));
+        self.context.env.log(level, &format!("[MirLowering] {}", message));
     }
 
     pub fn lower_program(&self, discourses: &[HirDiscourse]) -> Result<MirProgram, OnuError> {
@@ -73,115 +95,37 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
 
     pub(crate) fn lower_expression(&self, expr: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
         self.log(LogLevel::Trace, &format!("Lowering expression: {:?}", expr));
+        
         let res = match expr {
-            HirExpression::Literal(lit) => self.lower_literal(lit),
-            HirExpression::Variable(name, is_consuming) => self.lower_variable(name, *is_consuming, builder),
-            HirExpression::BinaryOp { op, left, right } => {
-                let lhs = self.lower_expression(left, builder, false)?;
-                let rhs = self.lower_expression(right, builder, false)?;
-                let dest = builder.new_ssa();
-                let mir_op = match op {
-                    HirBinOp::Add => MirBinOp::Add,
-                    HirBinOp::Sub => MirBinOp::Sub,
-                    HirBinOp::Mul => MirBinOp::Mul,
-                    HirBinOp::Div => MirBinOp::Div,
-                    HirBinOp::Equal => MirBinOp::Eq,
-                    HirBinOp::NotEqual => MirBinOp::Ne,
-                    HirBinOp::LessThan => MirBinOp::Lt,
-                    HirBinOp::GreaterThan => MirBinOp::Gt,
-                };
-                builder.emit(MirInstruction::BinaryOperation { dest, op: mir_op, lhs: lhs.clone(), rhs: rhs.clone() });
-                
-                // Parent cleanup: drop inputs if they are resource variables
-                if let MirOperand::Variable(ssa_id, _) = &lhs {
-                    if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                        builder.mark_consumed(*ssa_id);
-                    }
-                }
-                if let MirOperand::Variable(ssa_id, _) = &rhs {
-                    if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                        builder.mark_consumed(*ssa_id);
-                    }
-                }
-                self.collect_resource_drop(&lhs, builder);
-                self.collect_resource_drop(&rhs, builder);
-
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(MirOperand::Variable(dest, false))
-            }
-            HirExpression::Call { name, args } => {
-                let res = self.lower_call(name, args, builder)?;
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(res)
-            }
-            HirExpression::Derivation { name, typ, value, body } => {
-                let res = self.lower_derivation(name, typ, value, body, builder, is_tail)?;
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(res)
-            }
-            HirExpression::If { condition, then_branch, else_branch } => {
-                let res = self.lower_if(condition, then_branch, else_branch, builder, is_tail)?;
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(res)
-            }
-            HirExpression::Block(exprs) => {
-                let res = self.lower_block(exprs, builder, is_tail)?;
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(res)
-            }
-            HirExpression::Emit(e) => {
-                let op = self.lower_expression(e, builder, false)?;
-                builder.emit(MirInstruction::Emit(op.clone()));
-                
-                // Parent cleanup: Emit takes custody and then we drop it.
-                // We must ALSO mark it consumed if it is a variable and a RESOURCE.
-                if let MirOperand::Variable(ssa_id, _) = &op {
-                    if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                        builder.mark_consumed(*ssa_id);
-                    }
-                }
-                self.collect_resource_drop(&op, builder);
-
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(MirOperand::Constant(MirLiteral::Nothing))
-            }
+            HirExpression::Literal(_) => LiteralLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::Variable(_, _) => VariableLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::BinaryOp { .. } => BinaryOpLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::Call { .. } => CallLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::Derivation { .. } => DerivationLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::If { .. } => IfLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::Block(_) => BlockLowerer.lower(expr, &self.context, builder, is_tail),
+            HirExpression::Emit(_) => EmitLowerer.lower(expr, &self.context, builder, is_tail),
             HirExpression::Drop(e) => {
                 let op = self.lower_expression(e, builder, false)?;
                 if let MirOperand::Variable(ssa_var, _) = op {
                     let typ = builder.resolve_ssa_type(ssa_var).unwrap_or(OnuType::Nothing);
                     builder.emit(MirInstruction::Drop { ssa_var, typ });
                 }
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
                 Ok(MirOperand::Constant(MirLiteral::Nothing))
             }
-            HirExpression::Index { subject, index } => {
-                let op = self.lower_expression(subject, builder, false)?;
-                let dest = builder.new_ssa();
-                builder.emit(MirInstruction::Index { dest, subject: op.clone(), index: *index });
-                
-                // Parent cleanup: Index doesn't take custody but we must drop if it's an intermediate resource
-                if let MirOperand::Variable(ssa_id, _) = &op {
-                    if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                        builder.mark_consumed(*ssa_id);
-                    }
-                }
-                self.collect_resource_drop(&op, builder);
-
-                let pending = builder.take_pending_drops();
-                for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
-                Ok(MirOperand::Variable(dest, false))
+            HirExpression::Index { .. } => IndexLowerer.lower(expr, &self.context, builder, is_tail),
+            _ => {
+                Err(OnuError::GrammarViolation {
+                    message: format!("Unsupported HIR expression type for MIR lowering: {:?}", expr),
+                    span: Default::default(),
+                })
             }
-            _ => Ok(MirOperand::Constant(MirLiteral::Nothing)),
         }?;
+
+        let pending = builder.take_pending_drops();
+        for (var, typ) in pending { builder.emit(MirInstruction::Drop { ssa_var: var, typ }); }
+        
         self.log(LogLevel::Trace, &format!("Expression result: {:?}", res));
         Ok(res)
     }
 }
-

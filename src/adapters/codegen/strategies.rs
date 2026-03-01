@@ -195,8 +195,19 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
                     let val = builder.build_load(*ptr, "load_for_drop").unwrap();
                     if let BasicValueEnum::StructValue(s) = val {
                         if typ == &crate::domain::entities::types::OnuType::Strings {
+                            // OPTIMIZATION: If the dynamic flag is statically 0 (not dynamic), 
+                            // emit nothing at all. This is true for literal strings.
+                            let is_dynamic_val = builder.build_extract_value(s, 2, "is_dynamic_flag").unwrap();
+                            if is_dynamic_val.is_int_value() {
+                                let int_val = is_dynamic_val.into_int_value();
+                                if let Some(0) = int_val.get_zero_extended_constant() {
+                                    // Statically known to be non-dynamic. Emit zero IR.
+                                    return Ok(());
+                                }
+                            }
+
                             let str_ptr = builder.build_extract_value(s, 1, "str_ptr_for_drop").unwrap();
-                            let is_dynamic = builder.build_extract_value(s, 2, "is_dynamic_flag").unwrap().into_int_value();
+                            let is_dynamic = is_dynamic_val.into_int_value();
 
                             // Check if dynamically allocated before freeing
                             let free_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "free_bb");

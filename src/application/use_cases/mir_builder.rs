@@ -168,6 +168,19 @@ impl MirBuilder {
         self.current_block_idx = None;
     }
 
+    /// Executes a closure and automatically emits any pending drops 
+    /// scheduled during its execution. This enforces the Parent-Cleans-Up-Children policy.
+    pub fn with_resource_cleanup<F, R>(&mut self, f: F) -> R 
+    where F: FnOnce(&mut Self) -> R 
+    {
+        let result = f(self);
+        let pending = self.take_pending_drops();
+        for (var, typ) in pending {
+            self.emit(MirInstruction::Drop { ssa_var: var, typ });
+        }
+        result
+    }
+
     pub fn emit(&mut self, inst: MirInstruction) {
         if let Some(idx) = self.current_block_idx {
             self.blocks[idx].instructions.push(inst);
