@@ -26,13 +26,14 @@ pub struct LoweringContext<'a, E: EnvironmentPort> {
 impl<'a, E: EnvironmentPort> LoweringContext<'a, E> {
     pub fn lower_expression(&self, expr: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {
         let service = MirLoweringService::new(self.env, self.registry);
-        service.lower_expression(expr, builder, is_tail)
+        let res = service.lower_expression(expr, builder, is_tail)?;
+        
+        // Parent-Cleans-Up-Children policy: schedule drop for the intermediate result.
+        // The caller of this context.lower_expression() is responsible for emitting the drop.
+        service.collect_resource_drop(&res, builder);
+        
+        Ok(res)
     }
-}
-
-pub struct LoweringContext<'a, E: EnvironmentPort> {
-    pub env: &'a E,
-    pub registry: &'a RegistryService,
 }
 
 pub struct MirLoweringService<'a, E: EnvironmentPort> {
@@ -83,7 +84,7 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         Ok(builder.build())
     }
 
-    fn collect_resource_drop(&self, op: &MirOperand, builder: &mut MirBuilder) {
+    pub(crate) fn collect_resource_drop(&self, op: &MirOperand, builder: &mut MirBuilder) {
         if let MirOperand::Variable(ssa_id, _) = op {
             if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
                 if typ.is_resource() {
