@@ -35,6 +35,21 @@ Goal: Migrate high-level constructs and finalize the Facade.
     - [x] Migrate complex branch reconciliation logic.
 - [x] Task: Refactor `MirLoweringService` into a Dispatcher
     - [x] Replace the giant match arm with a call to the strategy dispatcher.
-- [~] Task: Final Leak Verification
+- [ ] Task: Final Leak Verification
     - [ ] Run all samples through Valgrind to ensure zero regressions.
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Complex Control Flow & Blocks' (Protocol in workflow.md)
+
+## Phase 4: Stabilization & Performance (Zero-Cost & Memory Safety)
+Goal: Eliminate the double-frees and achieve true zero-cost for static data.
+
+- [ ] Task: Implement Compile-Time Zero-Cost Drop
+    - [ ] Update `DropStrategy` to statically detect `Constant` operands with `is_dynamic = false`.
+    - [ ] Ensure NO IR is emitted for these cases.
+- [ ] Task: Resolve Redundant Ownership (Double-Free Fix)
+    - [ ] Refactor `MirLoweringService` and `LoweringContext` to have a single source of truth for result cleanup.
+    - [ ] Hypothesis Testing: Use TDD to prove exactly one drop per resource.
+- [~] Task: Fix Resource Collision (@free vs @test_free.onu)
+    - [ ] Ensure internal compiler intrinsics like `free` are uniquely identified.
+- [ ] Task: Comprehensive Memory Audit
+    - [ ] Run Valgrind on all samples and achieve 0 leaks / 0 errors.
+- [ ] Task: Conductor - User Manual Verification 'Phase 4: Stabilization & Performance' (Protocol in workflow.md)
