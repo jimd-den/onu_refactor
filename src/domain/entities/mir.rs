@@ -47,7 +47,7 @@ pub enum MirInstruction {
     Tuple { dest: usize, elements: Vec<MirOperand> },
     Index { dest: usize, subject: MirOperand, index: usize },
     Emit(MirOperand),
-    Drop { ssa_var: usize, typ: OnuType, name: String },
+    Drop { ssa_var: usize, typ: OnuType, name: String, is_dynamic: bool },
     Alloc { dest: usize, size_bytes: MirOperand },
     MemCopy { dest: MirOperand, src: MirOperand, size: MirOperand },
     PointerOffset { dest: usize, ptr: MirOperand, offset: MirOperand },

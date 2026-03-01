@@ -189,35 +189,39 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Drop { ssa_var, typ, name } = inst {
+        if let MirInstruction::Drop { ssa_var, typ, name, is_dynamic } = inst {
+            // ZERO-COST ACHIEVEMENT: If statically known to be non-dynamic at lowering, emit nothing.
+            if !is_dynamic {
+                return Ok(());
+            }
+
             if typ.is_resource() {
                 if let Some(ptr) = ssa_storage.get(ssa_var) {
                     let val = builder.build_load(*ptr, "load_for_drop").unwrap();
                     if let BasicValueEnum::StructValue(s) = val {
                         if typ == &crate::domain::entities::types::OnuType::Strings {
-                            // OPTIMIZATION: If the dynamic flag is statically 0 (not dynamic), 
-                            // emit nothing at all. This is true for literal strings.
-                            let is_dynamic_val = builder.build_extract_value(s, 2, "is_dynamic_flag").unwrap();
-                            if is_dynamic_val.is_int_value() {
-                                let int_val = is_dynamic_val.into_int_value();
-                                if let Some(0) = int_val.get_zero_extended_constant() {
-                                    // Statically known to be non-dynamic. Emit zero IR.
-                                    return Ok(());
-                                }
-                            }
-
                             let str_ptr = builder.build_extract_value(s, 1, "str_ptr_for_drop").unwrap();
-                            let is_dynamic = is_dynamic_val.into_int_value();
+                            let is_dynamic_runtime = builder.build_extract_value(s, 2, "is_dynamic_flag").unwrap().into_int_value();
 
                             // Check if dynamically allocated before freeing
                             let free_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "free_bb");
                             let cont_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "cont_bb");
 
-                            let is_true = builder.build_int_compare(inkwell::IntPredicate::NE, is_dynamic, context.bool_type().const_int(0, false), "is_dynamic_cmp").unwrap();
+                            let is_true = builder.build_int_compare(inkwell::IntPredicate::NE, is_dynamic_runtime, context.bool_type().const_int(0, false), "is_dynamic_cmp").unwrap();
                             builder.build_conditional_branch(is_true, free_bb, cont_bb).unwrap();
 
                             builder.position_at_end(free_bb);
                             
+                            // Declare free if it doesn't exist
+                            let free_fn = if let Some(f) = module.get_function("free") {
+                                f
+                            } else {
+                                let void_type = context.void_type();
+                                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                                let free_type = void_type.fn_type(&[i8_ptr_type.into()], false);
+                                module.add_function("free", free_type, Some(inkwell::module::Linkage::External))
+                            };
+
                             // DIAGNOSTIC LOGGING: Print the pointer, variable name, and function name being freed
                             let printf_fn = module.get_function("printf").expect("printf not pre-declared");
                             let func = builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -227,7 +231,6 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
                             let fmt_str = builder.build_global_string_ptr(&log_msg, "free_log_fmt").unwrap();
                             builder.build_call(printf_fn, &[fmt_str.as_pointer_value().into(), str_ptr.into()], "free_log").unwrap();
 
-                            let free_fn = module.get_function("free").expect("free not pre-declared");
                             builder.build_call(free_fn, &[str_ptr.into()], "free_call").unwrap();
 
                             // Prevent double free by zeroing out the flag
@@ -423,10 +426,14 @@ pub fn operand_to_llvm<'ctx>(
                 let is_dynamic = bool_type.const_int(0, false); // Literal strings are not dynamic
 
                 let string_struct_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false);
-                let mut string_val = string_struct_type.get_undef();
-                string_val = builder.build_insert_value(string_val, length, 0, "set_len").unwrap().into_struct_value();
-                string_val = builder.build_insert_value(string_val, global_str, 1, "set_ptr").unwrap().into_struct_value();
-                string_val = builder.build_insert_value(string_val, is_dynamic, 2, "set_is_dynamic").unwrap().into_struct_value();
+                
+                // Achievement: Use const_named_struct to ensure this is a compile-time constant
+                let string_val = string_struct_type.const_named_struct(&[
+                    length.into(),
+                    global_str.as_pointer_value().into(),
+                    is_dynamic.into(),
+                ]);
+                
                 string_val.into()
             }
             MirLiteral::Nothing => context.i64_type().const_int(0, false).into(),

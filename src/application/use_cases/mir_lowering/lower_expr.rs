@@ -24,15 +24,10 @@ impl ExprLowerer for IndexLowerer {
         if let HirExpression::Index { subject, index } = expr {
             let op = context.lower_expression(subject, builder, false)?;
 
-            // CUSTODY TRANSFER: Index doesn't take custody, but we must mark consumed 
-            // if it's an intermediate resource so the orchestrator doesn't drop it.
-            // We schedule the drop ourselves to ensure it happens AFTER the index.
+            // CUSTODY TRANSFER: Mark operands consumed so the orchestrator doesn't double-drop.
             if let MirOperand::Variable(ssa_id, _) = &op {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
+                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*ssa_id);
                 }
             }
 
@@ -43,7 +38,8 @@ impl ExprLowerer for IndexLowerer {
                 index: *index 
             });
             
-            Ok(MirOperand::Variable(dest, false))
+            let res = MirOperand::Variable(dest, false);
+            Ok(res)
         } else {
             Err(OnuError::GrammarViolation {
                 message: "Expected Index expression".to_string(),
@@ -66,11 +62,8 @@ impl ExprLowerer for EmitLowerer {
 
             // CUSTODY TRANSFER: Emit takes custody of the resource.
             if let MirOperand::Variable(ssa_id, _) = &op {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
+                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*ssa_id);
                 }
             }
 
@@ -100,19 +93,13 @@ impl ExprLowerer for BinaryOpLowerer {
 
             // CUSTODY TRANSFER: BinaryOp consumes its inputs if they are resources.
             if let MirOperand::Variable(ssa_id, _) = &lhs {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
+                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*ssa_id);
                 }
             }
             if let MirOperand::Variable(ssa_id, _) = &rhs {
-                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
-                    if typ.is_resource() {
-                        builder.mark_consumed(*ssa_id);
-                        builder.schedule_drop(*ssa_id, typ);
-                    }
+                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
+                    builder.mark_consumed(*ssa_id);
                 }
             }
 
@@ -157,7 +144,7 @@ impl ExprLowerer for LiteralLowerer {
         &self,
         expr: &HirExpression,
         _context: &LoweringContext<'a, E>,
-        _builder: &mut MirBuilder,
+        builder: &mut MirBuilder,
         _is_tail: bool,
     ) -> Result<MirOperand, OnuError> {
         if let HirExpression::Literal(lit) = expr {
@@ -168,7 +155,19 @@ impl ExprLowerer for LiteralLowerer {
                 HirLiteral::Text(s) => MirLiteral::Text(s.clone()),
                 HirLiteral::Nothing => MirLiteral::Nothing,
             };
-            Ok(MirOperand::Constant(mir_lit))
+            
+            // Achievement: Constant resources (like strings) are wrapped in SSA and marked consumed
+            // immediately so the parent owns the new SSA variable.
+            let op = MirOperand::Constant(mir_lit.clone());
+            if let MirLiteral::Text(_) = mir_lit {
+                let dest = builder.new_ssa();
+                builder.set_ssa_type(dest, OnuType::Strings);
+                builder.set_ssa_is_dynamic(dest, false);
+                builder.build_assign(dest, op);
+                Ok(MirOperand::Variable(dest, false))
+            } else {
+                Ok(op)
+            }
         } else {
             Err(OnuError::GrammarViolation {
                 message: "Expected Literal expression".to_string(),

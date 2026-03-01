@@ -23,20 +23,23 @@ impl ExprLowerer for BlockLowerer {
             let len = exprs.len();
             for (i, e) in exprs.iter().enumerate() {
                 let is_last = i == len - 1;
-                
+
                 // Cleanup handled centrally by each lower_expression call
                 last_op = context.lower_expression(e, builder, is_tail && is_last)?;
-                
+
+                // Achievement: Emit drops after each expression in the block.
+                // This cleans up operands and intermediate results.
+                let pending = builder.take_pending_drops();
+                for (var, typ, name, is_dyn) in pending {
+                    if is_dyn {
+                        builder.emit(MirInstruction::Drop { ssa_var: var, typ, name, is_dynamic: is_dyn });
+                    }
+                }
+
                 if builder.get_current_block_id().is_none() { break; }
             }
             
-            // CUSTODY TRANSFER: Mark the final result as consumed so the parent owns it
-            if let MirOperand::Variable(ssa_id, _) = &last_op {
-                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*ssa_id);
-                }
-            }
-
+            // Result consumption handled by parent caller
             Ok(last_op)
         } else {
             Err(OnuError::GrammarViolation {
@@ -57,8 +60,16 @@ impl ExprLowerer for DerivationLowerer {
     ) -> Result<MirOperand, OnuError> {
         if let HirExpression::Derivation { name, typ, value, body } = expr {
             let val_op = context.lower_expression(value, builder, false)?;
-            
-            // CUSTODY TRANSFER: Mark original value as consumed (transfer to derivation variable)
+
+            // Achievement: Emit drops for any intermediates in the value expression
+            let pending = builder.take_pending_drops();
+            for (var, typ, name, is_dyn) in pending {
+                if is_dyn {
+                    builder.emit(MirInstruction::Drop { ssa_var: var, typ, name, is_dynamic: is_dyn });
+                }
+            }
+
+            // Mark original value as consumed (transfer to derivation variable)
             if let MirOperand::Variable(ssa_id, _) = &val_op {
                 if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
                     builder.mark_consumed(*ssa_id);
@@ -73,14 +84,6 @@ impl ExprLowerer for DerivationLowerer {
             builder.define_variable(name, ssa_var, typ.clone());
 
             let res = context.lower_expression(body, builder, is_tail)?;
-
-            // CUSTODY TRANSFER: If result is a resource variable and it's being returned, mark it consumed
-            // to transfer ownership to the parent.
-            if let MirOperand::Variable(res_id, _) = &res {
-                if builder.resolve_ssa_type(*res_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*res_id);
-                }
-            }
 
             builder.exit_scope();
             Ok(res)

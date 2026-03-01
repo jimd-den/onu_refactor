@@ -62,8 +62,8 @@ impl StdlibLowering {
             true
         );
 
-        // Cleanup temporary constant string metadata to prevent leaks
-        builder.emit(MirInstruction::Drop { ssa_var: fmt_str_ssa, typ: OnuType::Strings, name: "fmt_str_metadata".to_string() });
+        // Schedule metadata drop - central policy will ensure zero-cost if static
+        builder.schedule_drop(fmt_str_ssa, OnuType::Strings);
 
         MirOperand::Variable(dest, false)
     }
@@ -141,8 +141,8 @@ impl StdlibLowering {
             true
         );
 
-        // Cleanup temporary constant string metadata
-        builder.emit(MirInstruction::Drop { ssa_var: null_char_ptr_ssa, typ: OnuType::Strings, name: "null_char_metadata".to_string() });
+        // Schedule metadata drop
+        builder.schedule_drop(null_char_ptr_ssa, OnuType::Strings);
 
         MirOperand::Variable(dest, false)
     }
