@@ -25,7 +25,7 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
                 span: crate::domain::entities::error::Span::default()
             })?;
         let typ = builder.resolve_variable_type(name).unwrap_or(OnuType::Nothing);
-        if is_consuming {
+        if is_consuming && typ.is_resource() {
             builder.schedule_drop(ssa_var, typ.clone());
             builder.mark_consumed(ssa_var);
         }

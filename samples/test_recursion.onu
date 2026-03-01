@@ -1,0 +1,23 @@
+the module called RecursionVerification
+    with concern: tail call optimization
+
+-- Deep recursion to test TCO
+the effect behavior called count-down
+    with intent: demonstrate deep tail recursion
+    takes:
+        an integer called n
+    delivers: nothing
+    with diminishing: n
+    as:
+        if n matches 0
+            then derivation: d1 derives-from nothing broadcasts "PASS: Deep recursion complete."
+            else (n decreased-by 1) utilizes count-down
+
+the effect behavior called run
+    with intent: verify tail call optimization
+    takes: nothing
+    delivers: nothing
+    as:
+        -- If TCO is broken, 100,000 might blow the stack or hang
+        100000 utilizes count-down
+        nothing

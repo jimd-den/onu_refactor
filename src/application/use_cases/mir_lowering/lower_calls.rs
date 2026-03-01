@@ -14,31 +14,42 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
             mir_args.push(self.lower_expression(arg, builder, false)?);
         }
 
-        if name == "as-text" && mir_args.len() == 1 {
-            let result = StdlibLowering::lower_as_text(&mir_args[0], builder);
-            let pending = builder.take_pending_drops();
-            for (var, typ) in pending {
-                builder.emit(MirInstruction::Drop { ssa_var: var, typ });
+        let (return_type, arg_types, arg_is_observation) = if let Some(sig) = self.registry.get_signature(name) {
+            (sig.return_type.clone(), sig.input_types.clone(), sig.arg_is_observation.clone())
+        } else {
+            (OnuType::Nothing, Vec::new(), Vec::new())
+        };
+
+        // Mark resource arguments as consumed if they are not observations
+        // This applies to both built-in and general calls.
+        for (i, arg_op) in mir_args.iter().enumerate() {
+            if let MirOperand::Variable(ssa_id, _) = arg_op {
+                let is_observation = arg_is_observation.get(i).copied().unwrap_or(false);
+                let typ = arg_types.get(i).cloned().unwrap_or(OnuType::Nothing);
+                if !is_observation && typ.is_resource() {
+                    builder.mark_consumed(*ssa_id);
+                    builder.schedule_drop(*ssa_id, typ);
+                }
             }
-            return Ok(result);
+        }
+
+        if name == "as-text" && mir_args.len() == 1 {
+            let res = StdlibLowering::lower_as_text(&mir_args[0], builder);
+            if let MirOperand::Variable(ssa_id, _) = &res {
+                builder.set_ssa_type(*ssa_id, OnuType::Strings);
+            }
+            return Ok(res);
         }
 
         if name == "joined-with" && mir_args.len() == 2 {
-            let result = StdlibLowering::lower_joined_with(&mir_args[0], &mir_args[1], builder);
-            let pending = builder.take_pending_drops();
-            for (var, typ) in pending {
-                builder.emit(MirInstruction::Drop { ssa_var: var, typ });
+            let res = StdlibLowering::lower_joined_with(&mir_args[0], &mir_args[1], builder);
+            if let MirOperand::Variable(ssa_id, _) = &res {
+                builder.set_ssa_type(*ssa_id, OnuType::Strings);
             }
-            return Ok(result);
+            return Ok(res);
         }
 
         let dest = builder.new_ssa();
-        let (return_type, arg_types) = if let Some(sig) = self.registry.get_signature(name) {
-            (sig.return_type.clone(), sig.input_types.clone())
-        } else {
-            (OnuType::Nothing, Vec::new())
-        };
-
         builder.emit(MirInstruction::Call {
             dest,
             name: name.to_string(),
@@ -46,11 +57,6 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
             return_type,
             arg_types,
         });
-
-        let pending = builder.take_pending_drops();
-        for (var, typ) in pending {
-            builder.emit(MirInstruction::Drop { ssa_var: var, typ });
-        }
 
         Ok(MirOperand::Variable(dest, false))
     }

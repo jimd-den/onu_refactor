@@ -17,6 +17,8 @@ pub struct MirBuilder {
     scopes: Vec<HashMap<String, (usize, OnuType)>>,
     pending_drops: Vec<(usize, OnuType)>,
     consumed_vars: std::collections::HashSet<usize>,
+    ssa_types: HashMap<usize, OnuType>,
+    survivors: std::collections::HashSet<usize>,
 }
 
 impl MirBuilder {
@@ -37,10 +39,14 @@ impl MirBuilder {
             scopes: vec![HashMap::new()],
             pending_drops: Vec::new(),
             consumed_vars: std::collections::HashSet::new(),
+            ssa_types: HashMap::new(),
+            survivors: std::collections::HashSet::new(),
         }
     }
 
     pub fn add_arg(&mut self, name: String, typ: OnuType, ssa_var: usize) {
+        self.ssa_types.insert(ssa_var, typ.clone());
+        if typ.is_resource() { self.survivors.insert(ssa_var); }
         self.args.push(crate::domain::entities::mir::MirArgument { name, typ, ssa_var });
     }
 
@@ -51,14 +57,34 @@ impl MirBuilder {
     }
 
     pub fn define_variable(&mut self, name: &str, ssa_var: usize, typ: OnuType) {
+        self.ssa_types.insert(ssa_var, typ.clone());
+        if typ.is_resource() { self.survivors.insert(ssa_var); }
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name.to_string(), (ssa_var, typ));
         }
     }
 
+    pub fn resolve_ssa_type(&self, ssa_var: usize) -> Option<OnuType> {
+        self.ssa_types.get(&ssa_var).cloned()
+    }
+
+    pub fn set_ssa_type(&mut self, ssa_var: usize, typ: OnuType) {
+        if typ.is_resource() { self.survivors.insert(ssa_var); }
+        self.ssa_types.insert(ssa_var, typ);
+    }
+
+    pub fn get_surviving_resources(&self) -> Vec<(usize, OnuType)> {
+        self.survivors.iter()
+            .filter_map(|id| self.ssa_types.get(id).map(|t| (*id, t.clone())))
+            .collect()
+    }
+
     pub fn resolve_variable(&self, name: &str) -> Option<usize> {
         for scope in self.scopes.iter().rev() {
             if let Some((id, _)) = scope.get(name) {
+                if self.consumed_vars.contains(id) {
+                    return None;
+                }
                 return Some(*id);
             }
         }
@@ -67,7 +93,10 @@ impl MirBuilder {
 
     pub fn resolve_variable_type(&self, name: &str) -> Option<OnuType> {
         for scope in self.scopes.iter().rev() {
-            if let Some((_, typ)) = scope.get(name) {
+            if let Some((id, typ)) = scope.get(name) {
+                if self.consumed_vars.contains(id) {
+                    return None;
+                }
                 return Some(typ.clone());
             }
         }
@@ -83,7 +112,21 @@ impl MirBuilder {
     }
 
     pub fn mark_consumed(&mut self, ssa_var: usize) {
+        self.survivors.remove(&ssa_var);
         self.consumed_vars.insert(ssa_var);
+    }
+
+    pub fn get_consumed_vars(&self) -> std::collections::HashSet<usize> {
+        self.consumed_vars.clone()
+    }
+
+    pub fn set_consumed_vars(&mut self, consumed: std::collections::HashSet<usize>) {
+        // When setting consumed vars (e.g. after branching), 
+        // we must also update survivors to match the new consumed state.
+        for id in &consumed {
+            self.survivors.remove(id);
+        }
+        self.consumed_vars = consumed;
     }
 
     pub fn enter_scope(&mut self) {
@@ -119,6 +162,10 @@ impl MirBuilder {
         if id < self.blocks.len() {
             self.current_block_idx = Some(id);
         }
+    }
+
+    pub fn clear_current_block(&mut self) {
+        self.current_block_idx = None;
     }
 
     pub fn emit(&mut self, inst: MirInstruction) {
@@ -181,3 +228,4 @@ impl MirBuilder {
         }
     }
 }
+

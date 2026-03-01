@@ -71,6 +71,13 @@ impl LivenessRule {
             HirExpression::ActsAs { subject, .. } => {
                 self.visit_backward(subject, live_vars);
             }
+            HirExpression::BinaryOp { left, right, .. } => {
+                self.visit_backward(right, live_vars);
+                self.visit_backward(left, live_vars);
+            }
+            HirExpression::Drop(e) => {
+                self.visit_backward(e, live_vars);
+            }
             _ => {}
         }
     }

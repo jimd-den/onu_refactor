@@ -55,7 +55,7 @@ pub enum MirInstruction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MirBinOp {
-    Add, Sub, Mul, Div, Eq, Gt, Lt,
+    Add, Sub, Mul, Div, Eq, Ne, Gt, Lt,
 }
 
 #[derive(Debug, Clone, PartialEq)]

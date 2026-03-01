@@ -1,0 +1,23 @@
+the module called LogicVerification
+    with concern: operation correctness
+
+the effect behavior called run
+    with intent: verify binary operations and logic
+    takes: nothing
+    delivers: nothing
+    as:
+        -- Verify NotEqual mapping (previously Eq bug)
+        derivation: a derives-from 1
+        derivation: b derives-from 2
+        derivation: is-diff derives-from a opposes b
+        
+        if is-diff matches 1
+            then derivation: d1 derives-from nothing broadcasts "PASS: 1 opposes 2 is TRUE (1)"
+            else derivation: d2 derives-from nothing broadcasts "FAIL: 1 opposes 2 is FALSE (0)"
+            
+        derivation: is-same derives-from a opposes a
+        if is-same matches 0
+            then derivation: d3 derives-from nothing broadcasts "PASS: 1 opposes 1 is FALSE (0)"
+            else derivation: d4 derives-from nothing broadcasts "FAIL: 1 opposes 1 is TRUE (1)"
+            
+        nothing
