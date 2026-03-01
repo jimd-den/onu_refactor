@@ -4,5 +4,7 @@ pub mod lowering_service;
 pub mod mir_lowering_service;
 pub mod mir_lowering;
 pub mod mir_builder;
-pub mod stdlib_lowering;
 pub mod module_service;
+pub mod module_bootstrap;
+pub mod stages;
+pub mod stdlib;

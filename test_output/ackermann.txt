@@ -1,0 +1,9 @@
+═══════════════════════════════════════════
+  ACKERMANN GROWTH DEMONSTRATION
+  Rules: Successor, Descent, and Spiral
+═══════════════════════════════════════════
+Solving Spiral(2, 2)...
+7
+Solving Spiral(3, 2)...
+29
+═══════════════════════════════════════════

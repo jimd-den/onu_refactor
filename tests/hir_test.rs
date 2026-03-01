@@ -114,3 +114,50 @@ fn test_mir_lowering_binop_mapping() {
         assert!(found, "Expected MirInstruction::BinaryOperation for {:?} not found", mir_op_expected);
     }
 }
+
+#[test]
+fn test_ownership_visitor_inserts_explicit_drops() {
+    let source = "the behavior called test with intent: nothing takes: an string called s delivers: nothing as:
+    s"; // simple string usage
+
+    // Set up parsing
+    let mut lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
+    use onu_refactor::application::ports::compiler_ports::LexerPort;
+    let tokens = lexer.lex(source).unwrap();
+    let mut parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
+    let mut registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
+    parser.scan_headers(&tokens, &mut registry).unwrap();
+    let discourses = parser.parse_with_registry(tokens, &mut registry).unwrap();
+
+    // Use lowering service to lower to HIR (which doesn't yet have explicit drops)
+    let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(onu_refactor::application::options::LogLevel::Error);
+    let mut hir_discourses = Vec::new();
+    for d in discourses {
+        let hir = onu_refactor::application::use_cases::lowering_service::LoweringService::lower_discourse(&d, &registry);
+        hir_discourses.push(hir);
+    }
+
+    // We expect the ownership pass to run now and modify HIR
+    let analysis_service = onu_refactor::application::use_cases::analysis_service::AnalysisService::new(&env, &registry);
+    for hir in &mut hir_discourses {
+        analysis_service.analyze_discourse(hir).unwrap();
+    }
+
+    // Now verify the HIR has an explicit Drop block/expression at the end of the behavior body
+    let mut found_drop = false;
+    if let onu_refactor::domain::entities::hir::HirDiscourse::Behavior { body, .. } = &hir_discourses[0] {
+        if let onu_refactor::domain::entities::hir::HirExpression::Block(exprs) = body {
+            for e in exprs {
+                if let onu_refactor::domain::entities::hir::HirExpression::Drop(_) = e {
+                    found_drop = true;
+                }
+            }
+        } else if let onu_refactor::domain::entities::hir::HirExpression::Drop(_) = body {
+            found_drop = true;
+        } else if let onu_refactor::domain::entities::hir::HirExpression::Block(exprs) = body {
+            // Check deeper if needed
+        }
+    }
+
+    assert!(found_drop, "Ownership pass should have inserted explicit drops into the HIR");
+}

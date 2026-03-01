@@ -284,9 +284,11 @@ impl<'a> ParserInternal<'a> {
                 Token::Delivers | Token::As => break,
                 Token::Identifier(_) | Token::Nothing => {
                     if self.match_token(Token::Nothing) { break; }
-                    let type_info = self.parse_type_info()?.unwrap_or(TypeInfo { onu_type: OnuType::I64, display_name: "i64".into(), via_role: None, is_observation: false });
+                    let type_info = self.parse_type_info()?.ok_or_else(|| {
+                        OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit type indicator (e.g. 'a', 'an', 'the') for argument".into(), span: Span::default() }
+                    })?;
                     self.match_token(Token::Called);
-                                let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { "".to_string() };
+                    let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { "".to_string() };
                     args.push(Argument { name, type_info });
                 }
                 _ => { self.advance(); }
@@ -299,8 +301,14 @@ impl<'a> ParserInternal<'a> {
         if let Some(Token::Identifier(s)) = self.peek() {
             if s == "a" || s == "an" || s == "the" {
                 self.advance();
-                        let type_name = if let Some(Token::Identifier(tn)) = self.advance() { tn.clone() } else { "i64".into() };
-                let onu_type = OnuType::from_name(&type_name).unwrap_or(OnuType::I64);
+                let type_name = if let Some(Token::Identifier(tn)) = self.advance() {
+                    tn.clone()
+                } else {
+                    return Err(OnuError::GrammarViolation { message: "Strict typing enforced: Missing type name after article".into(), span: Span::default() });
+                };
+                let onu_type = OnuType::from_name(&type_name).unwrap_or_else(|| {
+                    panic!("Unknown type: {}", type_name); // Or proper error
+                });
                 return Ok(Some(TypeInfo { onu_type, display_name: type_name, via_role: None, is_observation: false }));
             }
         }
@@ -308,8 +316,13 @@ impl<'a> ParserInternal<'a> {
     }
 
     fn parse_return_type(&mut self) -> Result<ReturnType, OnuError> {
-        let ti = self.parse_type_info()?.map(|ti| ti.onu_type).unwrap_or(OnuType::Nothing);
-        Ok(ReturnType(ti))
+        if self.match_token(Token::Nothing) {
+            return Ok(ReturnType(OnuType::Nothing));
+        }
+        let ti = self.parse_type_info()?.ok_or_else(|| {
+            OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit return type".into(), span: Span::default() }
+        })?;
+        Ok(ReturnType(ti.onu_type))
     }
 
     fn parse_expression(&mut self) -> Result<Expression, OnuError> {

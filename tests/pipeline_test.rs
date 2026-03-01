@@ -157,3 +157,12 @@ fn test_drop_lowering() {
         panic!("Expected Behavior");
     }
 }
+
+#[test]
+fn test_stdlib_op_registry_dispatches() {
+    use onu_refactor::application::use_cases::stdlib::StdlibOpRegistry;
+    let registry = StdlibOpRegistry::new();
+    assert!(registry.get("joined-with").is_some());
+    assert!(registry.get("as-text").is_some());
+    assert!(registry.get("len").is_some());
+}

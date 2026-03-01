@@ -1,5 +1,5 @@
 use onu_refactor::adapters::parser::OnuParser;
-use onu_refactor::application::ports::compiler_ports::{ParserPort, Token};
+use onu_refactor::application::ports::compiler_ports::{ParserPort, LexerPort, Token};
 use onu_refactor::application::options::LogLevel;
 use onu_refactor::application::use_cases::registry_service::RegistryService;
 use onu_refactor::domain::entities::ast::Expression;
@@ -51,4 +51,28 @@ fn test_arity_bounded_utilizes() {
     
     // First discourse should be a behavior if it was wrapped, but here it's just a raw expression block
     // Actually ParserPort::parse returns Result<Vec<Discourse>, OnuError>
+}
+
+#[test]
+fn test_parser_fails_on_missing_argument_type() {
+    let source = "the behavior called test with intent: nothing takes: my_arg called my_arg delivers: nothing as: nothing";
+    let mut lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
+    let tokens = lexer.lex(source).unwrap();
+    let mut parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
+    let mut registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
+
+    let result = parser.parse_with_registry(tokens, &mut registry);
+    assert!(result.is_err(), "Parser should fail when argument type is implicitly fallen back to i64 (missing 'a' or 'an' strictly typed keyword)");
+}
+
+#[test]
+fn test_parser_fails_on_missing_return_type() {
+    let source = "the behavior called test with intent: nothing takes: nothing delivers: some_implicit_thing as: nothing";
+    let mut lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
+    let tokens = lexer.lex(source).unwrap();
+    let mut parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
+    let mut registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
+
+    let result = parser.parse_with_registry(tokens, &mut registry);
+    assert!(result.is_err(), "Parser should fail when return type is missing proper definition (implicit fallback to Nothing/i64)");
 }
