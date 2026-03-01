@@ -13,8 +13,9 @@ The `onu` language is a readable, pure, SOLID, and KISS-enforcing language. It a
 
 ## Core Features
 - **Concurrency & Parallelism**: Built-in support for safe and efficient multi-threaded operations.
-- **Memory Safety & Correctness**: A strong focus on ensuring code integrity and preventing common programming errors at compile-time.
+- **Memory Safety & Correctness**: A strong focus on ensuring code integrity. This is now achieved through a native linear types policy that generates explicit, optimized `malloc`/`free` calls at compile-time, eliminating common runtime errors.
 - **SOLID & KISS Principles**: The language is designed to enforce clean architecture and simplicity.
 
 ## Differentiation
-- **Syntax Innovation**: `onu` distinguishes itself through a unique, whitepaper-like syntax that prioritizes readability and semantic clarity, setting it apart from traditional languages like Rust or C++.
+- **Syntax Innovation**: `onu` distinguishes itself through a unique, whitepaper-like syntax that prioritizes readability and semantic clarity.
+- **Runtime-Free Performance**: By implementing memory management natively in the compiler IR, `onu` achieves a true runtime-free execution model, potentially surpassing C's performance through superior static analysis and optimization.
