@@ -9,3 +9,8 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./archive/arity_arch_refactor_20260227/](./archive/arity_arch_refactor_20260227/)*
 - [x] **Track: MIR Type Enrichment for Calls**
   *Link: [./archive/mir_type_enrichment_20260227/](./archive/mir_type_enrichment_20260227/)*
+
+---
+
+- [ ] **Track: MIR Lowering Service Decomposition**
+  *Link: [./tracks/mir_lowering_decomp_20260301/](./tracks/mir_lowering_decomp_20260301/)*
