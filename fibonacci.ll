@@ -81,14 +81,12 @@ bb0:
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* noundef nonnull align 1 dereferenceable(14) %offset_ptr70, i8* noundef nonnull align 1 dereferenceable(14) getelementptr inbounds ([15 x i8], [15 x i8]* @strtmp.3, i64 0, i64 0), i64 14, i1 false)
   %offset_ptr76 = getelementptr inbounds i8, i8* %malloc_call64, i64 %addtmp55
   store i8 0, i8* %offset_ptr76, align 1
-  call void @free(i8* %malloc_call26)
   %emit = call i32 @puts(i8* noundef nonnull dereferenceable(1) %malloc_call64)
-  call void @free(i8* %malloc_call64)
-  %malloc_call104 = call dereferenceable_or_null(32) i8* @malloc(i64 32)
-  %calltmp110 = call i32 (i8*, i8*, ...) @sprintf(i8* noundef nonnull dereferenceable(1) %malloc_call104, i8* noundef nonnull dereferenceable(1) getelementptr inbounds ([5 x i8], [5 x i8]* @strtmp.5, i64 0, i64 0), i64 %calltmp)
-  %calltmp112 = call i64 @strlen(i8* noundef nonnull dereferenceable(1) %malloc_call104)
-  %emit120 = call i32 @puts(i8* noundef nonnull dereferenceable(1) %malloc_call104)
-  call void @free(i8* %malloc_call104)
+  %malloc_call90 = call dereferenceable_or_null(32) i8* @malloc(i64 32)
+  %calltmp96 = call i32 (i8*, i8*, ...) @sprintf(i8* noundef nonnull dereferenceable(1) %malloc_call90, i8* noundef nonnull dereferenceable(1) getelementptr inbounds ([5 x i8], [5 x i8]* @strtmp.5, i64 0, i64 0), i64 %calltmp)
+  %calltmp98 = call i64 @strlen(i8* noundef nonnull dereferenceable(1) %malloc_call90)
+  %emit106 = call i32 @puts(i8* noundef nonnull dereferenceable(1) %malloc_call90)
+  call void @free(i8* %malloc_call90)
   ret i32 0
 }
 

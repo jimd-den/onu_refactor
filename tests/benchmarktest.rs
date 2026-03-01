@@ -116,3 +116,21 @@ fn test_internal_functions_use_fastcc() {
     assert!(ir.contains("fastcc i64 @calculate-growth("), "internal fn must have fastcc");
     assert!(!ir.contains("fastcc i32 @main("), "main must NOT have fastcc");
 }
+
+#[test]
+fn test_pure_llvm_has_no_libc() {
+    let mut options = onu_refactor::application::options::CompilationOptions::default();
+    options.stop_after = Some(onu_refactor::application::options::CompilerStage::Codegen);
+    let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
+    let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+
+    pipeline.compile("samples/hello_world.onu").unwrap();
+    let ir = std::fs::read_to_string("hello_world.ll").unwrap();
+
+    assert!(!ir.contains("declare i8* @malloc("), "malloc must not be declared or used");
+    assert!(!ir.contains("declare void @free("), "free must not be declared or used");
+    assert!(!ir.contains("declare i32 @printf("), "printf must not be declared or used");
+    assert!(!ir.contains("declare i32 @sprintf("), "sprintf must not be declared or used");
+    assert!(!ir.contains("declare i64 @strlen("), "strlen must not be declared or used");
+}

@@ -8,7 +8,7 @@ the effect behavior called take-custody
         a string called s
     delivers: nothing
     as:
-        derivation: d1 derives-from nothing broadcasts s
+        broadcasts s
         nothing
 
 the effect behavior called run
@@ -17,13 +17,13 @@ the effect behavior called run
     delivers: nothing
     as:
         -- 1. Test move semantics
-        derivation: original derives-from "Linear Resource"
+        derivation: original derives-from a string "Linear Resource"
         original utilizes take-custody
         -- 'original' should now be unreachable/consumed
         
         -- 2. Test branch reconciliation
-        derivation: condition derives-from 1
-        derivation: msg derives-from "Branch Resource"
+        derivation: condition derives-from an integer 1
+        derivation: msg derives-from a string "Branch Resource"
         
         if condition matches 1
             then msg utilizes take-custody -- msg consumed here
@@ -32,5 +32,5 @@ the effect behavior called run
         -- After the if, 'msg' should be considered consumed because it 
         -- was consumed in at least one branch. Valgrind should see no leaks.
         
-        derivation: d2 derives-from nothing broadcasts "PASS: Ownership verification complete."
+        broadcasts "PASS: Ownership verification complete."
         nothing

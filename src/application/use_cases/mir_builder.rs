@@ -15,11 +15,9 @@ pub struct MirBuilder {
     current_block_idx: Option<usize>,
     next_ssa: usize,
     scopes: Vec<HashMap<String, (usize, OnuType)>>,
-    pending_drops: Vec<(usize, OnuType, String, bool)>,
     consumed_vars: std::collections::HashSet<usize>,
     ssa_types: HashMap<usize, OnuType>,
     ssa_is_dynamic: HashMap<usize, bool>,
-    survivors: HashMap<usize, (String, bool)>,
 }
 
 impl MirBuilder {
@@ -38,18 +36,15 @@ impl MirBuilder {
             current_block_idx: Some(0),
             next_ssa: 0,
             scopes: vec![HashMap::new()],
-            pending_drops: Vec::new(),
             consumed_vars: std::collections::HashSet::new(),
             ssa_types: HashMap::new(),
             ssa_is_dynamic: HashMap::new(),
-            survivors: HashMap::new(),
         }
     }
 
     pub fn add_arg(&mut self, name: String, typ: OnuType, ssa_var: usize) {
         self.ssa_types.insert(ssa_var, typ.clone());
         self.ssa_is_dynamic.insert(ssa_var, false); // Arguments are typically not owned by the caller in a way that requires free
-        if typ.is_resource() { self.survivors.insert(ssa_var, (name.clone(), false)); }
         self.args.push(crate::domain::entities::mir::MirArgument { name, typ, ssa_var });
     }
 
@@ -64,11 +59,6 @@ impl MirBuilder {
         // Default to not dynamic unless set_ssa_type specifies otherwise
         self.ssa_is_dynamic.entry(ssa_var).or_insert(false);
         
-        if typ.is_resource() {
-            let is_dyn = *self.ssa_is_dynamic.get(&ssa_var).unwrap_or(&false);
-            self.survivors.insert(ssa_var, (name.to_string(), is_dyn));
-        }
-        
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name.to_string(), (ssa_var, typ));
         }
@@ -80,30 +70,14 @@ impl MirBuilder {
 
     pub fn set_ssa_type(&mut self, ssa_var: usize, typ: OnuType) {
         self.ssa_types.insert(ssa_var, typ.clone());
-        if typ.is_resource() {
-            let is_dyn = *self.ssa_is_dynamic.get(&ssa_var).unwrap_or(&false);
-            self.survivors.insert(ssa_var, (format!("ssa_{}", ssa_var), is_dyn));
-        }
     }
 
     pub fn set_ssa_is_dynamic(&mut self, ssa_var: usize, is_dynamic: bool) {
         self.ssa_is_dynamic.insert(ssa_var, is_dynamic);
-        if let Some((name, _)) = self.survivors.get(&ssa_var) {
-            let name = name.clone();
-            self.survivors.insert(ssa_var, (name, is_dynamic));
-        }
     }
 
     pub fn resolve_ssa_is_dynamic(&self, ssa_var: usize) -> bool {
         *self.ssa_is_dynamic.get(&ssa_var).unwrap_or(&false)
-    }
-
-    pub fn get_surviving_resources(&self) -> Vec<(usize, OnuType, String, bool)> {
-        self.survivors.iter()
-            .filter_map(|(id, (name, is_dyn))| {
-                self.ssa_types.get(id).map(|t| (*id, t.clone(), name.clone(), *is_dyn))
-            })
-            .collect()
     }
 
     pub fn resolve_variable(&self, name: &str) -> Option<usize> {
@@ -139,10 +113,7 @@ impl MirBuilder {
     }
 
     pub fn mark_consumed(&mut self, ssa_var: usize) {
-        self.survivors.remove(&ssa_var);
         self.consumed_vars.insert(ssa_var);
-        // Clean up any pending drops for this variable since it's now owned by someone else
-        self.pending_drops.retain(|(id, _, _, _)| *id != ssa_var);
     }
 
     pub fn get_consumed_vars(&self) -> std::collections::HashSet<usize> {
@@ -154,9 +125,6 @@ impl MirBuilder {
     }
 
     pub fn set_consumed_vars(&mut self, consumed: std::collections::HashSet<usize>) {
-        for id in &consumed {
-            self.survivors.remove(id);
-        }
         self.consumed_vars = consumed;
     }
 
@@ -166,19 +134,6 @@ impl MirBuilder {
 
     pub fn exit_scope(&mut self) {
         self.scopes.pop();
-    }
-
-    pub fn schedule_drop(&mut self, ssa_var: usize, typ: OnuType) {
-        if !self.pending_drops.iter().any(|(id, _, _, _)| *id == ssa_var) {
-            let (name, is_dyn) = self.survivors.get(&ssa_var)
-                .cloned()
-                .unwrap_or_else(|| (format!("ssa_{}", ssa_var), *self.ssa_is_dynamic.get(&ssa_var).unwrap_or(&false)));
-            self.pending_drops.push((ssa_var, typ, name, is_dyn));
-        }
-    }
-
-    pub fn take_pending_drops(&mut self) -> Vec<(usize, OnuType, String, bool)> {
-        std::mem::take(&mut self.pending_drops)
     }
 
     pub fn create_block(&mut self) -> usize {

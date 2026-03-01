@@ -57,8 +57,8 @@ the effect behavior called run
         derivation: target derives-from an integer 40
         derivation: result derives-from target utilizes calculate-growth
         
-        derivation: msg derives-from a string "The population at generation " joined-with (target utilizes as-text)
-        derivation: msg2 derives-from a string msg joined-with " has reached: "
+        derivation: msg derives-from "The population at generation " joined-with (target utilizes as-text)
+        derivation: msg2 derives-from msg joined-with " has reached: "
         derivation: d1   derives-from nothing broadcasts msg2
         broadcasts (result utilizes as-text)
         nothing

@@ -62,33 +62,14 @@ impl StdlibOpLowerer for JoinedWithLowerer {
             MirOperand::Variable(b_len_ssa, false)
         );
 
-        let null_dest_ptr_ssa = builder.new_ssa();
-        builder.set_ssa_type(null_dest_ptr_ssa, OnuType::Nothing);
-        builder.build_pointer_offset(null_dest_ptr_ssa, MirOperand::Variable(buf_ssa, false), MirOperand::Variable(sum_len_ssa, false));
-
-        let null_char_ptr_ssa = builder.new_ssa();
-        builder.set_ssa_type(null_char_ptr_ssa, OnuType::Strings);
-        builder.build_assign(null_char_ptr_ssa, MirOperand::Constant(MirLiteral::Text("".to_string())));
-
-        let null_char_str_ptr_ssa = builder.new_ssa();
-        builder.set_ssa_type(null_char_str_ptr_ssa, OnuType::Nothing);
-        builder.build_index(null_char_str_ptr_ssa, MirOperand::Variable(null_char_ptr_ssa, false), 1);
-
-        builder.build_memcpy(
-            MirOperand::Variable(null_dest_ptr_ssa, false),
-            MirOperand::Variable(null_char_str_ptr_ssa, false),
-            MirOperand::Constant(MirLiteral::I64(1))
-        );
-
+        // Omit null-terminator for pure LLVM strings, as they rely entirely on the length field
+        // rather than C-style string functions.
         builder.build_string_tuple(
             dest,
             MirOperand::Variable(sum_len_ssa, false),
             MirOperand::Variable(buf_ssa, false),
             true
         );
-
-        // Schedule metadata drop
-        builder.schedule_drop(null_char_ptr_ssa, OnuType::Strings);
 
         MirOperand::Variable(dest, false)
     }

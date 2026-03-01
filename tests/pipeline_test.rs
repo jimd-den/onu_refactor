@@ -166,35 +166,3 @@ fn test_stdlib_op_registry_dispatches() {
     assert!(registry.get("as-text").is_some());
     assert!(registry.get("len").is_some());
 }
-
-#[test]
-fn test_drop_policy_is_isolated() {
-    use onu_refactor::domain::rules::droppolicy::DropPolicy;
-    use onu_refactor::application::use_cases::mir_builder::MirBuilder;
-    use onu_refactor::domain::entities::types::OnuType;
-    use onu_refactor::domain::entities::mir::MirOperand;
-
-    let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean);
-    let ssa_id = 100;
-    builder.define_variable("dyn_str", ssa_id, OnuType::Strings);
-    builder.set_ssa_type(ssa_id, OnuType::Strings);
-    builder.set_ssa_is_dynamic(ssa_id, true);
-
-    let op = MirOperand::Variable(ssa_id, true);
-    DropPolicy::collect_resource_drop(&op, &mut builder);
-
-    assert_eq!(builder.take_pending_drops().len(), 1);
-
-    let ssa_static = 101;
-    builder.define_variable("static_str", ssa_static, OnuType::Strings);
-    builder.set_ssa_type(ssa_static, OnuType::Strings);
-    builder.set_ssa_is_dynamic(ssa_static, false);
-
-    let op2 = MirOperand::Variable(ssa_static, true);
-    DropPolicy::collect_resource_drop(&op2, &mut builder);
-
-    // Static strings are scheduled but drop policy checks dynamic at generation,
-    // wait, `collect_resource_drop` schedules ANY resource.
-    // The test logic here just verifies it does what it used to do.
-    assert_eq!(builder.take_pending_drops().len(), 1);
-}

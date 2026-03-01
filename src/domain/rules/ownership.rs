@@ -25,15 +25,34 @@ impl<'a> OwnershipRule<'a> {
         Self { registry }
     }
 
-    pub fn validate(&self, header: &HirBehaviorHeader, body: &HirExpression) -> Result<(), OnuError> {
+    pub fn validate(&self, header: &HirBehaviorHeader, body: &mut HirExpression) -> Result<(), OnuError> {
         let mut env = HashMap::new();
         for arg in &header.args {
             env.insert(arg.name.clone(), (arg.typ.clone(), VariableStatus::Available));
         }
-        self.visit_expression(body, &mut env)
+        self.visit_and_mutate_expression(body, &mut env)?;
+
+        // Scope ends: Any remaining resources in the environment must be dropped explicitly.
+        let mut drops_to_insert = Vec::new();
+        for (name, (typ, status)) in env.iter() {
+            if *status == VariableStatus::Available && typ.is_resource() {
+                drops_to_insert.push(name.clone());
+            }
+        }
+
+        if !drops_to_insert.is_empty() {
+            let old_body = std::mem::replace(body, HirExpression::Literal(crate::domain::entities::hir::HirLiteral::Nothing));
+            let mut block_exprs = vec![old_body];
+            for name in drops_to_insert {
+                block_exprs.push(HirExpression::Drop(Box::new(HirExpression::Variable(name, true))));
+            }
+            *body = HirExpression::Block(block_exprs);
+        }
+
+        Ok(())
     }
 
-    fn visit_expression(&self, expr: &HirExpression, env: &mut HashMap<String, (OnuType, VariableStatus)>) -> Result<(), OnuError> {
+    fn visit_and_mutate_expression(&self, expr: &mut HirExpression, env: &mut HashMap<String, (OnuType, VariableStatus)>) -> Result<(), OnuError> {
         match expr {
             HirExpression::Variable(name, _) => {
                 if let Some((_, status)) = env.get(name) {
@@ -48,14 +67,14 @@ impl<'a> OwnershipRule<'a> {
             }
             HirExpression::Call { name, args } => {
                 let sig = self.registry.get_signature(name);
-                for (i, arg) in args.iter().enumerate() {
-                    self.visit_expression(arg, env)?;
+                for (i, arg) in args.iter_mut().enumerate() {
+                    self.visit_and_mutate_expression(arg, env)?;
                     
                     let is_observation = sig.and_then(|s| s.arg_is_observation.get(i)).copied().unwrap_or(false);
                     if !is_observation {
                         if let HirExpression::Variable(vname, _) = arg {
                             if let Some((typ, status)) = env.get_mut(vname) {
-                                if matches!(typ, OnuType::Strings | OnuType::Matrix | OnuType::Array(_)) {
+                                if typ.is_resource() {
                                     *status = VariableStatus::Consumed;
                                 }
                             }
@@ -65,17 +84,29 @@ impl<'a> OwnershipRule<'a> {
                 Ok(())
             }
             HirExpression::Derivation { name, value, body, typ } => {
-                self.visit_expression(value, env)?;
+                self.visit_and_mutate_expression(value, env)?;
                 env.insert(name.clone(), (typ.clone(), VariableStatus::Available));
-                self.visit_expression(body, env)?;
+                self.visit_and_mutate_expression(body, env)?;
+
+                // End of derivation scope: check if the derived resource is still available
+                if let Some((t, status)) = env.remove(name) {
+                    if status == VariableStatus::Available && t.is_resource() {
+                        // We must append a Drop block to the body of this derivation
+                        let old_body = std::mem::replace(body.as_mut(), HirExpression::Literal(crate::domain::entities::hir::HirLiteral::Nothing));
+                        *body = Box::new(HirExpression::Block(vec![
+                            old_body,
+                            HirExpression::Drop(Box::new(HirExpression::Variable(name.clone(), true)))
+                        ]));
+                    }
+                }
                 Ok(())
             }
             HirExpression::If { condition, then_branch, else_branch } => {
-                self.visit_expression(condition, env)?;
+                self.visit_and_mutate_expression(condition, env)?;
                 let mut then_env = env.clone();
-                self.visit_expression(then_branch, &mut then_env)?;
+                self.visit_and_mutate_expression(then_branch, &mut then_env)?;
                 let mut else_env = env.clone();
-                self.visit_expression(else_branch, &mut else_env)?;
+                self.visit_and_mutate_expression(else_branch, &mut else_env)?;
 
                 // Reconcile environments: if consumed in either branch, it's consumed.
                 for (name, (_, status)) in env.iter_mut() {
@@ -88,7 +119,7 @@ impl<'a> OwnershipRule<'a> {
                 Ok(())
             }
             HirExpression::Block(exprs) => {
-                for e in exprs { self.visit_expression(e, env)?; }
+                for e in exprs { self.visit_and_mutate_expression(e, env)?; }
                 Ok(())
             }
             _ => Ok(())

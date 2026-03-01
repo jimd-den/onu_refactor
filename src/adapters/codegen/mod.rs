@@ -5,7 +5,6 @@
 
 pub mod strategies;
 pub mod typemapper;
-pub mod stdlibdeclarator;
 
 use crate::application::ports::compiler_ports::CodegenPort;
 use crate::application::use_cases::registry_service::RegistryService;
@@ -76,8 +75,6 @@ struct LlvmGenerator<'ctx, 'a> {
 
 impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     fn generate(&mut self, program: &MirProgram) -> Result<(), OnuError> {
-        crate::adapters::codegen::stdlibdeclarator::StdlibDeclarator::declare_all(self.context, &self.module);
-
         for func in &program.functions {
             self.declare_function(func);
         }

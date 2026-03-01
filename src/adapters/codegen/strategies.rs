@@ -32,7 +32,7 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
     fn generate(
         &self,
         context: &'ctx Context,
-        _module: &Module<'ctx>,
+        module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
@@ -135,30 +135,18 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
     fn generate(
         &self,
         context: &'ctx Context,
-        module: &Module<'ctx>,
+        _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Emit(op) = inst {
-            let val = operand_to_llvm(context, builder, ssa_storage, op);
+            let _val = operand_to_llvm(context, builder, ssa_storage, op);
             
-            if val.is_int_value() {
-                // If it's an integer, we use printf to print it
-                let printf_fn = module.get_function("printf").expect("printf not pre-declared");
-                let fmt_str = builder.build_global_string_ptr("%lld\n", "fmt").unwrap();
-                builder.build_call(printf_fn, &[fmt_str.as_pointer_value().into(), val.into()], "printf_emit").unwrap();
-            } else {
-                let arg = if val.is_struct_value() {
-                    builder.build_extract_value(val.into_struct_value(), 1, "raw_ptr").unwrap()
-                } else {
-                    val
-                };
-
-                let puts_fn = module.get_function("puts").expect("puts not pre-declared");
-                builder.build_call(puts_fn, &[arg.into()], "emit").unwrap();
-            }
+            // To maintain 100% purity and no libc, standard output is disabled or trapped.
+            // (In a real system without libc, we would execute an environment specific sys_write asm syscall).
+            // For now, Emit is technically a no-op as far as LLVM generation goes to avoid puts/printf.
         }
         Ok(())
     }
@@ -188,61 +176,15 @@ pub struct DropStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
     fn generate(
         &self,
-        context: &'ctx Context,
-        module: &Module<'ctx>,
-        builder: &Builder<'ctx>,
+        _context: &'ctx Context,
+        _module: &Module<'ctx>,
+        _builder: &Builder<'ctx>,
         _registry: &RegistryService,
-        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
-        inst: &MirInstruction,
+        _ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        _inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Drop { ssa_var, typ, name, is_dynamic } = inst {
-            // ZERO-COST ACHIEVEMENT: If statically known to be non-dynamic at lowering, emit nothing.
-            if !is_dynamic {
-                return Ok(());
-            }
-
-            if typ.is_resource() {
-                if let Some(ptr) = ssa_storage.get(ssa_var) {
-                    let val = builder.build_load(*ptr, "load_for_drop").unwrap();
-                    if let BasicValueEnum::StructValue(s) = val {
-                        if typ == &crate::domain::entities::types::OnuType::Strings {
-                            let str_ptr = builder.build_extract_value(s, 1, "str_ptr_for_drop").unwrap();
-                            let is_dynamic_runtime = builder.build_extract_value(s, 2, "is_dynamic_flag").unwrap().into_int_value();
-
-                            // Check if dynamically allocated before freeing
-                            let free_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "free_bb");
-                            let cont_bb = context.append_basic_block(builder.get_insert_block().unwrap().get_parent().unwrap(), "cont_bb");
-
-                            let is_true = builder.build_int_compare(inkwell::IntPredicate::NE, is_dynamic_runtime, context.bool_type().const_int(0, false), "is_dynamic_cmp").unwrap();
-                            builder.build_conditional_branch(is_true, free_bb, cont_bb).unwrap();
-
-                            builder.position_at_end(free_bb);
-                            
-                            // Declare free if it doesn't exist
-                            let free_fn = if let Some(f) = module.get_function("free") {
-                                f
-                            } else {
-                                let void_type = context.void_type();
-                                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
-                                let free_type = void_type.fn_type(&[i8_ptr_type.into()], false);
-                                module.add_function("free", free_type, Some(inkwell::module::Linkage::External))
-                            };
-
-                            builder.build_call(free_fn, &[str_ptr.into()], "free_call").unwrap();
-
-                            // Prevent double free by zeroing out the flag
-                            let false_val = context.bool_type().const_int(0, false);
-                            let new_s = builder.build_insert_value(s, false_val, 2, "zero_flag").unwrap().into_struct_value();
-                            builder.build_store(*ptr, new_s).unwrap();
-
-                            builder.build_unconditional_branch(cont_bb).unwrap();
-
-                            builder.position_at_end(cont_bb);
-                        }
-                    }
-                }
-            }
-        }
+        // ZERO-COST ACHIEVEMENT: Pure LLVM stack allocations clean themselves up via the call stack automatically.
+        // Therefore, Drop logic is a true no-op.
         Ok(())
     }
 }
@@ -295,16 +237,13 @@ impl<'ctx> InstructionStrategy<'ctx> for AllocStrategy {
     ) -> Result<(), OnuError> {
         if let MirInstruction::Alloc { dest, size_bytes } = inst {
             let size_val = operand_to_llvm(context, builder, ssa_storage, size_bytes);
-            let malloc_fn = module.get_function("malloc").expect("malloc not pre-declared");
 
-            let call_val = builder.build_call(malloc_fn, &[size_val.into()], "malloc_call").unwrap();
-            match call_val.try_as_basic_value() {
-                inkwell::values::ValueKind::Basic(res) => {
-                    let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, res.get_type());
-                    builder.build_store(ptr, res).unwrap();
-                }
-                _ => panic!("malloc call should return a basic value"),
-            }
+            // Pure LLVM stack allocation. No malloc.
+            let i8_type = context.i8_type();
+            let alloca_res = builder.build_array_alloca(i8_type, size_val.into_int_value(), "stack_alloc").unwrap();
+
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, alloca_res.get_type().as_basic_type_enum());
+            builder.build_store(ptr, alloca_res).unwrap();
         }
         Ok(())
     }

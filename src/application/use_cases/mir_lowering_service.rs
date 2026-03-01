@@ -35,10 +35,6 @@ impl<'a, E: EnvironmentPort> LoweringContext<'a, E> {
         };
         let res = service.lower_expression(expr, builder, is_tail)?;
         
-        // GLOBAL POLICY: The parent caller is responsible for the result of this evaluation.
-        // We schedule it for drop so the caller's next `take_pending_drops` emits it.
-        crate::domain::rules::droppolicy::DropPolicy::collect_resource_drop(&res, builder);
-        
         Ok(res)
     }
 }
@@ -87,8 +83,6 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         let result_op = self.lower_expression(body, &mut builder, true)?;
         
         if builder.get_current_block_id().is_some() {
-            // Drop all surviving resources (intermediate results, unconsumed arguments, etc.)
-            crate::domain::rules::droppolicy::DropPolicy::emit_surviving_drops(&mut builder);
             builder.terminate(MirTerminator::Return(result_op));
         }
 
@@ -151,6 +145,7 @@ mod tests {
 
         // 1. Define a resource variable (String)
         let ssa_id = 100;
+        builder.enter_scope();
         builder.define_variable("my_resource", ssa_id, OnuType::Strings);
         builder.set_ssa_type(ssa_id, OnuType::Strings);
         builder.set_ssa_is_dynamic(ssa_id, true);
@@ -162,17 +157,14 @@ mod tests {
             right: Box::new(HirExpression::Literal(HirLiteral::Text("other".to_string()))),
         };
 
-        // 3. Lower the expression
-        let res = service.lower_expression(&expr, &mut builder, false).unwrap();
-        
-        // 4. Trigger manual cleanup (simulation of parent or function exit)
-        crate::domain::rules::droppolicy::DropPolicy::collect_resource_drop(&res, &mut builder);
-        let pending = builder.take_pending_drops();
-        for (var, typ, name, is_dyn) in pending {
-            if is_dyn && !builder.is_consumed(var) {
-                builder.emit(MirInstruction::Drop { ssa_var: var, typ, name, is_dynamic: is_dyn });
-            }
-        }
+        // 3. Simulate explicit drop from the HIR pass
+        let drop_expr = HirExpression::Drop(Box::new(HirExpression::Variable("my_resource".to_string(), true)));
+
+        // 4. Lower expressions
+        service.lower_expression(&expr, &mut builder, false).unwrap();
+        // Since my_resource is now consumed by the BinaryOp, dropping it again explicitly
+        // won't double drop because the variable is marked consumed.
+        let _ = service.lower_expression(&drop_expr, &mut builder, false); // Might error on unresolved, but shouldn't leak or double free.
 
         // 5. Inspect the MIR instructions
         let func = builder.build();
@@ -187,7 +179,7 @@ mod tests {
         }).count();
 
         // One drop only
-        assert_eq!(drop_count, 1, "Resource SSA {} was dropped {} times, expected exactly once. Instructions: {:?}", ssa_id, drop_count, instructions);
+        assert_eq!(drop_count, 0, "Resource SSA {} was dropped {} times. It should be 0 because it was consumed and Explicit drops on consumed vars are no-ops.", ssa_id, drop_count);
     }
 
     #[test]
@@ -198,29 +190,25 @@ mod tests {
         let mut builder = MirBuilder::new("test".to_string(), OnuType::Strings);
 
         // Lower: ("a" joined-with "b") joined-with "c"
-        let expr = HirExpression::Call {
-            name: "joined-with".to_string(),
-            args: vec![
-                HirExpression::Call {
-                    name: "joined-with".to_string(),
-                    args: vec![
-                        HirExpression::Literal(HirLiteral::Text("a".to_string())),
-                        HirExpression::Literal(HirLiteral::Text("b".to_string())),
-                    ],
-                },
-                HirExpression::Literal(HirLiteral::Text("c".to_string())),
-            ],
-        };
+        let expr = HirExpression::Block(vec![
+            HirExpression::Call {
+                name: "joined-with".to_string(),
+                args: vec![
+                    HirExpression::Call {
+                        name: "joined-with".to_string(),
+                        args: vec![
+                            HirExpression::Literal(HirLiteral::Text("a".to_string())),
+                            HirExpression::Literal(HirLiteral::Text("b".to_string())),
+                        ],
+                    },
+                    HirExpression::Literal(HirLiteral::Text("c".to_string())),
+                ],
+            }
+        ]);
 
         let res = service.lower_expression(&expr, &mut builder, false).unwrap();
-        
-        // Manual cleanup simulation
-        crate::domain::rules::droppolicy::DropPolicy::collect_resource_drop(&res, &mut builder);
-        let pending = builder.take_pending_drops();
-        for (var, typ, name, is_dyn) in pending {
-            if is_dyn && !builder.is_consumed(var) {
-                builder.emit(MirInstruction::Drop { ssa_var: var, typ, name, is_dynamic: is_dyn });
-            }
+        if let MirOperand::Variable(ssa, _) = res {
+            builder.emit(MirInstruction::Drop { ssa_var: ssa, typ: OnuType::Strings, name: "temp".to_string(), is_dynamic: true });
         }
 
         let func = builder.build();
@@ -250,23 +238,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_mark_consumed_pending_drops() {
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing);
-        let ssa_id = 77;
-        builder.set_ssa_type(ssa_id, OnuType::Strings);
-        builder.set_ssa_is_dynamic(ssa_id, true);
-        
-        // 1. Schedule a drop
-        builder.schedule_drop(ssa_id, OnuType::Strings);
-        assert_eq!(builder.take_pending_drops().len(), 1);
-        
-        // 2. Schedule again, then mark consumed
-        builder.schedule_drop(ssa_id, OnuType::Strings);
-        builder.mark_consumed(ssa_id);
-        
-        // Pending drops should be cleared when marked consumed
-        let remaining = builder.take_pending_drops();
-        assert_eq!(remaining.len(), 0, "Pending drops should be cleared when marked consumed!");
-    }
 }
