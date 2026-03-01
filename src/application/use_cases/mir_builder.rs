@@ -141,10 +141,16 @@ impl MirBuilder {
     pub fn mark_consumed(&mut self, ssa_var: usize) {
         self.survivors.remove(&ssa_var);
         self.consumed_vars.insert(ssa_var);
+        // Clean up any pending drops for this variable since it's now owned by someone else
+        self.pending_drops.retain(|(id, _, _, _)| *id != ssa_var);
     }
 
     pub fn get_consumed_vars(&self) -> std::collections::HashSet<usize> {
         self.consumed_vars.clone()
+    }
+
+    pub fn is_consumed(&self, ssa_var: usize) -> bool {
+        self.consumed_vars.contains(&ssa_var)
     }
 
     pub fn set_consumed_vars(&mut self, consumed: std::collections::HashSet<usize>) {

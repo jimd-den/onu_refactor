@@ -222,15 +222,6 @@ impl<'ctx> InstructionStrategy<'ctx> for DropStrategy {
                                 module.add_function("free", free_type, Some(inkwell::module::Linkage::External))
                             };
 
-                            // DIAGNOSTIC LOGGING: Print the pointer, variable name, and function name being freed
-                            let printf_fn = module.get_function("printf").expect("printf not pre-declared");
-                            let func = builder.get_insert_block().unwrap().get_parent().unwrap();
-                            let func_name = func.get_name();
-                            let func_name_str = func_name.to_str().unwrap();
-                            let log_msg = format!("DEBUG FREE [{}]: variable '{}' (v{}) at %p\n", func_name_str, name, ssa_var);
-                            let fmt_str = builder.build_global_string_ptr(&log_msg, "free_log_fmt").unwrap();
-                            builder.build_call(printf_fn, &[fmt_str.as_pointer_value().into(), str_ptr.into()], "free_log").unwrap();
-
                             builder.build_call(free_fn, &[str_ptr.into()], "free_call").unwrap();
 
                             // Prevent double free by zeroing out the flag

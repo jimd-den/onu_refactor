@@ -24,13 +24,6 @@ impl ExprLowerer for IndexLowerer {
         if let HirExpression::Index { subject, index } = expr {
             let op = context.lower_expression(subject, builder, false)?;
 
-            // CUSTODY TRANSFER: Mark operands consumed so the orchestrator doesn't double-drop.
-            if let MirOperand::Variable(ssa_id, _) = &op {
-                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*ssa_id);
-                }
-            }
-
             let dest = builder.new_ssa();
             builder.emit(MirInstruction::Index { 
                 dest, 
@@ -38,8 +31,23 @@ impl ExprLowerer for IndexLowerer {
                 index: *index 
             });
             
-            let res = MirOperand::Variable(dest, false);
-            Ok(res)
+            // Parent cleanup: mark consumed and drop if it's a resource variable
+            if let MirOperand::Variable(ssa_id, is_consuming) = &op {
+                if *is_consuming {
+                    if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                        if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                            let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                            builder.mark_consumed(*ssa_id);
+                            if is_dyn {
+                                builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("index_op_{}", ssa_id), is_dynamic: is_dyn });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Intermediate result is owned by caller
+            Ok(MirOperand::Variable(dest, true))
         } else {
             Err(OnuError::GrammarViolation {
                 message: "Expected Index expression".to_string(),
@@ -60,15 +68,23 @@ impl ExprLowerer for EmitLowerer {
         if let HirExpression::Emit(e) = expr {
             let op = context.lower_expression(e, builder, false)?;
 
-            // CUSTODY TRANSFER: Emit takes custody of the resource.
-            if let MirOperand::Variable(ssa_id, _) = &op {
-                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*ssa_id);
+            builder.emit(MirInstruction::Emit(op.clone()));
+            
+            // Parent cleanup: Emit takes custody and we drop it
+            if let MirOperand::Variable(ssa_id, is_consuming) = &op {
+                if *is_consuming {
+                    if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                        if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                            let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                            builder.mark_consumed(*ssa_id);
+                            if is_dyn {
+                                builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("emit_op_{}", ssa_id), is_dynamic: is_dyn });
+                            }
+                        }
+                    }
                 }
             }
 
-            builder.emit(MirInstruction::Emit(op.clone()));
-            
             Ok(MirOperand::Constant(MirLiteral::Nothing))
         } else {
             Err(OnuError::GrammarViolation {
@@ -91,18 +107,6 @@ impl ExprLowerer for BinaryOpLowerer {
             let lhs = context.lower_expression(left, builder, false)?;
             let rhs = context.lower_expression(right, builder, false)?;
 
-            // CUSTODY TRANSFER: BinaryOp consumes its inputs if they are resources.
-            if let MirOperand::Variable(ssa_id, _) = &lhs {
-                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*ssa_id);
-                }
-            }
-            if let MirOperand::Variable(ssa_id, _) = &rhs {
-                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*ssa_id);
-                }
-            }
-
             let dest = builder.new_ssa();
             let mir_op = match op {
                 HirBinOp::Add => MirBinOp::Add,
@@ -122,6 +126,34 @@ impl ExprLowerer for BinaryOpLowerer {
                 rhs: rhs.clone() 
             });
             
+            // Parent cleanup: mark inputs as consumed and drop if resources
+            if let MirOperand::Variable(ssa_id, is_consuming) = &lhs {
+                if *is_consuming {
+                    if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                        if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                            let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                            builder.mark_consumed(*ssa_id);
+                            if is_dyn {
+                                builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("bin_lhs_{}", ssa_id), is_dynamic: is_dyn });
+                            }
+                        }
+                    }
+                }
+            }
+            if let MirOperand::Variable(ssa_id, is_consuming) = &rhs {
+                if *is_consuming {
+                    if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                        if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                            let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                            builder.mark_consumed(*ssa_id);
+                            if is_dyn {
+                                builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("bin_rhs_{}", ssa_id), is_dynamic: is_dyn });
+                            }
+                        }
+                    }
+                }
+            }
+
             // Register type for the result
             let res_type = match op {
                 HirBinOp::Equal | HirBinOp::NotEqual | HirBinOp::LessThan | HirBinOp::GreaterThan => OnuType::Boolean,
@@ -129,7 +161,7 @@ impl ExprLowerer for BinaryOpLowerer {
             };
             builder.set_ssa_type(dest, res_type);
 
-            Ok(MirOperand::Variable(dest, false))
+            Ok(MirOperand::Variable(dest, true))
         } else {
             Err(OnuError::GrammarViolation {
                 message: "Expected BinaryOp expression".to_string(),
@@ -156,15 +188,13 @@ impl ExprLowerer for LiteralLowerer {
                 HirLiteral::Nothing => MirLiteral::Nothing,
             };
             
-            // Achievement: Constant resources (like strings) are wrapped in SSA and marked consumed
-            // immediately so the parent owns the new SSA variable.
             let op = MirOperand::Constant(mir_lit.clone());
             if let MirLiteral::Text(_) = mir_lit {
                 let dest = builder.new_ssa();
                 builder.set_ssa_type(dest, OnuType::Strings);
                 builder.set_ssa_is_dynamic(dest, false);
                 builder.build_assign(dest, op);
-                Ok(MirOperand::Variable(dest, false))
+                Ok(MirOperand::Variable(dest, true))
             } else {
                 Ok(op)
             }
@@ -192,13 +222,8 @@ impl ExprLowerer for VariableLowerer {
                     span: crate::domain::entities::error::Span::default()
                 })?;
             
-            if *is_consuming {
-                let typ = builder.resolve_variable_type(name).unwrap_or(OnuType::Nothing);
-                if typ.is_resource() {
-                    // CUSTODY TRANSFER: The parent expression now owns this variable.
-                    builder.mark_consumed(ssa_var);
-                }
-            }
+            // Do NOT mark as consumed here. The parent expression is taking custody
+            // and is responsible for marking it consumed and emitting the drop.
             
             Ok(MirOperand::Variable(ssa_var, *is_consuming))
         } else {

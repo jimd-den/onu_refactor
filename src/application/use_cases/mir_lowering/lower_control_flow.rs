@@ -19,10 +19,16 @@ impl ExprLowerer for IfLowerer {
         if let HirExpression::If { condition, then_branch, else_branch } = expr {
             let cond_op = context.lower_expression(condition, builder, false)?;
             
-            // Mark condition as consumed if it's a resource
+            // STRICT POLICY: Cleanup condition after use
             if let MirOperand::Variable(ssa_id, _) = &cond_op {
-                if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                    builder.mark_consumed(*ssa_id);
+                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                    if typ.is_resource() {
+                        let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                        builder.mark_consumed(*ssa_id);
+                        if is_dyn {
+                            builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("if_cond_{}", ssa_id), is_dynamic: is_dyn });
+                        }
+                    }
                 }
             }
 
@@ -94,7 +100,6 @@ impl ExprLowerer for IfLowerer {
             }
 
             builder.switch_to_block(merge_id);
-            // Result consumption handled by parent caller
             Ok(MirOperand::Variable(dest, false))
         } else {
             Err(OnuError::GrammarViolation {

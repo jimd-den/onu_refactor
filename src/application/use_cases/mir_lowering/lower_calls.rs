@@ -30,23 +30,28 @@ impl ExprLowerer for CallLowerer {
                 (OnuType::Nothing, Vec::new(), Vec::new())
             };
 
-            // CUSTODY TRANSFER: Mark resource arguments as consumed IF NOT OBSERVATION.
-            // The call now owns these resources.
-            for (i, arg_op) in mir_args.iter().enumerate() {
-                if let MirOperand::Variable(ssa_id, _) = arg_op {
-                    let is_observation = arg_is_observation.get(i).copied().unwrap_or(false);
-                    if !is_observation {
-                        if builder.resolve_ssa_type(*ssa_id).map(|t| t.is_resource()).unwrap_or(false) {
-                            builder.mark_consumed(*ssa_id);
-                        }
-                    }
-                }
-            }
-
             if name == "as-text" && mir_args.len() == 1 {
                 let res = StdlibLowering::lower_as_text(&mir_args[0], builder);
                 if let MirOperand::Variable(ssa_id, _) = &res {
                     builder.set_ssa_type(*ssa_id, OnuType::Strings);
+                }
+                
+                // Cleanup as-text input if it's a resource
+                if let MirOperand::Variable(ssa_id, is_consuming) = &mir_args[0] {
+                    if *is_consuming {
+                        if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                            if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                                let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                                builder.mark_consumed(*ssa_id);
+                                if is_dyn {
+                                    builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: "as_text_input".to_string(), is_dynamic: is_dyn });
+                                }
+                            }
+                        }
+                    }
+                }
+                if let MirOperand::Variable(res_id, _) = res {
+                    return Ok(MirOperand::Variable(res_id, true));
                 }
                 return Ok(res);
             }
@@ -55,6 +60,26 @@ impl ExprLowerer for CallLowerer {
                 let res = StdlibLowering::lower_joined_with(&mir_args[0], &mir_args[1], builder);
                 if let MirOperand::Variable(ssa_id, _) = &res {
                     builder.set_ssa_type(*ssa_id, OnuType::Strings);
+                }
+                
+                // Cleanup joined-with inputs
+                for (i, arg_op) in mir_args.iter().enumerate() {
+                    if let MirOperand::Variable(ssa_id, is_consuming) = arg_op {
+                        if *is_consuming {
+                            if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                                if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                                    let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                                    builder.mark_consumed(*ssa_id);
+                                    if is_dyn {
+                                        builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("joined_with_arg_{}", i), is_dynamic: is_dyn });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let MirOperand::Variable(res_id, _) = res {
+                    return Ok(MirOperand::Variable(res_id, true));
                 }
                 return Ok(res);
             }
@@ -69,7 +94,25 @@ impl ExprLowerer for CallLowerer {
             });
             builder.set_ssa_type(dest, return_type);
 
-            Ok(MirOperand::Variable(dest, false))
+            // Parent cleanup: mark resource arguments as consumed and drop IF NOT OBSERVATION
+            for (i, arg_op) in mir_args.iter().enumerate() {
+                if let MirOperand::Variable(ssa_id, is_consuming) = arg_op {
+                    let is_observation = arg_is_observation.get(i).copied().unwrap_or(false);
+                    if !is_observation && *is_consuming {
+                        if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                            if typ.is_resource() && !builder.is_consumed(*ssa_id) {
+                                let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                                builder.mark_consumed(*ssa_id);
+                                if is_dyn {
+                                    builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("call_arg_{}", i), is_dynamic: is_dyn });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(MirOperand::Variable(dest, true))
         } else {
             Err(OnuError::GrammarViolation {
                 message: "Expected Call expression".to_string(),
