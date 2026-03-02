@@ -128,7 +128,7 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                         // merge_bb
                         builder.position_at_end(merge_bb);
                         let final_res = builder.build_phi(context.bool_type(), "final_res").unwrap();
-                        final_res.add_incoming(&[(&context.bool_type().const_int(1, false), match_bb), (&context.bool_type().const_int(0, false), fail_bb), (&context.bool_type().const_int(0, false), current_bb)]);
+                        final_res.add_incoming(&[(&context.bool_type().const_int(1, false), match_bb), (&context.bool_type().const_int(0, false), fail_bb)]);
                         
                         let res_i64 = builder.build_int_z_extend(final_res.as_basic_value().into_int_value(), context.i64_type(), "res_i64").unwrap();
                         if op == &MirBinOp::Ne {

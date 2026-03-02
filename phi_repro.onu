@@ -1,0 +1,10 @@
+
+the module called Repro
+the behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        if "A" matches "B"
+            then 1
+            else 0
+        nothing
