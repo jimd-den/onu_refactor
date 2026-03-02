@@ -178,6 +178,10 @@ impl MirBuilder {
         self.emit(MirInstruction::PointerOffset { dest, ptr, offset });
     }
 
+    pub fn build_store(&mut self, ptr: crate::domain::entities::mir::MirOperand, value: crate::domain::entities::mir::MirOperand) {
+        self.emit(MirInstruction::Store { ptr, value });
+    }
+
     pub fn build_string_tuple(&mut self, dest: usize, len: crate::domain::entities::mir::MirOperand, ptr: crate::domain::entities::mir::MirOperand, is_dynamic: bool) {
         self.set_ssa_is_dynamic(dest, is_dynamic);
         self.emit(MirInstruction::Tuple {

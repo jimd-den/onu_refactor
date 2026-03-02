@@ -264,7 +264,11 @@ impl<'a> ParserInternal<'a> {
 
             let expr = self.parse_expression()?;
             if !matches!(expr, Expression::Nothing) {
+                let is_derivation = matches!(expr, Expression::Derivation { .. });
                 expressions.push(expr);
+                if is_derivation {
+                    break; // The derivation already consumed the rest of the block as its body
+                }
             }
         }
 
@@ -284,11 +288,25 @@ impl<'a> ParserInternal<'a> {
                 Token::Delivers | Token::As => break,
                 Token::Identifier(_) | Token::Nothing => {
                     if self.match_token(Token::Nothing) { break; }
-                    let type_info = self.parse_type_info()?.ok_or_else(|| {
+                    let mut type_info = self.parse_type_info()?.ok_or_else(|| {
                         OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit type indicator (e.g. 'a', 'an', 'the') for argument".into(), span: Span::default() }
                     })?;
                     self.match_token(Token::Called);
                     let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { "".to_string() };
+                    
+                    // Check for 'via observation'
+                    if let Some(Token::Identifier(v)) = self.peek() {
+                        if v == "via" {
+                            self.advance();
+                            if let Some(Token::Identifier(o)) = self.peek() {
+                                if o == "observation" {
+                                    self.advance();
+                                    type_info.is_observation = true;
+                                }
+                            }
+                        }
+                    }
+                    
                     args.push(Argument { name, type_info });
                 }
                 _ => { self.advance(); }
@@ -309,7 +327,13 @@ impl<'a> ParserInternal<'a> {
                 let onu_type = OnuType::from_name(&type_name).unwrap_or_else(|| {
                     panic!("Unknown type: {}", type_name); // Or proper error
                 });
-                return Ok(Some(TypeInfo { onu_type, display_name: type_name, via_role: None, is_observation: false }));
+                
+                let mut is_observation = false;
+                // Peek ahead to see if the next two tokens are "via" and "observation"
+                // But wait, the syntax is usually "a string called tape via observation"
+                // So "via observation" comes AFTER the variable name!
+                
+                return Ok(Some(TypeInfo { onu_type, display_name: type_name, via_role: None, is_observation }));
             }
         }
         Ok(None)
@@ -343,6 +367,10 @@ impl<'a> ParserInternal<'a> {
             Token::Literal(Literal::Boolean(b)) => { self.advance(); Ok(Expression::Boolean(*b)) },
             Token::If => self.parse_if(),
             Token::Derivation => self.parse_derivation(),
+            Token::Broadcasts => {
+                self.advance();
+                Ok(Expression::Broadcasts(Box::new(self.parse_expression()?)))
+            },
             Token::Identifier(s) => {
                 if self.is_expression_terminator(&token) {
                     return Ok(Expression::Nothing);
@@ -476,6 +504,10 @@ impl<'a> ParserInternal<'a> {
         let mut body_exprs = Vec::new();
         while let Some(t) = self.peek() {
             if self.is_expression_terminator(t) { break; }
+            if matches!(t, Token::Derivation) {
+                body_exprs.push(self.parse_derivation()?);
+                break; // A derivation consumes the rest of the scope
+            }
             body_exprs.push(self.parse_expression()?);
         }
         

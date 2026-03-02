@@ -177,6 +177,9 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             MirInstruction::PointerOffset { .. } => {
                 PointerOffsetStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
             }
+            MirInstruction::Store { .. } => {
+                StoreStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
+            }
         }
     }
 
@@ -188,12 +191,18 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
 
         match term {
             MirTerminator::Return(op) => {
+                let val = strategies::operand_to_llvm(self.context, &self.builder, &mut self.ssa_storage, op);
                 if is_main {
-                    self.builder.build_return(Some(&self.context.i32_type().const_int(0, false))).unwrap();
+                    // Truncate to i32 for main return code
+                    let i32_val = if val.get_type().is_int_type() && val.into_int_value().get_type().get_bit_width() > 32 {
+                        self.builder.build_int_truncate(val.into_int_value(), self.context.i32_type(), "main_ret").unwrap()
+                    } else {
+                        val.into_int_value()
+                    };
+                    self.builder.build_return(Some(&i32_val)).unwrap();
                 } else if is_void {
                     self.builder.build_return(None).unwrap();
                 } else {
-                    let val = strategies::operand_to_llvm(self.context, &self.builder, &mut self.ssa_storage, op);
                     self.builder.build_return(Some(&val)).unwrap();
                 }
             }

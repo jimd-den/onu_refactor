@@ -51,6 +51,7 @@ pub enum MirInstruction {
     Alloc { dest: usize, size_bytes: MirOperand },
     MemCopy { dest: MirOperand, src: MirOperand, size: MirOperand },
     PointerOffset { dest: usize, ptr: MirOperand, offset: MirOperand },
+    Store { ptr: MirOperand, value: MirOperand },
 }
 
 #[derive(Debug, Clone, PartialEq)]

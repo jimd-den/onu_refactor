@@ -1,3 +1,0 @@
-fibonacci_onu: 473ms (avg of 5 runs)
-fibonacci_c:   222ms (reference from cbenchmark.txt)
-ratio:         2.13x

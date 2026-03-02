@@ -87,11 +87,13 @@ impl ExprLowerer for DerivationLowerer {
                 builder.set_ssa_is_dynamic(ssa_var, true);
             }
             
+            eprintln!("[DEBUG] Defining variable: {} (SSA: {})", name, ssa_var);
             builder.enter_scope();
             builder.define_variable(name, ssa_var, typ.clone());
 
             let res = context.lower_expression(body, builder, is_tail)?;
 
+            eprintln!("[DEBUG] Exiting scope for: {}", name);
             builder.exit_scope();
             Ok(res)
         } else {

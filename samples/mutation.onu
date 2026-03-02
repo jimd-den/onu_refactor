@@ -13,7 +13,7 @@ the behavior called repeat-text
                     derivation: half derives-from count partitions-by 2
                     derivation: rem  derives-from count decreased-by (half scales-by 2)
                     
-                    derivation: base derives-from (input utilizes duplicated-as) receiving repeat-text half
+                    derivation: base derives-from (input utilizes duplicated-as) utilizes repeat-text half
                     derivation: doubled derives-from (base utilizes duplicated-as) joined-with base
                     
                     if rem matches 0
@@ -30,7 +30,7 @@ the behavior called transform-at
         if index matches total
             then buf
             else
-                derivation: current derives-from buf char-at index
+                derivation: current derives-from buf utilizes char-at index
                 derivation: updated derives-from current added-to 1
                 derivation: next-buf derives-from buf utilizes set-char index updated
                 
@@ -41,7 +41,7 @@ the effect behavior called run
     delivers: nothing
     as:
         -- Create a string of 1,000,000 'A's
-        derivation: base derives-from "A" receiving repeat-text 1000000
+        derivation: base derives-from "A" utilizes repeat-text 1000000
         
         -- Perform 1,000,000 recursive transformations
         derivation: result derives-from base utilizes transform-at 0 1000000

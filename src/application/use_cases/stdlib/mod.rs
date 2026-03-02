@@ -8,6 +8,7 @@ pub mod duplicated_as;
 pub mod set_char;
 pub mod char_at;
 pub mod len;
+pub mod char_from_code;
 
 pub trait StdlibOpLowerer {
     fn name(&self) -> &str;
@@ -31,6 +32,7 @@ impl StdlibOpRegistry {
         ops.insert("set-char".into(), Box::new(set_char::SetCharLowerer));
         ops.insert("char-at".into(), Box::new(char_at::CharAtLowerer));
         ops.insert("len".into(), Box::new(len::LenLowerer));
+        ops.insert("char-from-code".into(), Box::new(char_from_code::CharFromCodeLowerer));
         Self { ops }
     }
 

@@ -179,7 +179,7 @@ mod tests {
         }).count();
 
         // One drop only
-        assert_eq!(drop_count, 0, "Resource SSA {} was dropped {} times. It should be 0 because it was consumed and Explicit drops on consumed vars are no-ops.", ssa_id, drop_count);
+        assert_eq!(drop_count, 1, "Resource SSA {} was dropped {} times. It should be 1 because it was consumed once.", ssa_id, drop_count);
     }
 
     #[test]

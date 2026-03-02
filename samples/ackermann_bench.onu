@@ -1,0 +1,27 @@
+the module called AckermannBenchmark
+    with concern: deep recursion performance verification
+
+the behavior called ackermann
+    with intent: compute a value within the extreme growth spiral
+    takes:
+        an integer called depth
+        an integer called intensity
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if depth matches 0
+            then intensity added-to 1
+            else if intensity matches 0
+                then (depth decreased-by 1) utilizes ackermann 1
+                else
+                    derivation: inner-result derives-from depth utilizes ackermann (intensity decreased-by 1)
+                    (depth decreased-by 1) utilizes ackermann inner-result
+
+the effect behavior called run
+    takes: nothing
+    delivers: an integer
+    as:
+        derivation: result derives-from an integer 3 utilizes ackermann 11
+        derivation: msg derives-from "Ackermann(3, 11) Result: " joined-with (result utilizes as-text)
+        broadcasts msg
+        0

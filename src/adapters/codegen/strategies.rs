@@ -11,7 +11,8 @@ use crate::application::use_cases::registry_service::RegistryService;
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::Module;
-use inkwell::values::{PointerValue, BasicValueEnum};
+use inkwell::values::{PointerValue, BasicValueEnum, AnyValue, CallableValue};
+use std::convert::TryFrom;
 use inkwell::types::{BasicTypeEnum, BasicType};
 use std::collections::HashMap;
 
@@ -135,18 +136,50 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
     fn generate(
         &self,
         context: &'ctx Context,
-        _module: &Module<'ctx>,
+        module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Emit(op) = inst {
-            let _val = operand_to_llvm(context, builder, ssa_storage, op);
+            let val = operand_to_llvm(context, builder, ssa_storage, op);
             
-            // To maintain 100% purity and no libc, standard output is disabled or trapped.
-            // (In a real system without libc, we would execute an environment specific sys_write asm syscall).
-            // For now, Emit is technically a no-op as far as LLVM generation goes to avoid puts/printf.
+            // Onu Strings are { i64 len, i8* ptr, i1 is_dynamic }
+            if val.is_struct_value() {
+                let s = val.into_struct_value();
+                let len = builder.build_extract_value(s, 0, "emit_len").unwrap().into_int_value();
+                let ptr = builder.build_extract_value(s, 1, "emit_ptr").unwrap().into_pointer_value();
+
+                // x86_64 syscall: %rax=1 (write), %rdi=1 (stdout), %rsi=buffer, %rdx=length
+                // Clobbers: rcx, r11
+                let i64_type = context.i64_type();
+                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                
+                let syscall_type = i64_type.fn_type(&[
+                    i64_type.into(), // rax
+                    i64_type.into(), // rdi
+                    i8_ptr_type.into(), // rsi
+                    i64_type.into(), // rdx
+                ], false);
+
+                let asm_fn = context.create_inline_asm(
+                    syscall_type,
+                    "syscall".to_string(),
+                    "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{dirflag},~{fpsr},~{flags}".to_string(),
+                    true,
+                    false,
+                    None,
+                    false, // Missing boolean: can_throw?
+                );
+
+                builder.build_call(CallableValue::try_from(asm_fn).unwrap(), &[
+                    i64_type.const_int(1, false).into(), // sys_write
+                    i64_type.const_int(1, false).into(), // stdout
+                    ptr.into(),
+                    len.into(),
+                ], "syscall_res").unwrap();
+            }
         }
         Ok(())
     }
@@ -312,6 +345,41 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
 
             let ptr_ssa = get_or_create_ssa(context, builder, ssa_storage, *dest, offset_ptr.get_type().as_basic_type_enum());
             builder.build_store(ptr_ssa, offset_ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
+pub struct StoreStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for StoreStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::Store { ptr, value } = inst {
+            let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
+            let val = operand_to_llvm(context, builder, ssa_storage, value);
+            
+            // If storing i64 to i8*, we might need a cast if LLVM is strict, 
+            // but usually build_store handles basic values.
+            // However, we want to store it as a byte if it's for itoa.
+            let val_to_store = if ptr_val.get_type().get_element_type().is_int_type() {
+                let target_type = ptr_val.get_type().get_element_type().into_int_type();
+                if val.get_type().into_int_type().get_bit_width() > target_type.get_bit_width() {
+                    builder.build_int_truncate(val.into_int_value(), target_type, "store_trunc").unwrap().into()
+                } else {
+                    val
+                }
+            } else {
+                val
+            };
+
+            builder.build_store(ptr_val, val_to_store).unwrap();
         }
         Ok(())
     }

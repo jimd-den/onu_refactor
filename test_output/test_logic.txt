@@ -1,2 +1,0 @@
-FAIL: 1 opposes 2 is FALSE (0)
-FAIL: 1 opposes 1 is TRUE (1)

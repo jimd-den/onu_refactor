@@ -1,2 +1,0 @@
-Total Collatz steps for 1 to 1000000 is:
-131434424

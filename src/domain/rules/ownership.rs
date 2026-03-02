@@ -119,7 +119,43 @@ impl<'a> OwnershipRule<'a> {
                 Ok(())
             }
             HirExpression::Block(exprs) => {
-                for e in exprs { self.visit_and_mutate_expression(e, env)?; }
+                for e in exprs.iter_mut() { self.visit_and_mutate_expression(e, env)?; }
+                Ok(())
+            }
+            HirExpression::Emit(e) => {
+                self.visit_and_mutate_expression(e, env)?;
+                // Emit takes custody of the resource!
+                if let HirExpression::Variable(vname, _) = e.as_ref() {
+                    if let Some((typ, status)) = env.get_mut(vname) {
+                        if typ.is_resource() {
+                            *status = VariableStatus::Consumed;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            HirExpression::Drop(e) => {
+                self.visit_and_mutate_expression(e, env)?;
+                if let HirExpression::Variable(vname, _) = e.as_ref() {
+                    if let Some((typ, status)) = env.get_mut(vname) {
+                        if typ.is_resource() {
+                            *status = VariableStatus::Consumed;
+                        }
+                    }
+                }
+                Ok(())
+            }
+            HirExpression::BinaryOp { left, right, .. } => {
+                self.visit_and_mutate_expression(left, env)?;
+                self.visit_and_mutate_expression(right, env)?;
+                Ok(())
+            }
+            HirExpression::Tuple(elements) => {
+                for e in elements { self.visit_and_mutate_expression(e, env)?; }
+                Ok(())
+            }
+            HirExpression::Index { subject, .. } => {
+                self.visit_and_mutate_expression(subject, env)?;
                 Ok(())
             }
             _ => Ok(())

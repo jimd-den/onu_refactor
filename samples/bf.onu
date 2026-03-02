@@ -134,13 +134,32 @@ the effect behavior called interpret
                         code utilizes interpret next-ip tape focus
             else nothing
 
+the behavior called clear-tape
+    with intent: zero out a tape string
+    takes:
+        a string called tape
+        an integer called index
+        an integer called limit
+    delivers: a string
+    with no guaranteed termination
+    as:
+        if index matches limit
+            then tape
+            else
+                derivation: new-tape derives-from tape utilizes write-tape index 0
+                new-tape utilizes clear-tape (index added-to 1) limit
+
 the effect behavior called run
     with intent: demonstrate the esoteric tape machine
     takes: nothing
-    delivers: nothing
+    delivers: an integer
     as:
-        derivation: empty-tape derives-from a string "          " 
-        derivation: program    derives-from a string "++>+++<[->+<]>." -- Result: 2 + 3 = 5 (char code 5)
-        derivation: d1         derives-from nothing broadcasts "Initializing Tape Machine..."
+        derivation: space-tape derives-from a string "                               " 
+        derivation: empty-tape derives-from space-tape utilizes clear-tape 0 30
+        
+        -- Hello World in Brainfuck
+        derivation: program derives-from a string "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."
+        
+        derivation: d1 derives-from nothing broadcasts "Executing Brainfuck Hello World..."
         program utilizes interpret 0 empty-tape 0
-        nothing
+        0

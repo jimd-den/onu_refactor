@@ -37,9 +37,9 @@ the behavior called calculate-growth
     with diminishing: generation
     as:
         if generation matches 0
-            then origin-size
+            then 0
             else if (generation decreased-by 1) matches 0
-                then spark-size
+                then 1
                 else
                     derivation: parent      derives-from an integer generation decreased-by 1
                     derivation: grandparent derives-from an integer generation decreased-by 2
@@ -52,13 +52,14 @@ the behavior called calculate-growth
 the effect behavior called run
     with intent: demonstrate the sequence of growth
     takes: nothing
-    delivers: nothing
+    delivers: an integer
     as:
         derivation: target derives-from an integer 40
         derivation: result derives-from target utilizes calculate-growth
         
         derivation: msg derives-from "The population at generation " joined-with (target utilizes as-text)
         derivation: msg2 derives-from msg joined-with " has reached: "
-        derivation: d1   derives-from nothing broadcasts msg2
-        broadcasts (result utilizes as-text)
-        nothing
+        derivation: msg3 derives-from msg2 joined-with (result utilizes as-text)
+        broadcasts msg3
+        
+        0

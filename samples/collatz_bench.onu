@@ -15,7 +15,8 @@ the behavior called collatz-steps
                 derivation: half    derives-from n partitions-by 2
                 derivation: is-even derives-from (half scales-by 2) matches n
                 derivation: next    derives-from if is-even then half else (n scales-by 3 added-to 1)
-                next utilizes collatz-steps (count added-to 1)
+                derivation: next-count derives-from count added-to 1
+                next utilizes collatz-steps next-count
 
 the behavior called collatz-range
     with intent: sum steps for a range of numbers
@@ -30,17 +31,19 @@ the behavior called collatz-range
             then accumulator
             else
                 derivation: steps derives-from current utilizes collatz-steps 0
-                (current added-to 1) utilizes collatz-range target (accumulator added-to steps)
+                derivation: next  derives-from current added-to 1
+                next utilizes collatz-range target (accumulator added-to steps)
 
 the effect behavior called run
     takes: nothing
-    delivers: nothing
+    delivers: an integer
     as:
         derivation: limit  derives-from 1000000
         derivation: result derives-from 1 utilizes collatz-range limit 0
         
         derivation: msg derives-from "Total Collatz steps for 1 to " joined-with (limit utilizes as-text)
         derivation: msg2 derives-from msg joined-with " is: "
-        derivation: d1 derives-from nothing broadcasts msg2
-        broadcasts (result utilizes as-text)
-        nothing
+        derivation: msg3 derives-from msg2 joined-with (result utilizes as-text)
+        broadcasts msg3
+        
+        0

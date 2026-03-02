@@ -216,10 +216,14 @@ impl ExprLowerer for VariableLowerer {
         _is_tail: bool,
     ) -> Result<MirOperand, OnuError> {
         if let HirExpression::Variable(name, is_consuming) = expr {
+            eprintln!("[DEBUG] Resolving variable: {}", name);
             let ssa_var = builder.resolve_variable(name)
-                .ok_or_else(|| OnuError::GrammarViolation {
-                    message: format!("Unresolved variable: {}", name),
-                    span: crate::domain::entities::error::Span::default()
+                .ok_or_else(|| {
+                    eprintln!("[DEBUG] FAILED to resolve variable: {}", name);
+                    OnuError::GrammarViolation {
+                        message: format!("Unresolved variable: {}", name),
+                        span: crate::domain::entities::error::Span::default()
+                    }
                 })?;
             
             // Do NOT mark as consumed here. The parent expression is taking custody

@@ -1,3 +1,0 @@
-PARITY VERIFICATION:
-Is 10 even? (1=yes): 1
-Is 7 even?  (1=yes): 0
