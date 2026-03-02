@@ -4,13 +4,20 @@
 /// It acts as the primary interface for the compiler's compilation stages.
 
 use crate::domain::entities::registry::{SymbolTable, BehaviorSignature, BehaviorRegistryPort};
+use crate::domain::entities::types::OnuType;
 use crate::application::options::LogLevel;
 use std::collections::HashMap;
 use chrono::Local;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ShapeDefinition {
+    pub fields: Vec<(String, OnuType)>,
+    pub behaviors: Vec<(String, BehaviorSignature)>,
+}
+
 pub struct RegistryService {
     symbols: SymbolTable,
-    shapes: HashMap<String, Vec<(String, BehaviorSignature)>>,
+    shapes: HashMap<String, ShapeDefinition>,
     pub log_level: LogLevel,
 }
 
@@ -41,9 +48,30 @@ impl RegistryService {
         self.symbols.get_signature(name)
     }
 
-    pub fn add_shape(&mut self, name: &str, behaviors: Vec<(String, BehaviorSignature)>) {
+    pub fn add_shape(&mut self, name: &str, fields: Vec<(String, OnuType)>, behaviors: Vec<(String, BehaviorSignature)>) {
         self.log(LogLevel::Debug, &format!("Adding shape: {}", name));
-        self.shapes.insert(name.to_string(), behaviors);
+        self.shapes.insert(name.to_string(), ShapeDefinition { fields, behaviors });
+    }
+
+    pub fn is_shape(&self, name: &str) -> bool {
+        let found = self.shapes.contains_key(name);
+        eprintln!("[DEBUG] Checking if {} is a shape: {}", name, found);
+        found
+    }
+
+    pub fn get_shape(&self, name: &str) -> Option<&ShapeDefinition> {
+        let res = self.shapes.get(name);
+        eprintln!("[DEBUG] Looking up shape definition for {}: {}", name, res.is_some());
+        res
+    }
+
+    pub fn find_field(&self, name: &str) -> Option<(&String, usize)> {
+        for (sname, sdef) in &self.shapes {
+            if let Some(idx) = sdef.fields.iter().position(|(fname, _)| fname == name) {
+                return Some((sname, idx));
+            }
+        }
+        None
     }
 
     pub fn symbols_mut(&mut self) -> &mut SymbolTable {

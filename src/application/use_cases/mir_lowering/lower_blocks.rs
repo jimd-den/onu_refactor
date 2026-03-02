@@ -74,6 +74,7 @@ impl ExprLowerer for DerivationLowerer {
             if let MirOperand::Variable(ssa_id, _) = &val_op {
                 if let Some(vt) = builder.resolve_ssa_type(*ssa_id) {
                     if vt.is_resource() && !builder.is_consumed(*ssa_id) {
+                        eprintln!("[DEBUG] Derivation '{}' marking source SSA {} as CONSUMED", name, ssa_id);
                         builder.mark_consumed(*ssa_id);
                         is_val_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
                     }
@@ -89,7 +90,7 @@ impl ExprLowerer for DerivationLowerer {
             
             eprintln!("[DEBUG] Defining variable: {} (SSA: {})", name, ssa_var);
             builder.enter_scope();
-            builder.define_variable(name, ssa_var, typ.clone());
+            builder.define_variable(name, ssa_var, typ.clone(), false);
 
             let res = context.lower_expression(body, builder, is_tail)?;
 

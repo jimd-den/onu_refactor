@@ -35,6 +35,19 @@ impl CodegenPort for OnuCodegen {
         let context = Context::create();
         let module = context.create_module("onu_discourse");
         let builder = context.create_builder();
+
+        // 1. Declare Global Arena (1 MB for now)
+        let arena_size = 1024 * 1024;
+        let arena_type = context.i8_type().array_type(arena_size as u32);
+        let arena = module.add_global(arena_type, None, "onu_arena");
+        arena.set_linkage(Linkage::Internal);
+        arena.set_initializer(&arena_type.const_zero());
+
+        // 2. Declare Global Arena Pointer
+        let i8ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+        let arena_ptr = module.add_global(i8ptr_type, None, "onu_arena_ptr");
+        arena_ptr.set_linkage(Linkage::Internal);
+        arena_ptr.set_initializer(&arena.as_pointer_value().const_cast(i8ptr_type));
         
         let mut generator = LlvmGenerator {
             context: &context,
@@ -86,7 +99,7 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
 
     fn declare_function(&self, func: &MirFunction) {
         let arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = func.args.iter()
-            .map(|arg| LlvmTypeMapper::onu_to_llvm(self.context, &arg.typ).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
+            .map(|arg| LlvmTypeMapper::onu_to_llvm(self.context, &arg.typ, self.registry).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
             .collect();
         
         let is_main = func.name == "run" || func.name == "main";
@@ -95,7 +108,7 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
         let fn_val = if is_main {
             let fn_type = self.context.i32_type().fn_type(&arg_types, false);
             self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
-        } else if let Some(ret_type) = LlvmTypeMapper::onu_to_llvm(self.context, &func.return_type) {
+        } else if let Some(ret_type) = LlvmTypeMapper::onu_to_llvm(self.context, &func.return_type, self.registry) {
             let fn_type = ret_type.fn_type(&arg_types, false);
             self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
         } else {
@@ -146,6 +159,7 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     }
 
     fn generate_instruction(&mut self, inst: &MirInstruction) -> Result<(), OnuError> {
+        eprintln!("[DEBUG] Generating LLVM for instruction: {:?}", inst);
         match inst {
             MirInstruction::BinaryOperation { .. } => {
                 BinaryOpStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)

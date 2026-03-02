@@ -1,27 +1,116 @@
-the module called MapBenchmark
-    with concern: testing dynamic collections
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The High-Speed Registry (Map Benchmark)
+-- Concern: Measuring retrieval performance at scale.
+-- ═══════════════════════════════════════════════════════════════════════════
 
-the behavior called insert-loop
-    with intent: populate the map recursively
+the module called MapBenchModule
+    with concern: structure-driven data retrieval
+
+the shape called MapSlot
     takes:
-        a map of (integer : integer) called m
-        an integer called current
-        an integer called target
-    delivers: a map of (integer : integer)
-    with no guaranteed termination
+        a string called key
+        an integer called value
+        a boolean called occupied
+
+-- Fixed-capacity archive with 10 slots
+the shape called Archive
+    takes:
+        a MapSlot called s0
+        a MapSlot called s1
+        a MapSlot called s2
+        a MapSlot called s3
+        a MapSlot called s4
+        a MapSlot called s5
+        a MapSlot called s6
+        a MapSlot called s7
+        a MapSlot called s8
+        a MapSlot called s9
+
+the behavior called calculate-hash
+    takes:
+        a string called label via observation
+    delivers: an integer
     as:
-        if current matches target
-            then m
+        derivation: length derives-from label utilizes len
+        -- simple mod 10
+        derivation: d10 derives-from length partitions-by 10
+        derivation: m10 derives-from d10 scales-by 10
+        length decreased-by m10
+
+the behavior called get-from-archive
+    takes:
+        an Archive called box via observation
+        a string called label via observation
+    delivers: an integer
+    as:
+        derivation: index derives-from label utilizes calculate-hash
+        if index matches 0 then (box utilizes s0) utilizes value else
+        if index matches 1 then (box utilizes s1) utilizes value else
+        if index matches 2 then (box utilizes s2) utilizes value else
+        if index matches 3 then (box utilizes s3) utilizes value else
+        if index matches 4 then (box utilizes s4) utilizes value else
+        if index matches 5 then (box utilizes s5) utilizes value else
+        if index matches 6 then (box utilizes s6) utilizes value else
+        if index matches 7 then (box utilizes s7) utilizes value else
+        if index matches 8 then (box utilizes s8) utilizes value else
+        (box utilizes s9) utilizes value
+
+the behavior called put-into-archive
+    takes:
+        an Archive called old_box
+        a string called label
+        an integer called val
+    delivers: an Archive
+    as:
+        derivation: index derives-from label utilizes calculate-hash
+        derivation: new_slot derives-from label utilizes MapSlot val true
+        
+        if index matches 0 then new_slot utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 1 then (old_box utilizes s0) utilizes Archive new_slot (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 2 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) new_slot (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 3 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) new_slot (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 4 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) new_slot (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 5 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) new_slot (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 6 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) new_slot (old_box utilizes s7) (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 7 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) new_slot (old_box utilizes s8) (old_box utilizes s9) else
+        if index matches 8 then (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) new_slot (old_box utilizes s9) else
+        (old_box utilizes s0) utilizes Archive (old_box utilizes s1) (old_box utilizes s2) (old_box utilizes s3) (old_box utilizes s4) (old_box utilizes s5) (old_box utilizes s6) (old_box utilizes s7) (old_box utilizes s8) new_slot
+
+the behavior called benchmark-loop
+    takes:
+        an integer called count
+        an Archive called box
+    delivers: an Archive
+    with diminishing: count
+    as:
+        if count matches 0
+            then box
             else
-                derivation: next-map derives-from m associated-with current current
-                next-map utilizes insert-loop (current added-to 1) target
+                derivation: b1 derives-from box utilizes put-into-archive "Alpha" 100
+                derivation: b2 derives-from b1 utilizes put-into-archive "Beta" 200
+                derivation: b3 derives-from b2 utilizes put-into-archive "Gamma" 300
+                
+                derivation: v1 derives-from b3 utilizes get-from-archive "Alpha"
+                derivation: v2 derives-from b3 utilizes get-from-archive "Beta"
+                derivation: v3 derives-from b3 utilizes get-from-archive "Gamma"
+                
+                derivation: next_count derives-from count decreased-by 1
+                next_count utilizes benchmark-loop b3
 
 the effect behavior called run
     takes: nothing
     delivers: nothing
     as:
-        derivation: initial-map derives-from creates-map
-        derivation: limit derives-from 10000000
-        derivation: final-map derives-from initial-map utilizes insert-loop 0 limit
-        broadcasts "Map Populated."
+        derivation: e derives-from "" utilizes MapSlot 0 false
+        derivation: a derives-from e utilizes Archive e e e e e e e e e
+        
+        derivation: final_a derives-from 100000 utilizes benchmark-loop a
+        
+        derivation: val_a derives-from final_a utilizes get-from-archive "Alpha"
+        derivation: val_b derives-from final_a utilizes get-from-archive "Beta"
+        derivation: val_c derives-from final_a utilizes get-from-archive "Gamma"
+        
+        broadcasts (val_a utilizes as-text)
+        broadcasts (val_b utilizes as-text)
+        broadcasts (val_c utilizes as-text)
         nothing

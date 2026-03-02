@@ -1,0 +1,8 @@
+
+the module called Test
+the behavior called observe
+    takes:
+        a string called s via observation
+    delivers: nothing
+    as:
+        broadcasts s

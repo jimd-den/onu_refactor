@@ -14,7 +14,7 @@ pub struct MirBuilder {
     blocks: Vec<BasicBlock>,
     current_block_idx: Option<usize>,
     next_ssa: usize,
-    scopes: Vec<HashMap<String, (usize, OnuType)>>,
+    scopes: Vec<HashMap<String, (usize, OnuType, bool)>>,
     consumed_vars: std::collections::HashSet<usize>,
     ssa_types: HashMap<usize, OnuType>,
     ssa_is_dynamic: HashMap<usize, bool>,
@@ -54,13 +54,14 @@ impl MirBuilder {
         id
     }
 
-    pub fn define_variable(&mut self, name: &str, ssa_var: usize, typ: OnuType) {
+    pub fn define_variable(&mut self, name: &str, ssa_var: usize, typ: OnuType, is_observation: bool) {
+        eprintln!("[DEBUG] Defining variable: {} (SSA: {}) - Obs: {}", name, ssa_var, is_observation);
         self.ssa_types.insert(ssa_var, typ.clone());
         // Default to not dynamic unless set_ssa_type specifies otherwise
         self.ssa_is_dynamic.entry(ssa_var).or_insert(false);
         
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.to_string(), (ssa_var, typ));
+            scope.insert(name.to_string(), (ssa_var, typ, is_observation));
         }
     }
 
@@ -81,20 +82,22 @@ impl MirBuilder {
     }
 
     pub fn resolve_variable(&self, name: &str) -> Option<usize> {
-        for scope in self.scopes.iter().rev() {
-            if let Some((id, _)) = scope.get(name) {
+        for (i, scope) in self.scopes.iter().rev().enumerate() {
+            if let Some((id, _, _)) = scope.get(name) {
                 if self.consumed_vars.contains(id) {
+                    eprintln!("[DEBUG] Resolving variable: {} - FAILED (Already consumed at scope {})", name, i);
                     return None;
                 }
                 return Some(*id);
             }
         }
+        eprintln!("[DEBUG] Resolving variable: {} - FAILED (Not in any scope)", name);
         None
     }
 
     pub fn resolve_variable_type(&self, name: &str) -> Option<OnuType> {
         for scope in self.scopes.iter().rev() {
-            if let Some((id, typ)) = scope.get(name) {
+            if let Some((id, typ, _)) = scope.get(name) {
                 if self.consumed_vars.contains(id) {
                     return None;
                 }
@@ -104,15 +107,25 @@ impl MirBuilder {
         None
     }
 
+    pub fn resolve_variable_is_observation(&self, name: &str) -> bool {
+        for scope in self.scopes.iter().rev() {
+            if let Some((_, _, is_obs)) = scope.get(name) {
+                return *is_obs;
+            }
+        }
+        false
+    }
+
     pub fn get_current_scope_variables(&self) -> Vec<(usize, OnuType)> {
         if let Some(scope) = self.scopes.last() {
-            scope.values().cloned().filter(|(id, _)| !self.consumed_vars.contains(id)).collect()
+            scope.values().cloned().filter(|(id, _, _)| !self.consumed_vars.contains(id)).map(|(id, typ, _)| (id, typ)).collect()
         } else {
             Vec::new()
         }
     }
 
     pub fn mark_consumed(&mut self, ssa_var: usize) {
+        eprintln!("[DEBUG] Marking SSA {} as CONSUMED", ssa_var);
         self.consumed_vars.insert(ssa_var);
     }
 
@@ -204,6 +217,7 @@ impl MirBuilder {
 
     pub fn terminate(&mut self, term: MirTerminator) {
         if let Some(idx) = self.current_block_idx {
+            eprintln!("[DEBUG] Terminating block {} with {:?}", idx, term);
             self.blocks[idx].terminator = term;
         }
     }
@@ -230,7 +244,7 @@ mod tests {
     fn test_resolve_variable_consumed() {
         let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing);
         builder.enter_scope();
-        builder.define_variable("x", 10, OnuType::I64);
+        builder.define_variable("x", 10, OnuType::I64, false);
         
         assert_eq!(builder.resolve_variable("x"), Some(10));
         

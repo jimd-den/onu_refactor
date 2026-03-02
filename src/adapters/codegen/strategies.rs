@@ -35,7 +35,7 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
         context: &'ctx Context,
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -56,8 +56,90 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                         MirBinOp::Lt => inkwell::IntPredicate::SLT,
                         _ => unreachable!(),
                     };
-                    let cond = builder.build_int_compare(pred, l_val.into_int_value(), r_val.into_int_value(), "cmptmp").unwrap();
-                    builder.build_int_z_extend(cond, context.i64_type(), "booltmp").unwrap().into()
+
+                    if l_val.is_struct_value() && r_val.is_struct_value() {
+                        // STRING EQUALITY
+                        let l_struct = l_val.into_struct_value();
+                        let r_struct = r_val.into_struct_value();
+                        
+                        let l_len = builder.build_extract_value(l_struct, 0, "l_len").unwrap().into_int_value();
+                        let r_len = builder.build_extract_value(r_struct, 0, "r_len").unwrap().into_int_value();
+                        
+                        let l_ptr = builder.build_extract_value(l_struct, 1, "l_ptr").unwrap().into_pointer_value();
+                        let r_ptr = builder.build_extract_value(r_struct, 1, "r_ptr").unwrap().into_pointer_value();
+
+                        // 1. Compare lengths
+                        let len_eq = builder.build_int_compare(inkwell::IntPredicate::EQ, l_len, r_len, "len_eq").unwrap();
+                        
+                        let current_bb = builder.get_insert_block().unwrap();
+                        let parent_fn = current_bb.get_parent().unwrap();
+                        
+                        let cmp_bb = context.append_basic_block(parent_fn, "str_cmp_start");
+                        let loop_bb = context.append_basic_block(parent_fn, "str_cmp_loop");
+                        let match_bb = context.append_basic_block(parent_fn, "str_match");
+                        let fail_bb = context.append_basic_block(parent_fn, "str_fail");
+                        let merge_bb = context.append_basic_block(parent_fn, "str_cmp_merge");
+
+                        builder.build_conditional_branch(len_eq, cmp_bb, fail_bb).unwrap();
+
+                        // cmp_bb: if len is 0, they match
+                        builder.position_at_end(cmp_bb);
+                        let is_empty = builder.build_int_compare(inkwell::IntPredicate::EQ, l_len, context.i64_type().const_zero(), "is_empty").unwrap();
+                        builder.build_conditional_branch(is_empty, match_bb, loop_bb).unwrap();
+
+                        // loop_bb: compare chars
+                        builder.position_at_end(loop_bb);
+                        let index_phi = builder.build_phi(context.i64_type(), "index").unwrap();
+                        index_phi.add_incoming(&[(&context.i64_type().const_zero(), cmp_bb)]);
+                        
+                        let idx = index_phi.as_basic_value().into_int_value();
+                        let l_char_ptr = unsafe { builder.build_in_bounds_gep(l_ptr, &[idx], "l_char_ptr").unwrap() };
+                        let r_char_ptr = unsafe { builder.build_in_bounds_gep(r_ptr, &[idx], "r_char_ptr").unwrap() };
+                        
+                        let l_char = builder.build_load(l_char_ptr, "l_char").unwrap().into_int_value();
+                        let r_char = builder.build_load(r_char_ptr, "r_char").unwrap().into_int_value();
+                        
+                        let char_eq = builder.build_int_compare(inkwell::IntPredicate::EQ, l_char, r_char, "char_eq").unwrap();
+                        
+                        let next_idx = builder.build_int_add(idx, context.i64_type().const_int(1, false), "next_idx").unwrap();
+                        let done = builder.build_int_compare(inkwell::IntPredicate::EQ, next_idx, l_len, "done").unwrap();
+                        
+                        let continue_cmp = builder.build_and(char_eq, builder.build_not(done, "not_done").unwrap(), "continue_cmp").unwrap();
+                        let found_match = builder.build_and(char_eq, done, "found_match").unwrap();
+                        
+                        // If char_eq is false, go to fail. If char_eq is true and not done, loop. If char_eq true and done, match.
+                        let not_match = builder.build_not(char_eq, "not_match").unwrap();
+                        
+                        let next_bb = context.append_basic_block(parent_fn, "str_cmp_next");
+                        builder.build_conditional_branch(char_eq, next_bb, fail_bb).unwrap();
+                        
+                        builder.position_at_end(next_bb);
+                        builder.build_conditional_branch(done, match_bb, loop_bb).unwrap();
+                        index_phi.add_incoming(&[(&next_idx, next_bb)]);
+
+                        // match_bb
+                        builder.position_at_end(match_bb);
+                        builder.build_unconditional_branch(merge_bb).unwrap();
+
+                        // fail_bb
+                        builder.position_at_end(fail_bb);
+                        builder.build_unconditional_branch(merge_bb).unwrap();
+
+                        // merge_bb
+                        builder.position_at_end(merge_bb);
+                        let final_res = builder.build_phi(context.bool_type(), "final_res").unwrap();
+                        final_res.add_incoming(&[(&context.bool_type().const_int(1, false), match_bb), (&context.bool_type().const_int(0, false), fail_bb), (&context.bool_type().const_int(0, false), current_bb)]);
+                        
+                        let res_i64 = builder.build_int_z_extend(final_res.as_basic_value().into_int_value(), context.i64_type(), "res_i64").unwrap();
+                        if op == &MirBinOp::Ne {
+                            builder.build_not(res_i64, "not_res").unwrap().into()
+                        } else {
+                            res_i64.into()
+                        }
+                    } else {
+                        let cond = builder.build_int_compare(pred, l_val.into_int_value(), r_val.into_int_value(), "cmptmp").unwrap();
+                        builder.build_int_z_extend(cond, context.i64_type(), "booltmp").unwrap().into()
+                    }
                 }
             };
 
@@ -75,7 +157,7 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
         context: &'ctx Context,
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -92,10 +174,10 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
                 f
             } else {
                 let llvm_arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = arg_types.iter()
-                    .map(|t| crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, t).unwrap_or(context.i64_type().as_basic_type_enum()).into())
+                    .map(|t| crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, t, registry).unwrap_or(context.i64_type().as_basic_type_enum()).into())
                     .collect();
 
-                let ret_type_opt = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, return_type);
+                let ret_type_opt = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, return_type, registry);
                 
                 if let Some(ret_type) = ret_type_opt {
                     let fn_type = ret_type.fn_type(&llvm_arg_types, false);
@@ -138,7 +220,7 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
         context: &'ctx Context,
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -179,6 +261,20 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
                     ptr.into(),
                     len.into(),
                 ], "syscall_res").unwrap();
+
+                // 2. EMIT NEWLINE (\n = ASCII 10)
+                // We allocate a small stack buffer for the newline
+                let nl_val = context.i8_type().const_int(10, false);
+                let nl_ptr = builder.build_alloca(context.i8_type(), "nl_ptr").unwrap();
+                builder.build_store(nl_ptr, nl_val).unwrap();
+
+                builder.build_call(CallableValue::try_from(asm_fn).unwrap(), &[
+                    i64_type.const_int(1, false).into(), // sys_write
+                    i64_type.const_int(1, false).into(), // stdout
+                    nl_ptr.into(),
+                    i64_type.const_int(1, false).into(), // len 1
+                ], "syscall_res").unwrap();
+
             }
         }
         Ok(())
@@ -192,7 +288,7 @@ impl<'ctx> InstructionStrategy<'ctx> for AssignStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -229,7 +325,7 @@ impl<'ctx> InstructionStrategy<'ctx> for TupleStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -269,14 +365,23 @@ impl<'ctx> InstructionStrategy<'ctx> for AllocStrategy {
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Alloc { dest, size_bytes } = inst {
-            let size_val = operand_to_llvm(context, builder, ssa_storage, size_bytes);
+            let size_val = operand_to_llvm(context, builder, ssa_storage, size_bytes).into_int_value();
 
-            // Pure LLVM stack allocation. No malloc.
-            let i8_type = context.i8_type();
-            let alloca_res = builder.build_array_alloca(i8_type, size_val.into_int_value(), "stack_alloc").unwrap();
+            // Simple Bump Allocator from @onu_arena
+            let arena_ptr_global = module.get_global("onu_arena_ptr").unwrap().as_pointer_value();
+            
+            // 1. Load current pointer
+            let current_ptr = builder.build_load(arena_ptr_global, "current_arena_ptr").unwrap().into_pointer_value();
+            
+            // 2. Calculate next pointer (current + size)
+            let next_ptr = unsafe { builder.build_in_bounds_gep(current_ptr, &[size_val], "next_arena_ptr").unwrap() };
+            
+            // 3. Store next pointer back to global
+            builder.build_store(arena_ptr_global, next_ptr).unwrap();
 
-            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, alloca_res.get_type().as_basic_type_enum());
-            builder.build_store(ptr, alloca_res).unwrap();
+            // 4. Return the ORIGINAL current_ptr as the allocated address
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, current_ptr.get_type().as_basic_type_enum());
+            builder.build_store(ptr, current_ptr).unwrap();
         }
         Ok(())
     }
@@ -289,7 +394,7 @@ impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
         context: &'ctx Context,
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -332,7 +437,7 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -357,7 +462,7 @@ impl<'ctx> InstructionStrategy<'ctx> for StoreStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -392,7 +497,7 @@ impl<'ctx> InstructionStrategy<'ctx> for IndexStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -402,6 +507,32 @@ impl<'ctx> InstructionStrategy<'ctx> for IndexStrategy {
                 let elem = builder.build_extract_value(s, *index as u32, "index_tmp").unwrap();
                 let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, elem.get_type());
                 builder.build_store(ptr, elem).unwrap();
+            } else if let BasicValueEnum::PointerValue(p) = val {
+                // Heuristic: if it's a pointer and we're indexing it, it's likely a load
+                // For now, assume it's a load of i64 (char code) if index is 0.
+                // In a more robust implementation, we'd use the SSA type.
+                let elem_type = if let Some(typ) = builder.get_insert_block().and_then(|bb| bb.get_parent()).and_then(|f| {
+                    // This is hard to get from here. Let's use i64 as default for Onu chars.
+                    Some(context.i64_type().as_basic_type_enum())
+                }) { typ } else { context.i64_type().as_basic_type_enum() };
+
+                // GEPI if index > 0, then load
+                let target_ptr = if *index > 0 {
+                    unsafe { builder.build_in_bounds_gep(p, &[context.i64_type().const_int(*index as u64, false)], "idx_ptr").unwrap() }
+                } else {
+                    p
+                };
+                
+                let elem = builder.build_load(target_ptr, "index_load").unwrap();
+                // Special case for byte load: extend to i64
+                let final_elem = if elem.get_type().is_int_type() && elem.into_int_value().get_type().get_bit_width() == 8 {
+                    builder.build_int_z_extend(elem.into_int_value(), context.i64_type(), "char_ext").unwrap().into()
+                } else {
+                    elem
+                };
+
+                let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, final_elem.get_type());
+                builder.build_store(ptr, final_elem).unwrap();
             }
         }
         Ok(())

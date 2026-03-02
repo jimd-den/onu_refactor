@@ -22,26 +22,31 @@ impl ExprLowerer for CallLowerer {
             for arg in args {
                 mir_args.push(context.lower_expression(arg, builder, false)?);
             }
+            eprintln!("[DEBUG] Call Lowerer: name={}, mir_args={:?}", name, mir_args);
 
             let (return_type, arg_types, arg_is_observation) = if let Some(sig) = context.registry.get_signature(name) {
                 (sig.return_type.clone(), sig.input_types.clone(), sig.arg_is_observation.clone())
             } else {
+                eprintln!("[DEBUG] Signature NOT FOUND for: {}", name);
                 (OnuType::Nothing, Vec::new(), Vec::new())
             };
 
             if let Some(lowerer) = context.stdlib_registry.get(name) {
                 let res = lowerer.lower(mir_args.clone(), builder);
+                eprintln!("[DEBUG] Stdlib op {} result: {:?}", name, res);
                 if let MirOperand::Variable(ssa_id, _) = &res {
-                    builder.set_ssa_type(*ssa_id, OnuType::Strings);
+                    builder.set_ssa_type(*ssa_id, return_type.clone());
                 }
                 
                 // Cleanup inputs
                 for (i, arg_op) in mir_args.iter().enumerate() {
                     if let MirOperand::Variable(ssa_id, is_consuming) = arg_op {
-                        if *is_consuming {
+                        let is_observation = arg_is_observation.get(i).copied().unwrap_or(false);
+                        if !is_observation && *is_consuming {
                             if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
                                 if typ.is_resource() && !builder.is_consumed(*ssa_id) {
                                     let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                                    eprintln!("[DEBUG] Marking as consumed and dropping (stdlib op {}): SSA {}", name, ssa_id);
                                     builder.mark_consumed(*ssa_id);
                                     if is_dyn {
                                         builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("{}_arg_{}", name, i), is_dynamic: is_dyn });
@@ -75,6 +80,7 @@ impl ExprLowerer for CallLowerer {
                         if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
                             if typ.is_resource() && !builder.is_consumed(*ssa_id) {
                                 let is_dyn = builder.resolve_ssa_is_dynamic(*ssa_id);
+                                eprintln!("[DEBUG] Marking as consumed and dropping (call {}): SSA {}", name, ssa_id);
                                 builder.mark_consumed(*ssa_id);
                                 if is_dyn {
                                     builder.emit(MirInstruction::Drop { ssa_var: *ssa_id, typ, name: format!("call_arg_{}", i), is_dynamic: is_dyn });

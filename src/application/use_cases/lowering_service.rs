@@ -29,8 +29,9 @@ impl LoweringService {
                     body: Self::lower_expression(body, registry),
                 }
             },
-            Discourse::Shape { name, behaviors } => HirDiscourse::Shape { 
+            Discourse::Shape { name, fields, behaviors } => HirDiscourse::Shape { 
                 name: name.clone(), 
+                fields: fields.iter().map(Self::lower_argument).collect(),
                 behaviors: behaviors.iter().map(Self::lower_header).collect() 
             },
         }
@@ -83,6 +84,25 @@ impl LoweringService {
                 }
             },
             Expression::BehaviorCall { name, args } => {
+                // Handle shape constructors
+                if let Some(shape_def) = registry.get_shape(name) {
+                    if shape_def.fields.len() == args.len() {
+                        return HirExpression::Tuple(
+                            args.iter().map(|e| Self::lower_expression(e, registry)).collect()
+                        );
+                    }
+                }
+
+                // Handle shape accessors
+                if args.len() == 1 {
+                    if let Some((_, idx)) = registry.find_field(name) {
+                        return HirExpression::Index {
+                            subject: Box::new(Self::lower_expression(&args[0], registry)),
+                            index: idx,
+                        };
+                    }
+                }
+
                 // Handle legacy string-based binary operations
                 let op = match name.as_str() {
                     "added-to" | "addedto" => Some(HirBinOp::Add),

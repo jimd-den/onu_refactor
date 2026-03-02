@@ -111,7 +111,7 @@ impl<'a> LexerInternal<'a> {
             ':' => { self.input.next(); Token::Operator(":".to_string()) }
             '"' => self.lex_string(),
             c if c.is_ascii_digit() => self.lex_number(),
-            c if c.is_alphanumeric() || c == '-' => self.lex_complex_keyword_or_id(),
+            c if c.is_alphanumeric() || c == '-' || c == '_' => self.lex_complex_keyword_or_id(),
             _ => {
                 self.input.next();
                 return self.next_token();
@@ -154,6 +154,7 @@ impl<'a> LexerInternal<'a> {
     fn lex_complex_keyword_or_id(&mut self) -> Token {
         let phrases = [
             ("the-module-called", Token::TheModuleCalled),
+            ("the-shape-called", Token::TheShapeCalled),
             ("the-behavior-called", Token::TheBehaviorCalled),
             ("the-effect-behavior-called", Token::TheEffectBehaviorCalled),
             ("with-intent", Token::WithIntent),
@@ -176,6 +177,7 @@ impl<'a> LexerInternal<'a> {
             ("opposes", Token::Opposes),
             ("init-of", Token::InitOf),
             ("tail-of", Token::TailOf),
+            ("duplicated-as", Token::DuplicatedAs),
         ];
 
         let mut current_pos = self.input.clone();
@@ -185,7 +187,7 @@ impl<'a> LexerInternal<'a> {
         for _ in 0..4 {
             let mut word = String::new();
             while let Some(c) = current_pos.peek() {
-                if c.is_alphanumeric() || *c == '-' { word.push(*c); current_pos.next(); } else { break; }
+                if c.is_alphanumeric() || *c == '-' || *c == '_' { word.push(*c); current_pos.next(); } else { break; }
             }
             if word.is_empty() { break; }
             words.push(word);
@@ -207,7 +209,7 @@ impl<'a> LexerInternal<'a> {
 
         let mut s = String::new();
         while let Some(c) = self.peek_char() {
-            if c.is_alphanumeric() || c == '-' { s.push(c); self.input.next(); } else { break; }
+            if c.is_alphanumeric() || c == '-' || c == '_' { s.push(c); self.input.next(); } else { break; }
         }
         
         match s.as_str() {

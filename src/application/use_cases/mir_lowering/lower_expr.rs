@@ -226,10 +226,10 @@ impl ExprLowerer for VariableLowerer {
                     }
                 })?;
             
-            // Do NOT mark as consumed here. The parent expression is taking custody
-            // and is responsible for marking it consumed and emitting the drop.
+            let is_obs = builder.resolve_variable_is_observation(name);
+            let final_consuming = if is_obs { false } else { *is_consuming };
             
-            Ok(MirOperand::Variable(ssa_var, *is_consuming))
+            Ok(MirOperand::Variable(ssa_var, final_consuming))
         } else {
             Err(OnuError::GrammarViolation {
                 message: "Expected Variable expression".to_string(),

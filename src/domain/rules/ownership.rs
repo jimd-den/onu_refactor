@@ -14,6 +14,7 @@ use std::collections::HashMap;
 pub enum VariableStatus {
     Available,
     Consumed,
+    Observed,
 }
 
 pub struct OwnershipRule<'a> {
@@ -28,26 +29,51 @@ impl<'a> OwnershipRule<'a> {
     pub fn validate(&self, header: &HirBehaviorHeader, body: &mut HirExpression) -> Result<(), OnuError> {
         let mut env = HashMap::new();
         for arg in &header.args {
-            env.insert(arg.name.clone(), (arg.typ.clone(), VariableStatus::Available));
+            let status = if arg.is_observation {
+                VariableStatus::Observed
+            } else {
+                VariableStatus::Available
+            };
+            env.insert(arg.name.clone(), (arg.typ.clone(), status));
         }
         self.visit_and_mutate_expression(body, &mut env)?;
 
-        // Scope ends: Any remaining resources in the environment must be dropped explicitly.
+        // Scope ends: Any remaining Available resources in the environment must be dropped explicitly.
+        // Observed resources must NOT be dropped.
         let mut drops_to_insert = Vec::new();
-        for (name, (typ, status)) in env.iter() {
-            if *status == VariableStatus::Available && typ.is_resource() {
+        for (name, (typ, status)) in env {
+            if status == VariableStatus::Available && typ.is_resource() {
                 drops_to_insert.push(name.clone());
             }
         }
 
         if !drops_to_insert.is_empty() {
             let old_body = std::mem::replace(body, HirExpression::Literal(crate::domain::entities::hir::HirLiteral::Nothing));
-            let mut block_exprs = vec![old_body];
+
+            // To preserve the return value, we wrap the body in a derivation that captures the result,
+            // then performs the drops, and finally returns the result.
+            let res_name = "_return_value_tmp".to_string();
+
+            let mut derivation_body_exprs = Vec::new();
             for name in drops_to_insert {
-                block_exprs.push(HirExpression::Drop(Box::new(HirExpression::Variable(name, true))));
+                derivation_body_exprs.push(HirExpression::Drop(Box::new(HirExpression::Variable(name, true))));
             }
-            *body = HirExpression::Block(block_exprs);
+            derivation_body_exprs.push(HirExpression::Variable(res_name.clone(), true));
+
+            let derivation_body = if derivation_body_exprs.len() == 1 {
+                derivation_body_exprs.pop().unwrap()
+            } else {
+                HirExpression::Block(derivation_body_exprs)
+            };
+
+            *body = HirExpression::Derivation {
+                name: res_name,
+                typ: header.return_type.clone(),
+                value: Box::new(old_body),
+                body: Box::new(derivation_body),
+            };
         }
+
 
         Ok(())
     }
@@ -74,7 +100,7 @@ impl<'a> OwnershipRule<'a> {
                     if !is_observation {
                         if let HirExpression::Variable(vname, _) = arg {
                             if let Some((typ, status)) = env.get_mut(vname) {
-                                if typ.is_resource() {
+                                if typ.is_resource() && *status != VariableStatus::Observed {
                                     *status = VariableStatus::Consumed;
                                 }
                             }
@@ -124,10 +150,10 @@ impl<'a> OwnershipRule<'a> {
             }
             HirExpression::Emit(e) => {
                 self.visit_and_mutate_expression(e, env)?;
-                // Emit takes custody of the resource!
+                // Emit takes custody of the resource, UNLESS it's an observation
                 if let HirExpression::Variable(vname, _) = e.as_ref() {
                     if let Some((typ, status)) = env.get_mut(vname) {
-                        if typ.is_resource() {
+                        if typ.is_resource() && *status != VariableStatus::Observed {
                             *status = VariableStatus::Consumed;
                         }
                     }
@@ -138,7 +164,7 @@ impl<'a> OwnershipRule<'a> {
                 self.visit_and_mutate_expression(e, env)?;
                 if let HirExpression::Variable(vname, _) = e.as_ref() {
                     if let Some((typ, status)) = env.get_mut(vname) {
-                        if typ.is_resource() {
+                        if typ.is_resource() && *status != VariableStatus::Observed {
                             *status = VariableStatus::Consumed;
                         }
                     }
@@ -151,7 +177,16 @@ impl<'a> OwnershipRule<'a> {
                 Ok(())
             }
             HirExpression::Tuple(elements) => {
-                for e in elements { self.visit_and_mutate_expression(e, env)?; }
+                for e in elements {
+                    self.visit_and_mutate_expression(e, env)?;
+                    if let HirExpression::Variable(vname, _) = e {
+                        if let Some((typ, status)) = env.get_mut(vname) {
+                            if typ.is_resource() && *status != VariableStatus::Observed {
+                                *status = VariableStatus::Consumed;
+                            }
+                        }
+                    }
+                }
                 Ok(())
             }
             HirExpression::Index { subject, .. } => {
