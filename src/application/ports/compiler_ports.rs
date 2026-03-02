@@ -16,6 +16,7 @@ pub enum Token {
 
     // --- Keywords ---
     TheModuleCalled,
+    TheShapeCalled,
     TheBehaviorCalled,
     TheEffectBehaviorCalled,
     WithConcern,
@@ -46,6 +47,7 @@ pub enum Token {
     Opposes,
     InitOf,
     TailOf,
+    DuplicatedAs,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

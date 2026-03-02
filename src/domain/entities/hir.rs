@@ -8,7 +8,11 @@ use crate::domain::entities::types::OnuType;
 #[derive(Debug, Clone, PartialEq)]
 pub enum HirDiscourse {
     Module { name: String, concern: String },
-    Shape { name: String, behaviors: Vec<HirBehaviorHeader> },
+    Shape { 
+        name: String, 
+        fields: Vec<HirArgument>,
+        behaviors: Vec<HirBehaviorHeader> 
+    },
     Behavior { header: HirBehaviorHeader, body: HirExpression },
 }
 

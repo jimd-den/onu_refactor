@@ -89,8 +89,8 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         self.parser.scan_headers(tokens, &mut self.registry)
     }
 
-    pub fn parse(&self, tokens: Vec<crate::application::ports::compiler_ports::Token>) -> Result<Vec<Discourse>, OnuError> {
-        self.parser.parse_with_registry(tokens, &self.registry)
+    pub fn parse(&mut self, tokens: Vec<crate::application::ports::compiler_ports::Token>) -> Result<Vec<Discourse>, OnuError> {
+        self.parser.parse_with_registry(tokens, &mut self.registry)
     }
 
     pub fn lower_hir(&self, discourses: Vec<Discourse>) -> Result<Vec<HirDiscourse>, OnuError> {

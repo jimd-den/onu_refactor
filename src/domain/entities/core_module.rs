@@ -46,6 +46,7 @@ impl BuiltInModule for StandardMathModule {
             ("scales-by", BehaviorSignature { input_types: vec![OnuType::I64, OnuType::I64], return_type: OnuType::I64, arg_is_observation: vec![false, false] }),
             ("partitions-by", BehaviorSignature { input_types: vec![OnuType::I64, OnuType::I64], return_type: OnuType::I64, arg_is_observation: vec![false, false] }),
             ("matches", BehaviorSignature { input_types: vec![OnuType::I64, OnuType::I64], return_type: OnuType::I64, arg_is_observation: vec![false, false] }),
+            ("matches", BehaviorSignature { input_types: vec![OnuType::Strings, OnuType::Strings], return_type: OnuType::Boolean, arg_is_observation: vec![true, true] }),
             ("exceeds", BehaviorSignature { input_types: vec![OnuType::I64, OnuType::I64], return_type: OnuType::I64, arg_is_observation: vec![false, false] }),
             ("falls-short-of", BehaviorSignature { input_types: vec![OnuType::I64, OnuType::I64], return_type: OnuType::I64, arg_is_observation: vec![false, false] }),
         ];

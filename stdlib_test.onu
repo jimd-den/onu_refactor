@@ -1,0 +1,14 @@
+
+the module called StdlibTest
+    with concern: testing string ops
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: s derives-from "Hello"
+        derivation: s2 derives-from s duplicated-as
+        derivation: s3 derives-from "World"
+        broadcasts s2
+        broadcasts s3
+        nothing

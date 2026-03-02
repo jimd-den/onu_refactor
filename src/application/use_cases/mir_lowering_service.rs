@@ -76,7 +76,9 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         
         for arg in &header.args {
             let ssa_var = builder.new_ssa();
-            builder.define_variable(&arg.name, ssa_var, arg.typ.clone());
+            // In MIR, we treat observed variables as 'NOT consuming' by default
+            builder.define_variable(&arg.name, ssa_var, arg.typ.clone(), arg.is_observation);
+            builder.set_ssa_type(ssa_var, arg.typ.clone());
             builder.add_arg(arg.name.clone(), arg.typ.clone(), ssa_var);
         }
 
@@ -109,6 +111,37 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
                     builder.emit(MirInstruction::Drop { ssa_var: ssa_var, typ, name: "manual_drop".to_string(), is_dynamic: is_dyn });
                 }
                 Ok(MirOperand::Constant(MirLiteral::Nothing))
+            }
+            HirExpression::Tuple(exprs) => {
+                let mut ops = Vec::new();
+                for e in exprs {
+                    ops.push(self.lower_expression(e, builder, false)?);
+                }
+                let dest = builder.new_ssa();
+                builder.emit(MirInstruction::Tuple { dest, elements: ops.clone() });
+                builder.set_ssa_type(dest, OnuType::Tuple(ops.iter().map(|o| {
+                    if let MirOperand::Variable(id, _) = o {
+                        builder.resolve_ssa_type(*id).unwrap_or(OnuType::Nothing)
+                    } else {
+                        OnuType::Nothing // TODO: improve literal type resolution
+                    }
+                }).collect()));
+                
+                // Mark elements as consumed if they are resource variables
+                for op in ops {
+                    if let MirOperand::Variable(id, is_consuming) = op {
+                        if is_consuming {
+                            if let Some(typ) = builder.resolve_ssa_type(id) {
+                                if typ.is_resource() && !builder.is_consumed(id) {
+                                    builder.mark_consumed(id);
+                                    // Note: we don't necessarily need to emit a Drop here because the Tuple NOW OWNS it.
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(MirOperand::Variable(dest, true))
             }
             HirExpression::Index { .. } => IndexLowerer.lower(expr, &self.context, builder, is_tail),
             _ => {

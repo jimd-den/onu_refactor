@@ -1,0 +1,107 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Indexed Archive (Shape-based HashMap)
+-- Concern: Managing key-value associations with deterministic logic.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called ShapeMapModule
+    with concern: structure-driven data retrieval
+
+-- A single slot in our archive.
+the shape called MapSlot
+    with intent: hold a single association and its presence state
+    takes:
+        a string called key
+        an integer called value
+        a boolean called occupied
+
+-- Our archive consisting of two buckets (for simplicity).
+the shape called Archive
+    with intent: represent a fixed-capacity hashed storage
+    takes:
+        a MapSlot called slot0
+        a MapSlot called slot1
+
+-- Determine the destination bucket for a label.
+the behavior called calculate-hash
+    with intent: map a label to a binary index (0 or 1)
+    takes:
+        a string called label via observation
+    delivers: an integer
+    as:
+        derivation: length derives-from label utilizes len
+        -- Simple parity hash: length mod 2
+        derivation: div2   derives-from length partitions-by 2
+        derivation: mul2   derives-from div2 scales-by 2
+        length decreased-by mul2
+
+-- Retrieve a value from the archive by its label.
+the behavior called get-from-archive
+    with intent: locate the integer associated with a label
+    takes:
+        an Archive called box via observation
+        a string called label via observation
+    delivers: an integer
+    as:
+        derivation: index derives-from label utilizes calculate-hash
+        if index matches 0
+            then
+                derivation: s0 derives-from box utilizes slot0
+                derivation: k  derives-from s0 utilizes key
+                if k matches label
+                    then s0 utilizes value
+                    else 0
+            else
+                derivation: s1 derives-from box utilizes slot1
+                derivation: k  derives-from s1 utilizes key
+                if k matches label
+                    then s1 utilizes value
+                    else 0
+
+-- Construct an updated archive with a new association.
+-- In Onu, we consume the old archive and deliver a new one (Linearity).
+the behavior called put-into-archive
+    with intent: register a new association in the archive
+    takes:
+        an Archive called old_box
+        a string called label
+        an integer called val
+    delivers: an Archive
+    as:
+        derivation: index derives-from label utilizes calculate-hash
+        derivation: new_slot derives-from label utilizes MapSlot val true
+        
+        if index matches 0
+            then
+                -- Preserve slot1, replace slot0
+                derivation: s1 derives-from old_box utilizes slot1
+                new_slot utilizes Archive s1
+            else
+                -- Preserve slot0, replace slot1
+                derivation: s0 derives-from old_box utilizes slot0
+                s0 utilizes Archive new_slot
+
+the effect behavior called run
+    with intent: demonstrate shape-based map operations
+    takes: nothing
+    delivers: nothing
+    as:
+        -- Initialize an empty archive
+        derivation: empty_slot0 derives-from "" utilizes MapSlot 0 false
+        derivation: empty_slot1 derives-from "" utilizes MapSlot 0 false
+        derivation: archive0     derives-from empty_slot0 utilizes Archive empty_slot1
+        
+        -- Add entries
+        derivation: archive1 derives-from archive0 utilizes put-into-archive "Alpha" 100
+        derivation: archive2 derives-from archive1 utilizes put-into-archive "Beta" 200
+        
+        -- Retrieve and report
+        derivation: val_a derives-from archive2 utilizes get-from-archive "Alpha"
+        derivation: val_b derives-from archive2 utilizes get-from-archive "Beta"
+        
+        derivation: msg_a derives-from "Alpha: " joined-with (val_a utilizes as-text)
+        derivation: msg_b derives-from "Beta: " joined-with (val_b utilizes as-text)
+        
+        broadcasts msg_a
+        broadcasts msg_b
+        
+        nothing

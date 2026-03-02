@@ -56,13 +56,18 @@ impl SymbolTable {
     }
 
     pub fn add_signature(&mut self, name: &str, signature: BehaviorSignature) {
+        eprintln!("[DEBUG] Adding signature to SymbolTable: {}", name);
         self.names.insert(name.to_string());
         self.arities.insert(name.to_string(), signature.input_types.len());
         self.signatures.insert(name.to_string(), signature);
     }
 
     pub fn get_signature(&self, name: &str) -> Option<&BehaviorSignature> {
-        self.signatures.get(name)
+        let res = self.signatures.get(name);
+        if res.is_none() {
+            eprintln!("[DEBUG] SymbolTable: signature NOT FOUND for {}, available: {:?}", name, self.signatures.keys());
+        }
+        res
     }
 
     pub fn get_arity(&self, name: &str) -> Option<usize> {

@@ -45,10 +45,7 @@ impl ExprLowerer for IfLowerer {
             let pre_branch_consumed = builder.get_consumed_vars();
 
             builder.switch_to_block(then_start_id);
-            let then_res = context.lower_expression(then_branch, builder, is_tail)?;
-            if is_tail {
-                builder.terminate(MirTerminator::Return(then_res.clone()));
-            }
+            let then_res = context.lower_expression(then_branch, builder, false)?;
             let then_consumed = builder.get_consumed_vars();
             let then_end_id = builder.get_current_block_id();
 
@@ -56,10 +53,7 @@ impl ExprLowerer for IfLowerer {
             builder.set_consumed_vars(pre_branch_consumed.clone());
 
             builder.switch_to_block(else_start_id);
-            let else_res = context.lower_expression(else_branch, builder, is_tail)?;
-            if is_tail {
-                builder.terminate(MirTerminator::Return(else_res.clone()));
-            }
+            let else_res = context.lower_expression(else_branch, builder, false)?;
             let else_consumed = builder.get_consumed_vars();
             let else_end_id = builder.get_current_block_id();
 
@@ -68,13 +62,19 @@ impl ExprLowerer for IfLowerer {
             final_consumed.extend(else_consumed);
             builder.set_consumed_vars(final_consumed);
 
-            if is_tail {
-                builder.clear_current_block();
-                return Ok(MirOperand::Constant(crate::domain::entities::mir::MirLiteral::Nothing));
-            }
-
             let merge_id = builder.create_block();
             let dest = builder.new_ssa();
+            
+            // Heuristic: use the type of the then branch result
+            if let MirOperand::Variable(ssa_id, _) = &then_res {
+                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                    builder.set_ssa_type(dest, typ);
+                }
+            } else if let MirOperand::Variable(ssa_id, _) = &else_res {
+                if let Some(typ) = builder.resolve_ssa_type(*ssa_id) {
+                    builder.set_ssa_type(dest, typ);
+                }
+            }
 
             if let Some(id) = then_end_id {
                 builder.switch_to_block(id);

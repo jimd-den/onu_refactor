@@ -1,0 +1,14 @@
+
+the module called EqTest
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        if "A" matches "A"
+            then broadcasts "MATCH"
+            else broadcasts "FAIL"
+        
+        if "A" matches "B"
+            then broadcasts "FAIL"
+            else broadcasts "NO MATCH"
+        nothing
