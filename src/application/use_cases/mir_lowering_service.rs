@@ -221,7 +221,7 @@ mod tests {
         // 1. Define a resource variable (String)
         let ssa_id = 100;
         builder.enter_scope();
-        builder.define_variable("my_resource", ssa_id, OnuType::Strings);
+        builder.define_variable("my_resource", ssa_id, OnuType::Strings, false);
         builder.set_ssa_type(ssa_id, OnuType::Strings);
         builder.set_ssa_is_dynamic(ssa_id, true);
 

@@ -31,10 +31,10 @@ impl<'a, E: EnvironmentPort> PipelineStage for MirStage<'a, E> {
         // A recursive function cannot be safely inlined into its caller because the inlined
         // body would contain another call to itself, causing infinite expansion. TcoPass
         // rewrites self-recursion into a loop, making the body finite and therefore inlineable.
-        let mir_program = InlinePass::run(mir_program);
+        let mir_program = TcoPass::run(mir_program);
         // Stage 3: Expand loop-shaped pure callees inline into their callers.
         // Now that collatz-steps is a loop (not recursive), InlinePass can safely expand it
         // into collatz-range, fusing the two loops into one for LLVM to optimize holistically.
-        Ok(TcoPass::run(mir_program))
+        Ok(InlinePass::run(mir_program))
     }
 }

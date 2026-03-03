@@ -47,7 +47,7 @@ fn test_arity_bounded_utilizes() {
     registry.symbols_mut().add_name("test-behavior", 2);
     
     let parser = OnuParser::new(LogLevel::Debug);
-    let discourses = parser.parse_with_registry(tokens, &registry).expect("Parsing failed");
+    let discourses = parser.parse_with_registry(tokens, &mut registry).expect("Parsing failed");
     
     // First discourse should be a behavior if it was wrapped, but here it's just a raw expression block
     // Actually ParserPort::parse returns Result<Vec<Discourse>, OnuError>
