@@ -9,7 +9,7 @@ Implementation of the Ọ̀nụ programming language compiler, focusing on safet
 ## Core Priority Features
 - **Standard Library Expansion:** Growing the suite of built-in modules including `Ọ̀nụ-IO`, `StandardMath`, and robust string manipulations.
 - **Safety & Ownership Rules:** Implementing and refining "Legal Custody" rules via HIR analysis to ensure memory safety without a garbage collector.
-- **Advanced Optimizations:** Developing a robust pipeline of LLVM optimizations, including guaranteed Tail Call Optimization (TCO) for O(1) recursive scaling, ensuring human-readable "discourse" translates to highly efficient machine code.
+- **Advanced Optimizations:** Developing a robust pipeline of LLVM optimizations (including guaranteed TCO, pure data leaf detection, and fully featured O3 passes), ensuring human-readable "discourse" translates to highly efficient machine code that matches or exceeds Clang -O3 performance.
 - **Leak-Free Execution:** Ensuring that all compiled programs pass rigorous memory safety checks (e.g., Valgrind) with zero heap leaks.
 
 ## Technical Constraints
