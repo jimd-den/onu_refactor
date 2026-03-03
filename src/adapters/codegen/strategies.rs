@@ -161,7 +161,7 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Call { dest, name, args, return_type, arg_types, is_tail_call: _ } = inst {
+        if let MirInstruction::Call { dest, name, args, return_type, arg_types, is_tail_call } = inst {
             let llvm_name = name.clone(); // Use original hyphenated names
             
             let mut llvm_args = Vec::new();
@@ -190,6 +190,11 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
             
             let call = builder.build_call(func, &llvm_args, "calltmp").unwrap();
             
+            if *is_tail_call {
+                eprintln!("[DEBUG] Applying tail-call to call to {}", name);
+                call.set_tail_call(true);
+            }
+
             let is_extern = ["malloc", "free", "printf", "puts", "sprintf", "strlen"].contains(&llvm_name.as_str());
             if !is_extern {
                 // LLVM fastcc is calling convention 8
