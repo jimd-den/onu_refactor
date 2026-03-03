@@ -1,0 +1,14 @@
+C Collatz Benchmark:
+Total Collatz steps for 1 to 1000000 is: 131434424
+
+real	0m0.454s
+user	0m0.446s
+sys	0m0.008s
+
+Onu Collatz Benchmark:
+Total Collatz steps for 1 to 1000000 is:
+131434424
+
+real	0m0.434s
+user	0m0.433s
+sys	0m0.001s

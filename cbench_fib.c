@@ -31,7 +31,7 @@ static long long fib_sum_range(long long current, long long target,
 }
 
 int main(void) {
-  long long naive_result = fib_naive(40);
+  long long naive_result = fib_naive(100);
   long long tco_result = fib_tco(10000, 0, 1);
   long long range_result = fib_sum_range(0, 92, 0);
 

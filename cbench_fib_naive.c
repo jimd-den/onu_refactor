@@ -11,6 +11,6 @@ static long long fib(long long n) {
 }
 
 int main(void) {
-  printf("fib(40) = %lld\n", fib(40));
+  printf("fib(100) = %lld\n", fib(100));
   return 0;
 }
