@@ -6,6 +6,8 @@ use crate::domain::entities::types::OnuType;
 
 pub struct MemoPass;
 
+const DEFAULT_MEMO_CACHE_SIZE: usize = 10000;
+
 impl MemoPass {
     pub fn run(program: MirProgram) -> MirProgram {
         let mut new_functions = vec![];
@@ -28,7 +30,7 @@ impl MemoPass {
     fn create_wrapper_and_inner(mut func: MirFunction) -> (MirFunction, MirFunction) {
         eprintln!("[MemoPass] Memoizing pure recursive function '{}'", func.name);
 
-        let cache_size = 10000; // Hardcoded small limit for this example.
+        let cache_size = DEFAULT_MEMO_CACHE_SIZE;
 
         let mut inner_func = func.clone();
         inner_func.name = format!("{}.inner", func.name);
@@ -127,6 +129,7 @@ impl MemoPass {
         };
 
         let result_ssa = next_ssa; next_ssa += 1;
+
         let call_inner_block = BasicBlock {
             id: call_inner_id,
             instructions: vec![
@@ -140,6 +143,15 @@ impl MemoPass {
                     return_type: OnuType::I64,
                     arg_types: vec![OnuType::I64, OnuType::Nothing], // cache is pointer
                     is_tail_call: false,
+                },
+                // Drop the allocated cache manually if we use a bump allocator or malloc
+                // Currently MirInstruction::Drop expects linear variables, but we can emit a manual drop
+                // if the alloc creates a heap pointer
+                MirInstruction::Drop {
+                    ssa_var: cache_ptr_ssa,
+                    typ: OnuType::Nothing,
+                    name: "memo_cache".to_string(),
+                    is_dynamic: true,
                 }
             ],
             terminator: MirTerminator::Return(MirOperand::Variable(result_ssa, false)),
@@ -332,17 +344,23 @@ impl MemoPass {
                     terminator: MirTerminator::Branch(cont_block_id), // Skip store
                 });
 
-                let len = rewritten_blocks.len();
-                rewritten_blocks[len-2].terminator = MirTerminator::CondBranch {
-                    condition: MirOperand::Variable(bounds_check_lower_ssa, false),
-                    then_block: miss_bounds_block_id, // < 0
-                    else_block: fetch_block_id,
-                };
-                rewritten_blocks[len-3].terminator = MirTerminator::CondBranch {
-                    condition: MirOperand::Variable(bounds_check_upper_ssa, false),
-                    then_block: lower_check_block_id,
-                    else_block: miss_bounds_block_id, // >= size
-                };
+                // We use finding by id to avoid fragile relative indexing
+                for b in &mut rewritten_blocks {
+                    if b.id == lower_check_block_id {
+                        b.terminator = MirTerminator::CondBranch {
+                            condition: MirOperand::Variable(bounds_check_lower_ssa, false),
+                            then_block: miss_bounds_block_id, // < 0
+                            else_block: fetch_block_id,
+                        };
+                    }
+                    if b.id == check_block_id {
+                        b.terminator = MirTerminator::CondBranch {
+                            condition: MirOperand::Variable(bounds_check_upper_ssa, false),
+                            then_block: lower_check_block_id,
+                            else_block: miss_bounds_block_id, // >= size
+                        };
+                    }
+                }
 
                 rewritten_blocks.push(BasicBlock {
                     id: store_block_id,

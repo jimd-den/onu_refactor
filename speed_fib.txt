@@ -1,14 +1,14 @@
 C Fib Benchmark (40):
 fib(40) = 102334155
 
-real	0m0.237s
-user	0m0.234s
+real	0m0.234s
+user	0m0.231s
 sys	0m0.004s
 
 Onu Fib Benchmark (40):
 Fibonacci(40) is:
 102334155
 
-real	0m0.387s
-user	0m0.383s
-sys	0m0.004s
+real	0m0.417s
+user	0m0.417s
+sys	0m0.000s
