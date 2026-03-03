@@ -78,6 +78,8 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         let mut is_pure_candidate = !header.is_effect && 
             header.args.iter().all(|arg| !arg.typ.is_resource()) &&
             !header.return_type.is_resource();
+        
+        self.log(LogLevel::Debug, &format!("Behavior {} is_pure_candidate: {}", header.name, is_pure_candidate));
 
         for arg in &header.args {
             let ssa_var = builder.new_ssa();
@@ -104,13 +106,14 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
                         MirInstruction::Store { .. } |
                         MirInstruction::Emit(_) |
                         MirInstruction::Drop { .. } => {
+                            self.log(LogLevel::Debug, &format!("Behavior {} unmarked as pure: side-effecting instruction {:?}", func.name, inst));
                             is_pure_candidate = false;
                             break;
                         }
                         MirInstruction::Call { name, .. } => {
                             // If it calls anything other than itself, we are cautious
-                            // In a better implementation, we'd check the registry
                             if name != &func.name {
+                                self.log(LogLevel::Debug, &format!("Behavior {} unmarked as pure: calls external behavior {}", func.name, name));
                                 is_pure_candidate = false;
                                 break;
                             }

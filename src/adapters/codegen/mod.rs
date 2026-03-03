@@ -2,22 +2,21 @@
 ///
 /// This implements the CodegenPort using the Inkwell library
 /// to translate MIR into LLVM Bitcode.
-
 pub mod strategies;
 pub mod typemapper;
 
+use crate::adapters::codegen::strategies::*;
+use crate::adapters::codegen::typemapper::LlvmTypeMapper;
 use crate::application::ports::compiler_ports::CodegenPort;
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 use crate::domain::entities::mir::*;
 use crate::domain::entities::types::OnuType;
-use crate::adapters::codegen::strategies::*;
-use crate::adapters::codegen::typemapper::LlvmTypeMapper;
-use inkwell::context::Context;
 use inkwell::builder::Builder;
-use inkwell::module::{Module, Linkage};
+use inkwell::context::Context;
+use inkwell::module::{Linkage, Module};
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::PointerValue;
-use inkwell::types::{BasicTypeEnum, BasicType};
 use std::collections::HashMap;
 
 pub struct OnuCodegen {
@@ -48,21 +47,24 @@ impl CodegenPort for OnuCodegen {
         let arena_ptr = module.add_global(i8ptr_type, None, "onu_arena_ptr");
         arena_ptr.set_linkage(Linkage::Internal);
         arena_ptr.set_initializer(&arena.as_pointer_value().const_cast(i8ptr_type));
-        
+
         let mut generator = LlvmGenerator {
             context: &context,
             module,
             builder,
-            registry: self.registry.as_ref().expect("Registry not provided to codegen"),
+            registry: self
+                .registry
+                .as_ref()
+                .expect("Registry not provided to codegen"),
             ssa_storage: HashMap::new(),
             blocks: HashMap::new(),
         };
 
         generator.generate(program)?;
 
+        use inkwell::module::Module;
         use inkwell::passes::{PassManager, PassManagerBuilder};
         use inkwell::values::FunctionValue;
-        use inkwell::module::Module;
 
         let pass_manager_builder = PassManagerBuilder::create();
         pass_manager_builder.set_optimization_level(inkwell::OptimizationLevel::Aggressive);
@@ -78,6 +80,16 @@ impl CodegenPort for OnuCodegen {
             fpm.run_on(&func);
         }
         fpm.finalize();
+
+        // Run the AlwaysInliner as a separate dedicated pass BEFORE the full MPM.
+        // Rationale: the legacy PassManagerBuilder's populate_module_pass_manager
+        // includes an inliner, but its cost model can override `alwaysinline` when
+        // calling conventions or instruction counts trigger heuristics. Running
+        // add_always_inliner_pass explicitly guarantees all alwaysinline sites are
+        // expanded unconditionally, regardless of cost.
+        let always_inliner: PassManager<Module> = PassManager::create(());
+        always_inliner.add_always_inliner_pass();
+        always_inliner.run_on(&generator.module);
 
         mpm.run_on(&generator.module);
 
@@ -110,30 +122,47 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     }
 
     fn declare_function(&self, func: &MirFunction) {
-        let arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = func.args.iter()
-            .map(|arg| LlvmTypeMapper::onu_to_llvm(self.context, &arg.typ, self.registry).unwrap_or(self.context.i64_type().as_basic_type_enum()).into())
+        let arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = func
+            .args
+            .iter()
+            .map(|arg| {
+                LlvmTypeMapper::onu_to_llvm(self.context, &arg.typ, self.registry)
+                    .unwrap_or(self.context.i64_type().as_basic_type_enum())
+                    .into()
+            })
             .collect();
-        
+
         let is_main = func.name == "run" || func.name == "main";
-        let llvm_name = if is_main { "main".to_string() } else { func.name.clone() };
-        
+        let llvm_name = if is_main {
+            "main".to_string()
+        } else {
+            func.name.clone()
+        };
+
         let fn_val = if is_main {
             let fn_type = self.context.i32_type().fn_type(&arg_types, false);
-            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
-        } else if let Some(ret_type) = LlvmTypeMapper::onu_to_llvm(self.context, &func.return_type, self.registry) {
+            self.module
+                .add_function(&llvm_name, fn_type, Some(Linkage::External))
+        } else if let Some(ret_type) =
+            LlvmTypeMapper::onu_to_llvm(self.context, &func.return_type, self.registry)
+        {
             let fn_type = ret_type.fn_type(&arg_types, false);
-            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
+            self.module
+                .add_function(&llvm_name, fn_type, Some(Linkage::External))
         } else {
             let fn_type = self.context.void_type().fn_type(&arg_types, false);
-            self.module.add_function(&llvm_name, fn_type, Some(Linkage::External))
+            self.module
+                .add_function(&llvm_name, fn_type, Some(Linkage::External))
         };
 
         if !is_main {
             // Use fastcc for all internal behaviors for better optimization
             fn_val.set_call_conventions(8);
-            
+
             // Mark as local_unnamed_addr to allow more aggressive optimizations
-            fn_val.as_global_value().set_unnamed_address(inkwell::values::UnnamedAddress::Local);
+            fn_val
+                .as_global_value()
+                .set_unnamed_address(inkwell::values::UnnamedAddress::Local);
 
             if func.is_pure_data_leaf {
                 use inkwell::attributes::{Attribute, AttributeLoc};
@@ -141,23 +170,49 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 let nounwind_id = Attribute::get_named_enum_kind_id("nounwind");
                 let nofree_id = Attribute::get_named_enum_kind_id("nofree");
                 let nosync_id = Attribute::get_named_enum_kind_id("nosync");
-
-                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(readnone_id, 0));
-                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(nounwind_id, 0));
-                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(nofree_id, 0));
-                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(nosync_id, 0));
+                let alwaysinline_id = Attribute::get_named_enum_kind_id("alwaysinline");
+                fn_val.add_attribute(
+                    AttributeLoc::Function,
+                    self.context.create_enum_attribute(alwaysinline_id, 0),
+                );
+                fn_val.add_attribute(
+                    AttributeLoc::Function,
+                    self.context.create_enum_attribute(readnone_id, 0),
+                );
+                fn_val.add_attribute(
+                    AttributeLoc::Function,
+                    self.context.create_enum_attribute(nounwind_id, 0),
+                );
+                fn_val.add_attribute(
+                    AttributeLoc::Function,
+                    self.context.create_enum_attribute(nofree_id, 0),
+                );
+                fn_val.add_attribute(
+                    AttributeLoc::Function,
+                    self.context.create_enum_attribute(nosync_id, 0),
+                );
+                fn_val.add_attribute(
+                    AttributeLoc::Function,
+                    self.context.create_enum_attribute(alwaysinline_id, 0),
+                );
             }
         }
     }
 
     fn generate_function(&mut self, func: &MirFunction) -> Result<(), OnuError> {
-        let llvm_name = if func.name == "run" || func.name == "main" { "main".to_string() } else { func.name.clone() };
+        let llvm_name = if func.name == "run" || func.name == "main" {
+            "main".to_string()
+        } else {
+            func.name.clone()
+        };
         let function = self.module.get_function(&llvm_name).unwrap();
         self.ssa_storage.clear();
         self.blocks.clear();
 
         for block in &func.blocks {
-            let llvm_block = self.context.append_basic_block(function, &format!("bb{}", block.id));
+            let llvm_block = self
+                .context
+                .append_basic_block(function, &format!("bb{}", block.id));
             self.blocks.insert(block.id, llvm_block);
         }
 
@@ -167,7 +222,10 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
 
             for (i, arg) in function.get_param_iter().enumerate() {
                 let mir_arg = &func.args[i];
-                let ptr = self.builder.build_alloca(arg.get_type(), &mir_arg.name).unwrap();
+                let ptr = self
+                    .builder
+                    .build_alloca(arg.get_type(), &mir_arg.name)
+                    .unwrap();
                 self.builder.build_store(ptr, arg).unwrap();
                 self.ssa_storage.insert(mir_arg.ssa_var, ptr);
             }
@@ -187,39 +245,94 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     fn generate_instruction(&mut self, inst: &MirInstruction) -> Result<(), OnuError> {
         eprintln!("[DEBUG] Generating LLVM for instruction: {:?}", inst);
         match inst {
-            MirInstruction::BinaryOperation { .. } => {
-                BinaryOpStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Call { .. } => {
-                CallStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Emit { .. } => {
-                EmitStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Assign { .. } => {
-                AssignStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Drop { .. } => {
-                DropStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Index { .. } => {
-                IndexStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Tuple { .. } => {
-                TupleStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Alloc { .. } => {
-                AllocStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::MemCopy { .. } => {
-                MemCopyStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::PointerOffset { .. } => {
-                PointerOffsetStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
-            MirInstruction::Store { .. } => {
-                StoreStrategy.generate(self.context, &self.module, &self.builder, self.registry, &mut self.ssa_storage, inst)
-            }
+            MirInstruction::BinaryOperation { .. } => BinaryOpStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Call { .. } => CallStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Emit { .. } => EmitStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Assign { .. } => AssignStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Drop { .. } => DropStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Index { .. } => IndexStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Tuple { .. } => TupleStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Alloc { .. } => AllocStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::MemCopy { .. } => MemCopyStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::PointerOffset { .. } => PointerOffsetStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::Store { .. } => StoreStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
         }
     }
 
@@ -231,11 +344,24 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
 
         match term {
             MirTerminator::Return(op) => {
-                let val = strategies::operand_to_llvm(self.context, &self.builder, &mut self.ssa_storage, op);
+                let val = strategies::operand_to_llvm(
+                    self.context,
+                    &self.builder,
+                    &mut self.ssa_storage,
+                    op,
+                );
                 if is_main {
                     // Truncate to i32 for main return code
-                    let i32_val = if val.get_type().is_int_type() && val.into_int_value().get_type().get_bit_width() > 32 {
-                        self.builder.build_int_truncate(val.into_int_value(), self.context.i32_type(), "main_ret").unwrap()
+                    let i32_val = if val.get_type().is_int_type()
+                        && val.into_int_value().get_type().get_bit_width() > 32
+                    {
+                        self.builder
+                            .build_int_truncate(
+                                val.into_int_value(),
+                                self.context.i32_type(),
+                                "main_ret",
+                            )
+                            .unwrap()
                     } else {
                         val.into_int_value()
                     };
@@ -251,16 +377,34 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                     self.builder.build_unconditional_branch(*target).unwrap();
                 }
             }
-            MirTerminator::CondBranch { condition, then_block, else_block } => {
-                let cond_val = strategies::operand_to_llvm(self.context, &self.builder, &mut self.ssa_storage, condition);
+            MirTerminator::CondBranch {
+                condition,
+                then_block,
+                else_block,
+            } => {
+                let cond_val = strategies::operand_to_llvm(
+                    self.context,
+                    &self.builder,
+                    &mut self.ssa_storage,
+                    condition,
+                );
                 let cond = if cond_val.get_type() == self.context.bool_type().as_basic_type_enum() {
                     cond_val.into_int_value()
                 } else {
-                    self.builder.build_int_compare(inkwell::IntPredicate::NE, cond_val.into_int_value(), self.context.i64_type().const_int(0, false), "bool_cast").unwrap()
+                    self.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::NE,
+                            cond_val.into_int_value(),
+                            self.context.i64_type().const_int(0, false),
+                            "bool_cast",
+                        )
+                        .unwrap()
                 };
                 let then_bb = self.blocks.get(then_block).unwrap();
                 let else_bb = self.blocks.get(else_block).unwrap();
-                self.builder.build_conditional_branch(cond, *then_bb, *else_bb).unwrap();
+                self.builder
+                    .build_conditional_branch(cond, *then_bb, *else_bb)
+                    .unwrap();
             }
             MirTerminator::Unreachable => {
                 self.builder.build_unreachable().unwrap();
@@ -268,5 +412,4 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
         }
         Ok(())
     }
-
 }

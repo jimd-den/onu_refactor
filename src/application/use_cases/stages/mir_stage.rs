@@ -1,10 +1,12 @@
+use super::PipelineStage;
 use crate::application::ports::environment::EnvironmentPort;
+use crate::application::use_cases::inline_pass::InlinePass;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::registry_service::RegistryService;
+use crate::application::use_cases::tco_pass::TcoPass;
+use crate::domain::entities::error::OnuError;
 use crate::domain::entities::hir::HirDiscourse;
 use crate::domain::entities::mir::MirProgram;
-use crate::domain::entities::error::OnuError;
-use super::PipelineStage;
 
 pub struct MirStage<'a, E: EnvironmentPort> {
     env: &'a E,
@@ -23,6 +25,16 @@ impl<'a, E: EnvironmentPort> PipelineStage for MirStage<'a, E> {
 
     fn execute(&mut self, hir_discourses: Vec<HirDiscourse>) -> Result<MirProgram, OnuError> {
         let mir_lowering_service = MirLoweringService::new(self.env, self.registry);
-        mir_lowering_service.lower_program(&hir_discourses)
+        // Stage 1: Lower HIR → MIR (recursive call structure, raw SSA).
+        let mir_program = mir_lowering_service.lower_program(&hir_discourses)?;
+        // Stage 2: Loop-lower self-tail-calls FIRST.
+        // A recursive function cannot be safely inlined into its caller because the inlined
+        // body would contain another call to itself, causing infinite expansion. TcoPass
+        // rewrites self-recursion into a loop, making the body finite and therefore inlineable.
+        let mir_program = TcoPass::run(mir_program);
+        // Stage 3: Expand loop-shaped pure callees inline into their callers.
+        // Now that collatz-steps is a loop (not recursive), InlinePass can safely expand it
+        // into collatz-range, fusing the two loops into one for LLVM to optimize holistically.
+        Ok(InlinePass::run(mir_program))
     }
 }
