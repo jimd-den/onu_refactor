@@ -74,6 +74,11 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
         self.log(LogLevel::Debug, &format!("Lowering behavior: {}", header.name));
         let mut builder = MirBuilder::new(header.name.clone(), header.return_type.clone());
         
+        // HEURISTIC: Initial candidate for pure data leaf
+        let mut is_pure_candidate = !header.is_effect && 
+            header.args.iter().all(|arg| !arg.typ.is_resource()) &&
+            !header.return_type.is_resource();
+
         for arg in &header.args {
             let ssa_var = builder.new_ssa();
             // In MIR, we treat observed variables as 'NOT consuming' by default
@@ -88,7 +93,41 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
             builder.terminate(MirTerminator::Return(result_op));
         }
 
-        Ok(builder.build())
+        let mut func = builder.build();
+
+        // Audit MIR for side effects
+        if is_pure_candidate {
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    match inst {
+                        MirInstruction::Alloc { .. } | 
+                        MirInstruction::Store { .. } |
+                        MirInstruction::Emit(_) |
+                        MirInstruction::Drop { .. } => {
+                            is_pure_candidate = false;
+                            break;
+                        }
+                        MirInstruction::Call { name, .. } => {
+                            // If it calls anything other than itself, we are cautious
+                            // In a better implementation, we'd check the registry
+                            if name != &func.name {
+                                is_pure_candidate = false;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if !is_pure_candidate { break; }
+            }
+        }
+        
+        func.is_pure_data_leaf = is_pure_candidate;
+        if is_pure_candidate {
+            self.log(LogLevel::Debug, &format!("Behavior {} marked as PURE DATA LEAF", header.name));
+        }
+
+        Ok(func)
     }
 
     pub(crate) fn lower_expression(&self, expr: &HirExpression, builder: &mut MirBuilder, is_tail: bool) -> Result<MirOperand, OnuError> {

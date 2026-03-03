@@ -17,6 +17,7 @@ pub struct MirFunction {
     pub args: Vec<MirArgument>,
     pub return_type: OnuType,
     pub blocks: Vec<BasicBlock>,
+    pub is_pure_data_leaf: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

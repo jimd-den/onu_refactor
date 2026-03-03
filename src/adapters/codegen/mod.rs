@@ -117,10 +117,21 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
         };
 
         if !is_main {
-            fn_val.set_call_conventions(inkwell::module::Linkage::External as u32);
-            // wait, CallConventions isn't in inkwell::values. It might not exist in inkwell 0.8
             // Let's use a raw u32 for fastcc, which is 8 in LLVM
             fn_val.set_call_conventions(8);
+
+            if func.is_pure_data_leaf {
+                use inkwell::attributes::{Attribute, AttributeLoc};
+                let readnone_id = Attribute::get_named_enum_kind_id("readnone");
+                let nounwind_id = Attribute::get_named_enum_kind_id("nounwind");
+                let nofree_id = Attribute::get_named_enum_kind_id("nofree");
+                let nosync_id = Attribute::get_named_enum_kind_id("nosync");
+
+                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(readnone_id, 0));
+                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(nounwind_id, 0));
+                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(nofree_id, 0));
+                fn_val.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(nosync_id, 0));
+            }
         }
     }
 

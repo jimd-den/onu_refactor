@@ -18,6 +18,7 @@ pub struct MirBuilder {
     consumed_vars: std::collections::HashSet<usize>,
     ssa_types: HashMap<usize, OnuType>,
     ssa_is_dynamic: HashMap<usize, bool>,
+    is_pure_data_leaf: bool,
 }
 
 impl MirBuilder {
@@ -39,6 +40,7 @@ impl MirBuilder {
             consumed_vars: std::collections::HashSet::new(),
             ssa_types: HashMap::new(),
             ssa_is_dynamic: HashMap::new(),
+            is_pure_data_leaf: false,
         }
     }
 
@@ -226,12 +228,17 @@ impl MirBuilder {
         self.current_block_idx.map(|idx| self.blocks[idx].id)
     }
 
+    pub fn set_pure_data_leaf(&mut self, is_leaf: bool) {
+        self.is_pure_data_leaf = is_leaf;
+    }
+
     pub fn build(self) -> MirFunction {
         MirFunction {
             name: self.name,
             args: self.args,
             return_type: self.return_type,
             blocks: self.blocks,
+            is_pure_data_leaf: self.is_pure_data_leaf,
         }
     }
 }
