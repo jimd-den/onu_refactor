@@ -154,7 +154,28 @@ impl InlinePass {
                 .iter()
                 .position(|inst| {
                     if let MirInstruction::Call { name, .. } = inst {
-                        pure_functions.contains_key(name.as_str()) && name != &caller.name // never inline self-recursion here
+                        if !pure_functions.contains_key(name.as_str()) {
+                            return false;
+                        }
+
+                        // If it's a call to itself, we can only inline if the callee (itself)
+                        // has been loop-lowered. A loop-lowered function will have a Branch
+                        // terminator pointing backward (target < current block id) or branching to id 0.
+                        // Actually, TcoPass shifts all blocks up and inserts a loop head at id 0.
+                        if name == &caller.name {
+                            let is_loop_lowered = pure_functions.get(name.as_str()).map_or(false, |f| {
+                                f.blocks.iter().any(|b| {
+                                    if let MirTerminator::Branch(target) = b.terminator {
+                                        target < b.id
+                                    } else {
+                                        false
+                                    }
+                                })
+                            });
+                            is_loop_lowered
+                        } else {
+                            true
+                        }
                     } else {
                         false
                     }

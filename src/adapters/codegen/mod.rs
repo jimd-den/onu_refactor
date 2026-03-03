@@ -164,17 +164,24 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 .as_global_value()
                 .set_unnamed_address(inkwell::values::UnnamedAddress::Local);
 
+            let mut is_recursive = false;
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    if let crate::domain::entities::mir::MirInstruction::Call { name, .. } = inst {
+                        if name == &func.name {
+                            is_recursive = true;
+                        }
+                    }
+                }
+            }
+
             if func.is_pure_data_leaf {
                 use inkwell::attributes::{Attribute, AttributeLoc};
                 let readnone_id = Attribute::get_named_enum_kind_id("readnone");
                 let nounwind_id = Attribute::get_named_enum_kind_id("nounwind");
                 let nofree_id = Attribute::get_named_enum_kind_id("nofree");
                 let nosync_id = Attribute::get_named_enum_kind_id("nosync");
-                let alwaysinline_id = Attribute::get_named_enum_kind_id("alwaysinline");
-                fn_val.add_attribute(
-                    AttributeLoc::Function,
-                    self.context.create_enum_attribute(alwaysinline_id, 0),
-                );
+
                 fn_val.add_attribute(
                     AttributeLoc::Function,
                     self.context.create_enum_attribute(readnone_id, 0),
@@ -191,10 +198,25 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                     AttributeLoc::Function,
                     self.context.create_enum_attribute(nosync_id, 0),
                 );
-                fn_val.add_attribute(
-                    AttributeLoc::Function,
-                    self.context.create_enum_attribute(alwaysinline_id, 0),
-                );
+
+                if is_recursive {
+                    let cold_id = Attribute::get_named_enum_kind_id("cold");
+                    let noinline_id = Attribute::get_named_enum_kind_id("noinline");
+                    fn_val.add_attribute(
+                        AttributeLoc::Function,
+                        self.context.create_enum_attribute(cold_id, 0),
+                    );
+                    fn_val.add_attribute(
+                        AttributeLoc::Function,
+                        self.context.create_enum_attribute(noinline_id, 0),
+                    );
+                } else {
+                    let alwaysinline_id = Attribute::get_named_enum_kind_id("alwaysinline");
+                    fn_val.add_attribute(
+                        AttributeLoc::Function,
+                        self.context.create_enum_attribute(alwaysinline_id, 0),
+                    );
+                }
             }
         }
     }

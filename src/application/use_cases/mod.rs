@@ -9,4 +9,5 @@ pub mod module_service;
 pub mod registry_service;
 pub mod stages;
 pub mod stdlib;
+pub mod memo_pass;
 pub mod tco_pass;

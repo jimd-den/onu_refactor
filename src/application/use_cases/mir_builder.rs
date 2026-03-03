@@ -19,10 +19,11 @@ pub struct MirBuilder {
     ssa_types: HashMap<usize, OnuType>,
     ssa_is_dynamic: HashMap<usize, bool>,
     is_pure_data_leaf: bool,
+    diminishing: Option<String>,
 }
 
 impl MirBuilder {
-    pub fn new(name: String, return_type: OnuType) -> Self {
+    pub fn new(name: String, return_type: OnuType, diminishing: Option<String>) -> Self {
         let entry_block = BasicBlock {
             id: 0,
             instructions: Vec::new(),
@@ -41,6 +42,7 @@ impl MirBuilder {
             ssa_types: HashMap::new(),
             ssa_is_dynamic: HashMap::new(),
             is_pure_data_leaf: false,
+            diminishing,
         }
     }
 
@@ -239,6 +241,7 @@ impl MirBuilder {
             return_type: self.return_type,
             blocks: self.blocks,
             is_pure_data_leaf: self.is_pure_data_leaf,
+            diminishing: self.diminishing,
         }
     }
 }
@@ -249,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_resolve_variable_consumed() {
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing);
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing, None);
         builder.enter_scope();
         builder.define_variable("x", 10, OnuType::I64, false);
         

@@ -72,7 +72,7 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
 
     fn lower_function(&self, header: &HirBehaviorHeader, body: &HirExpression) -> Result<MirFunction, OnuError> {
         self.log(LogLevel::Debug, &format!("Lowering behavior: {}", header.name));
-        let mut builder = MirBuilder::new(header.name.clone(), header.return_type.clone());
+        let mut builder = MirBuilder::new(header.name.clone(), header.return_type.clone(), header.diminishing.clone());
         
         // HEURISTIC: Initial candidate for pure data leaf
         let mut is_pure_candidate = !header.is_effect && 
@@ -216,12 +216,12 @@ mod tests {
         let env = NativeOsEnvironment::new(LogLevel::Error);
         let registry = RegistryService::new();
         let service = MirLoweringService::new(&env, &registry);
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean);
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean, None);
 
         // 1. Define a resource variable (String)
         let ssa_id = 100;
         builder.enter_scope();
-        builder.define_variable("my_resource", ssa_id, OnuType::Strings);
+        builder.define_variable("my_resource", ssa_id, OnuType::Strings, false);
         builder.set_ssa_type(ssa_id, OnuType::Strings);
         builder.set_ssa_is_dynamic(ssa_id, true);
 
@@ -262,7 +262,7 @@ mod tests {
         let env = NativeOsEnvironment::new(LogLevel::Error);
         let registry = RegistryService::new();
         let service = MirLoweringService::new(&env, &registry);
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Strings);
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Strings, None);
 
         // Lower: ("a" joined-with "b") joined-with "c"
         let expr = HirExpression::Block(vec![

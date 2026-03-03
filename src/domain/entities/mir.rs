@@ -18,6 +18,7 @@ pub struct MirFunction {
     pub return_type: OnuType,
     pub blocks: Vec<BasicBlock>,
     pub is_pure_data_leaf: bool,
+    pub diminishing: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

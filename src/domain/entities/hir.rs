@@ -22,6 +22,7 @@ pub struct HirBehaviorHeader {
     pub is_effect: bool,
     pub args: Vec<HirArgument>,
     pub return_type: OnuType,
+    pub diminishing: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
