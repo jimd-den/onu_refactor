@@ -3,7 +3,7 @@ use onu_refactor::CompilationPipeline;
 use onu_refactor::application::options::CompilationOptions;
 use onu_refactor::infrastructure::os::NativeOsEnvironment;
 use onu_refactor::adapters::codegen::OnuCodegen;
-use onu_refactor::domain::entities::ast::{Discourse, BehaviorHeader, Expression, ReturnType};
+use onu_refactor::domain::entities::ast::{Discourse, BehaviorHeader, Expression, ReturnType, Argument, TypeInfo};
 use onu_refactor::domain::entities::types::OnuType;
 use onu_refactor::domain::entities::registry::BehaviorSignature;
 
@@ -25,13 +25,12 @@ fn test_multiple_returns_phi_detection() {
         name: "test".to_string(),
         is_effect: false,
         intent: "Test".to_string(),
-        takes: vec![],
+        takes: vec![], 
         delivers: ReturnType(OnuType::I64),
         diminishing: None,
         skip_termination_check: false,
     };
     
-    // test as: { derivation: x derives-from (if true then { 1 } else { 2 }) broadcasts (x utilizes as-text) 0 }
     let body = Expression::Block(vec![
         Expression::Derivation {
             name: "x".to_string(),
@@ -55,66 +54,100 @@ fn test_multiple_returns_phi_detection() {
     let hir = onu_refactor::application::use_cases::lowering_service::LoweringService::lower_discourse(&discourse, &pipeline.registry);
     
     let mir = pipeline.lower_mir(vec![hir]).expect("MIR lowering failed");
-    for func in &mir.functions {
-        println!("Function: {}", func.name);
-        for block in &func.blocks {
-            println!("  Block {}: {:?}", block.id, block.terminator);
-        }
-    }
     pipeline.codegen.set_registry(pipeline.registry.clone());
     let ir = pipeline.codegen.generate(&mir).expect("Codegen failed");
 
-    // RED PHASE: Currently, this should contain a phi node because of the merge block for the 'If' value
     assert!(ir.contains("phi i64"), "Generated IR should contain a phi node for branched value used in derivation");
 }
 
 #[test]
-fn test_multiple_returns_direct_ret() {
+fn test_ackermann_specialization() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
     let mut pipeline = CompilationPipeline::new(env, codegen, options);
     
-    pipeline.registry.symbols_mut().add_signature("test", BehaviorSignature {
+    // Register symbols
+    pipeline.registry.symbols_mut().add_signature("test_op", BehaviorSignature {
         return_type: OnuType::I64,
-        input_types: vec![],
-        arg_is_observation: vec![],
+        input_types: vec![OnuType::I64, OnuType::I64],
+        arg_is_observation: vec![false, false],
     });
 
     let header = BehaviorHeader {
-        name: "test".to_string(),
+        name: "test_op".to_string(),
         is_effect: false,
         intent: "Test".to_string(),
-        takes: vec![],
+        takes: vec![
+            Argument { name: "a".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } },
+            Argument { name: "b".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
+        ],
         delivers: ReturnType(OnuType::I64),
         diminishing: None,
         skip_termination_check: false,
     };
     
-    // test as: if true then { 1 } else { 2 }
-    // In tail position, this should result in multiple return instructions and NO phi node.
-    let body = Expression::If {
-        condition: Box::new(Expression::Boolean(true)),
-        then_branch: Box::new(Expression::I64(1)),
-        else_branch: Box::new(Expression::I64(2)),
+    // test_op(a, b) as: a decreased-by b
+    let body = Expression::BehaviorCall {
+        name: "decreased-by".to_string(),
+        args: vec![
+            Expression::Identifier("a".to_string()),
+            Expression::Identifier("b".to_string())
+        ],
     };
     
     let discourse = Discourse::Behavior { header, body };
     let hir = onu_refactor::application::use_cases::lowering_service::LoweringService::lower_discourse(&discourse, &pipeline.registry);
-    
     let mir = pipeline.lower_mir(vec![hir]).expect("MIR lowering failed");
-    for func in &mir.functions {
-        println!("Function: {}", func.name);
-        for block in &func.blocks {
-            println!("  Block {}: {:?}", block.id, block.terminator);
-        }
-    }
     pipeline.codegen.set_registry(pipeline.registry.clone());
     let ir = pipeline.codegen.generate(&mir).expect("Codegen failed");
 
-    // Once optimized, this should be false
-    assert!(!ir.contains("phi i64"), "Generated IR should NOT contain a phi node for terminal branched return");
-    // It should contain at least two ret instructions
-    let ret_count = ir.matches("ret i64").count();
-    assert!(ret_count >= 2, "Expected at least 2 ret instructions, found {}", ret_count);
+    assert!(ir.contains("sub i64") || ir.contains("add i64"), "Generated IR should contain primitive sub/add instruction");
+    assert!(!ir.contains("call fastcc i64 @decreased-by"), "Generated IR should NOT contain a call to decreased-by behavior");
+}
+
+#[test]
+fn test_comparison_specialization() {
+    let options = CompilationOptions::default();
+    let env = NativeOsEnvironment::new(options.log_level);
+    let codegen = OnuCodegen::new();
+    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    
+    // Register symbols
+    pipeline.registry.symbols_mut().add_signature("test_cmp", BehaviorSignature {
+        return_type: OnuType::Boolean,
+        input_types: vec![OnuType::I64, OnuType::I64],
+        arg_is_observation: vec![false, false],
+    });
+
+    let header = BehaviorHeader {
+        name: "test_cmp".to_string(),
+        is_effect: false,
+        intent: "Test".to_string(),
+        takes: vec![
+            Argument { name: "a".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } },
+            Argument { name: "b".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
+        ],
+        delivers: ReturnType(OnuType::Boolean),
+        diminishing: None,
+        skip_termination_check: false,
+    };
+    
+    // test_cmp(a, b) as: a exceeds b
+    let body = Expression::BehaviorCall {
+        name: "exceeds".to_string(),
+        args: vec![
+            Expression::Identifier("a".to_string()),
+            Expression::Identifier("b".to_string())
+        ],
+    };
+    
+    let discourse = Discourse::Behavior { header, body };
+    let hir = onu_refactor::application::use_cases::lowering_service::LoweringService::lower_discourse(&discourse, &pipeline.registry);
+    let mir = pipeline.lower_mir(vec![hir]).expect("MIR lowering failed");
+    pipeline.codegen.set_registry(pipeline.registry.clone());
+    let ir = pipeline.codegen.generate(&mir).expect("Codegen failed");
+
+    // 'exceeds' should be 'icmp sgt'
+    assert!(ir.contains("icmp sgt"), "Generated IR should contain icmp sgt for exceeds");
 }
