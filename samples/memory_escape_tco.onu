@@ -1,0 +1,19 @@
+the module called MemoryEscape with concern: nothing
+
+the behavior called recursive_alloc with intent: nothing 
+    takes: 
+        an integer called n
+    delivers: an integer 
+    as: 
+        derivation: s derives-from a string "hello"
+        if n matches 0 then {
+            0
+        } else {
+            derivation: next_n derives-from an integer n decreased-by 1
+            next_n utilizes recursive_alloc
+        }
+
+the behavior called run with intent: nothing as: {
+    derivation: start derives-from an integer 100
+    start utilizes recursive_alloc
+}
