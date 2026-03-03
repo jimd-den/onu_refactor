@@ -1,0 +1,30 @@
+the module called MutualRecursion with concern: nothing
+
+the behavior called even with intent: nothing 
+    takes: 
+        an integer called n
+    delivers: an integer 
+    as: 
+        if n matches 0 then {
+            1
+        } else {
+            derivation: next_n derives-from n decreased-by 1
+            next_n utilizes odd
+        }
+
+the behavior called odd with intent: nothing 
+    takes: 
+        an integer called n
+    delivers: an integer 
+    as: 
+        if n matches 0 then {
+            0
+        } else {
+            derivation: next_n derives-from n decreased-by 1
+            next_n utilizes even
+        }
+
+the behavior called run with intent: nothing as: {
+    derivation: start derives-from an integer 100
+    start utilizes even
+}

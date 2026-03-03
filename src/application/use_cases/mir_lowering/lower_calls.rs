@@ -1,5 +1,5 @@
 use crate::domain::entities::hir::HirExpression;
-use crate::domain::entities::mir::{MirInstruction, MirOperand};
+use crate::domain::entities::mir::{MirInstruction, MirOperand, MirTerminator};
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
 use crate::domain::entities::error::OnuError;
@@ -15,7 +15,7 @@ impl ExprLowerer for CallLowerer {
         expr: &HirExpression,
         context: &LoweringContext<'a, E>,
         builder: &mut MirBuilder,
-        _is_tail: bool,
+        is_tail: bool,
     ) -> Result<MirOperand, OnuError> {
         if let HirExpression::Call { name, args } = expr {
             let mut mir_args = Vec::new();
@@ -69,8 +69,16 @@ impl ExprLowerer for CallLowerer {
                 args: mir_args.clone(),
                 return_type: return_type.clone(),
                 arg_types,
+                is_tail_call: is_tail,
             });
             builder.set_ssa_type(dest, return_type);
+
+            if is_tail {
+                builder.terminate(MirTerminator::Return(MirOperand::Variable(dest, true)));
+                builder.clear_current_block();
+                // We return a dummy constant because the block is already terminated
+                return Ok(MirOperand::Constant(crate::domain::entities::mir::MirLiteral::Nothing));
+            }
 
             // Parent cleanup: mark resource arguments as consumed and drop IF NOT OBSERVATION
             for (i, arg_op) in mir_args.iter().enumerate() {

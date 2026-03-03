@@ -43,6 +43,7 @@ impl LoweringService {
             is_effect: header.is_effect,
             args: header.takes.iter().map(Self::lower_argument).collect(),
             return_type: header.delivers.0.clone(),
+            diminishing: header.diminishing.clone(),
         }
     }
 

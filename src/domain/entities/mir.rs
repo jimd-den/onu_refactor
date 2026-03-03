@@ -17,6 +17,8 @@ pub struct MirFunction {
     pub args: Vec<MirArgument>,
     pub return_type: OnuType,
     pub blocks: Vec<BasicBlock>,
+    pub is_pure_data_leaf: bool,
+    pub diminishing: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +45,7 @@ pub enum MirInstruction {
         args: Vec<MirOperand>,
         return_type: OnuType,
         arg_types: Vec<OnuType>,
+        is_tail_call: bool,
     },
     Tuple { dest: usize, elements: Vec<MirOperand> },
     Index { dest: usize, subject: MirOperand, index: usize },

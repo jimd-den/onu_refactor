@@ -1,0 +1,21 @@
+the module called ComplexArgs with concern: nothing
+
+the behavior called swap_and_decrement with intent: nothing 
+    takes: 
+        an integer called a
+        an integer called b
+    delivers: an integer 
+    as: 
+        if a matches 0 then {
+            b
+        } else {
+            derivation: next_a derives-from an integer a decreased-by 1
+            derivation: next_b derives-from an integer b added-to 1
+            next_a utilizes swap_and_decrement next_b
+        }
+
+the behavior called run with intent: nothing as: {
+    derivation: start_a derives-from an integer 100
+    derivation: start_b derives-from an integer 0
+    start_a utilizes swap_and_decrement start_b
+}

@@ -1,0 +1,86 @@
+the module called FibonacciBenchmark
+    with concern: measuring recursive and tail-recursive computation performance
+
+-- Variant 1: Naive double recursion (exponential time, no TCO possible)
+-- This is the classic stress test: fib(n) calls fib(n-1) AND fib(n-2)
+-- The two-branch structure prevents tail-call optimization.
+-- Serves as the baseline for stack depth and raw recursive throughput.
+the behavior called fib-naive
+    with intent: compute the nth Fibonacci number with naive double recursion
+    takes:
+        an integer called n
+    delivers: an integer
+    with diminishing: n
+    as:
+        if n matches 0
+            then 0
+            else if (n decreased-by 1) matches 0
+                then 1
+                else
+                    derivation: a derives-from (n decreased-by 1) utilizes fib-naive
+                    derivation: b derives-from (n decreased-by 2) utilizes fib-naive
+                    a added-to b
+
+-- Variant 2: Tail-recursive accumulator (O(n) time, fully TCO-able)
+-- Uses two accumulators `prev` and `curr` so the recursive call is the very last thing.
+-- TcoPass will rewrite this into a loop — no stack growth at all.
+the behavior called fib-tco
+    with intent: compute the nth Fibonacci number using tail recursion with accumulators
+    takes:
+        an integer called n
+        an integer called prev
+        an integer called curr
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if n matches 0
+            then prev
+            else
+                derivation: next-n    derives-from n decreased-by 1
+                derivation: next-prev derives-from curr
+                derivation: next-curr derives-from prev added-to curr
+                next-n utilizes fib-tco next-prev next-curr
+
+-- Variant 3: Tail-recursive sum across a range of fib-tco values
+-- Runs fib-tco from n=0..92 and accumulates the sum, exercising
+-- both the outer loop (collatz-range style) and the inner TCO routine together.
+the behavior called fib-sum-range
+    with intent: sum fib-tco(0) through fib-tco(target)
+    takes:
+        an integer called current
+        an integer called target
+        an integer called total
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if current exceeds target
+            then total
+            else
+                derivation: fib-val  derives-from current utilizes fib-tco 0 1
+                derivation: next-cur derives-from current added-to 1
+                next-cur utilizes fib-sum-range target (total added-to fib-val)
+
+the effect behavior called run
+    takes: nothing
+    delivers: an integer
+    as:
+        -- Naive fib(40): ~100M recursive calls, deep stack
+        derivation: n40 derives-from 40
+        derivation: naive-result derives-from n40 utilizes fib-naive
+
+        -- Tail-recursive fib(10000): O(n) loop, should be instant
+        derivation: n10k derives-from 10000
+        derivation: tco-result derives-from n10k utilizes fib-tco 0 1
+
+        -- Sum of fib(0..92): exercises both outer loop + inner TCO
+        derivation: range-result derives-from 0 utilizes fib-sum-range 92 0
+
+        derivation: msg1 derives-from "fib-naive(40) = " joined-with (naive-result utilizes as-text)
+        derivation: msg2 derives-from "fib-tco(10000) mod 1000000 = " joined-with ((tco-result partitions-by 1000000) utilizes as-text)
+        derivation: msg3 derives-from "sum(fib(0..92)) = " joined-with (range-result utilizes as-text)
+
+        broadcasts msg1
+        broadcasts msg2
+        broadcasts msg3
+
+        0

@@ -1,0 +1,18 @@
+the module called DeepRecursion with concern: nothing
+
+the behavior called count_down with intent: nothing 
+    takes: 
+        an integer called n
+    delivers: an integer 
+    as: 
+        if n matches 0 then {
+            0
+        } else {
+            derivation: next_n derives-from n decreased-by 1
+            next_n utilizes count_down
+        }
+
+the behavior called run with intent: nothing as: {
+    derivation: start derives-from an integer 100
+    start utilizes count_down
+}

@@ -45,17 +45,41 @@ impl ExprLowerer for IfLowerer {
             let pre_branch_consumed = builder.get_consumed_vars();
 
             builder.switch_to_block(then_start_id);
-            let then_res = context.lower_expression(then_branch, builder, false)?;
+            let then_res = context.lower_expression(then_branch, builder, is_tail)?;
             let then_consumed = builder.get_consumed_vars();
             let then_end_id = builder.get_current_block_id();
+            
+            // If it was a tail position and the branch terminated (e.g. with a Return),
+            // it might have already set its own terminator. 
+            // MirBuilder::terminate handles this by updating the block's terminator.
+            if is_tail {
+                if let Some(id) = builder.get_current_block_id() {
+                    builder.switch_to_block(id);
+                    builder.terminate(MirTerminator::Return(then_res.clone()));
+                }
+            }
 
             // Reset consumed vars to pre-branch state for the else branch
             builder.set_consumed_vars(pre_branch_consumed.clone());
 
             builder.switch_to_block(else_start_id);
-            let else_res = context.lower_expression(else_branch, builder, false)?;
+            let else_res = context.lower_expression(else_branch, builder, is_tail)?;
             let else_consumed = builder.get_consumed_vars();
             let else_end_id = builder.get_current_block_id();
+
+            if is_tail {
+                if let Some(id) = else_end_id {
+                    builder.switch_to_block(id);
+                    builder.terminate(MirTerminator::Return(else_res.clone()));
+                }
+                
+                // In tail position, we don't merge.
+                builder.clear_current_block();
+                let mut final_consumed = then_consumed;
+                final_consumed.extend(else_consumed);
+                builder.set_consumed_vars(final_consumed);
+                return Ok(MirOperand::Constant(crate::domain::entities::mir::MirLiteral::Nothing));
+            }
 
             // For the merge block, the union of consumed vars should be used
             let mut final_consumed = then_consumed;

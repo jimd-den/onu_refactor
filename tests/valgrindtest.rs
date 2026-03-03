@@ -43,4 +43,5 @@ fn test_valgrind(sample_name: &str, args: &[&str]) {
 #[test] fn valgrind_ackermann() { test_valgrind("ackermann", &[]); }
 
 #[test] fn valgrind_collatz_bench() { test_valgrind("collatz_bench", &[]); }
+#[test] fn valgrind_memory_escape_tco() { test_valgrind("memory_escape_tco", &[]); }
 // skip bf, hanoi, mutation because they fail to compile or run completely properly for now in some conditions as seen above

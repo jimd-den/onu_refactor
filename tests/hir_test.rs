@@ -90,6 +90,7 @@ fn test_mir_lowering_binop_mapping() {
             is_effect: false,
             args: vec![],
             return_type: onu_refactor::domain::entities::types::OnuType::I64,
+            diminishing: None,
         };
         let hir_body = HirExpression::BinaryOp {
             op: hir_op,
