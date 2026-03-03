@@ -53,7 +53,7 @@ impl ExprLowerer for IfLowerer {
             // it might have already set its own terminator. 
             // MirBuilder::terminate handles this by updating the block's terminator.
             if is_tail {
-                if let Some(id) = then_end_id {
+                if let Some(id) = builder.get_current_block_id() {
                     builder.switch_to_block(id);
                     builder.terminate(MirTerminator::Return(then_res.clone()));
                 }
