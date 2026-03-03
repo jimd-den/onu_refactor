@@ -75,6 +75,7 @@ impl ExprLowerer for CallLowerer {
 
             if is_tail {
                 builder.terminate(MirTerminator::Return(MirOperand::Variable(dest, true)));
+                builder.clear_current_block();
                 // We return a dummy constant because the block is already terminated
                 return Ok(MirOperand::Constant(crate::domain::entities::mir::MirLiteral::Nothing));
             }
