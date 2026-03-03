@@ -13,6 +13,6 @@ the behavior called count_down with intent: nothing
         }
 
 the behavior called run with intent: nothing as: {
-    derivation: start derives-from an integer 100000000
+    derivation: start derives-from an integer 100
     start utilizes count_down
 }
