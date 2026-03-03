@@ -256,7 +256,7 @@ fn remap_callee(
         if block_index == 0 {
             for (arg_idx, arg) in callee.args.iter().enumerate() {
                 let remapped_arg_ssa = arg.ssa_var + ssa_offset;
-                let src = call_args[arg_idx].clone();
+                let src = remap_operand(&call_args[arg_idx], ssa_offset);
                 instructions.push(MirInstruction::Assign {
                     dest: remapped_arg_ssa,
                     src,

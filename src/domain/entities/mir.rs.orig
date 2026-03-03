@@ -38,9 +38,9 @@ pub struct BasicBlock {
 pub enum MirInstruction {
     Assign { dest: usize, src: MirOperand },
     BinaryOperation { dest: usize, op: MirBinOp, lhs: MirOperand, rhs: MirOperand },
-    Call { 
-        dest: usize, 
-        name: String, 
+    Call {
+        dest: usize,
+        name: String,
         args: Vec<MirOperand>,
         return_type: OnuType,
         arg_types: Vec<OnuType>,
@@ -54,21 +54,6 @@ pub enum MirInstruction {
     MemCopy { dest: MirOperand, src: MirOperand, size: MirOperand },
     PointerOffset { dest: usize, ptr: MirOperand, offset: MirOperand },
     Store { ptr: MirOperand, value: MirOperand },
-}
-
-impl MirInstruction {
-    pub fn is_memory_access(&self) -> bool {
-        matches!(
-            self,
-            MirInstruction::Alloc { .. }
-                | MirInstruction::Store { .. }
-                | MirInstruction::Emit(_)
-                | MirInstruction::Drop { .. }
-                | MirInstruction::MemCopy { .. }
-                | MirInstruction::PointerOffset { .. }
-                | MirInstruction::Index { .. }
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

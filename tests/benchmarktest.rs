@@ -35,11 +35,29 @@ fn test_fibonacci_benchmark() {
     }
     let avg_duration = total_duration / runs;
 
+    // Compile and run C benchmark for dynamic comparison
+    Command::new("gcc")
+        .args(&["-O3", "-foptimize-sibling-calls", "-o", "cbench_fib", "cbench_fib.c"])
+        .output()
+        .expect("Failed to compile C benchmark");
+
+    let mut c_total_duration = std::time::Duration::new(0, 0);
+    for _ in 0..runs {
+        let start = Instant::now();
+        Command::new("./cbench_fib")
+            .output()
+            .expect("Failed to run C benchmark");
+        c_total_duration += start.elapsed();
+    }
+    let c_avg_duration = c_total_duration / runs;
+
     fs::create_dir_all("test_output").unwrap();
-    let c_time = 222; // ms
+    let c_time = c_avg_duration.as_millis();
     let my_time = avg_duration.as_millis();
-    let ratio = my_time as f64 / c_time as f64;
-    let result = format!("fibonacci_onu: {}ms (avg of 5 runs)\nfibonacci_c:   {}ms (reference from cbenchmark.txt)\nratio:         {:.2}x\n", my_time, c_time, ratio);
+    // Prevent division by zero if C is too fast (0ms)
+    let c_time_safe = if c_time == 0 { 1 } else { c_time };
+    let ratio = my_time as f64 / c_time_safe as f64;
+    let result = format!("fibonacci_onu: {}ms (avg of 5 runs)\nfibonacci_c:   {}ms\nratio:         {:.2}x\n", my_time, c_time, ratio);
     fs::write("test_output/benchmark_results.txt", &result).unwrap();
 
     // Sanity check
