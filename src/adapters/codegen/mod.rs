@@ -60,14 +60,26 @@ impl CodegenPort for OnuCodegen {
 
         generator.generate(program)?;
 
-        use inkwell::passes::PassManager;
-        let fpm: PassManager<Module> = PassManager::create(());
-        fpm.add_promote_memory_to_register_pass();
-        fpm.add_instruction_combining_pass();
-        fpm.add_reassociate_pass();
-        fpm.add_gvn_pass();
-        fpm.add_cfg_simplification_pass();
-        fpm.run_on(&generator.module);
+        use inkwell::passes::{PassManager, PassManagerBuilder};
+        use inkwell::values::FunctionValue;
+        use inkwell::module::Module;
+
+        let pass_manager_builder = PassManagerBuilder::create();
+        pass_manager_builder.set_optimization_level(inkwell::OptimizationLevel::Aggressive);
+
+        let fpm: PassManager<FunctionValue> = PassManager::create(&generator.module);
+        pass_manager_builder.populate_function_pass_manager(&fpm);
+
+        let mpm: PassManager<Module> = PassManager::create(());
+        pass_manager_builder.populate_module_pass_manager(&mpm);
+
+        fpm.initialize();
+        for func in generator.module.get_functions() {
+            fpm.run_on(&func);
+        }
+        fpm.finalize();
+
+        mpm.run_on(&generator.module);
 
         Ok(generator.module.print_to_string().to_string())
     }
@@ -117,8 +129,11 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
         };
 
         if !is_main {
-            // Let's use a raw u32 for fastcc, which is 8 in LLVM
+            // Use fastcc for all internal behaviors for better optimization
             fn_val.set_call_conventions(8);
+            
+            // Mark as local_unnamed_addr to allow more aggressive optimizations
+            fn_val.as_global_value().set_unnamed_address(inkwell::values::UnnamedAddress::Local);
 
             if func.is_pure_data_leaf {
                 use inkwell::attributes::{Attribute, AttributeLoc};

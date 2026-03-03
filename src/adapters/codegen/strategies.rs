@@ -44,9 +44,9 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
             let r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
 
             let res: BasicValueEnum = match op {
-                MirBinOp::Add => builder.build_int_add(l_val.into_int_value(), r_val.into_int_value(), "addtmp").unwrap().into(),
-                MirBinOp::Sub => builder.build_int_sub(l_val.into_int_value(), r_val.into_int_value(), "subtmp").unwrap().into(),
-                MirBinOp::Mul => builder.build_int_mul(l_val.into_int_value(), r_val.into_int_value(), "multmp").unwrap().into(),
+                MirBinOp::Add => builder.build_int_nsw_add(l_val.into_int_value(), r_val.into_int_value(), "addtmp").unwrap().into(),
+                MirBinOp::Sub => builder.build_int_nsw_sub(l_val.into_int_value(), r_val.into_int_value(), "subtmp").unwrap().into(),
+                MirBinOp::Mul => builder.build_int_nsw_mul(l_val.into_int_value(), r_val.into_int_value(), "multmp").unwrap().into(),
                 MirBinOp::Div => builder.build_int_signed_div(l_val.into_int_value(), r_val.into_int_value(), "divtmp").unwrap().into(),
                 MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt => {
                     let pred = match op {
