@@ -43,6 +43,7 @@ pub enum MirInstruction {
         args: Vec<MirOperand>,
         return_type: OnuType,
         arg_types: Vec<OnuType>,
+        is_tail_call: bool,
     },
     Tuple { dest: usize, elements: Vec<MirOperand> },
     Index { dest: usize, subject: MirOperand, index: usize },

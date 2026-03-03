@@ -161,7 +161,7 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::Call { dest, name, args, return_type, arg_types } = inst {
+        if let MirInstruction::Call { dest, name, args, return_type, arg_types, is_tail_call: _ } = inst {
             let llvm_name = name.clone(); // Use original hyphenated names
             
             let mut llvm_args = Vec::new();

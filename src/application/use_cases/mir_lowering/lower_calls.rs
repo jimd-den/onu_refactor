@@ -15,7 +15,7 @@ impl ExprLowerer for CallLowerer {
         expr: &HirExpression,
         context: &LoweringContext<'a, E>,
         builder: &mut MirBuilder,
-        _is_tail: bool,
+        is_tail: bool,
     ) -> Result<MirOperand, OnuError> {
         if let HirExpression::Call { name, args } = expr {
             let mut mir_args = Vec::new();
@@ -69,6 +69,7 @@ impl ExprLowerer for CallLowerer {
                 args: mir_args.clone(),
                 return_type: return_type.clone(),
                 arg_types,
+                is_tail_call: is_tail,
             });
             builder.set_ssa_type(dest, return_type);
 
