@@ -9,16 +9,16 @@
 --- C ---
 fib(40) = 102334155
 
-real	0m0.471s
-user	0m0.467s
-sys	0m0.004s
+real	0m0.497s
+user	0m0.492s
+sys	0m0.005s
 
 --- Onu ---
 fib(40) = 102334155
 
 real	0m0.002s
-user	0m0.000s
-sys	0m0.002s
+user	0m0.002s
+sys	0m0.000s
 
 ========================================
  Collatz Conjecture Loop (1 to 1,000,000)
@@ -27,16 +27,34 @@ sys	0m0.002s
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.228s
-user	0m0.228s
+real	0m0.177s
+user	0m0.176s
 sys	0m0.000s
 
 --- Onu ---
 Total Collatz steps for 1 to 1000000 is:
 131434424
 
-real	0m0.316s
-user	0m0.316s
+real	0m0.306s
+user	0m0.301s
+sys	0m0.004s
+
+========================================
+ Ackermann Function (3, 11)
+========================================
+
+--- C ---
+Ackermann(3, 11) Result: 16381
+
+real	0m0.717s
+user	0m0.716s
+sys	0m0.000s
+
+--- Onu ---
+Ackermann(3, 11) Result: 16381
+
+real	0m0.716s
+user	0m0.715s
 sys	0m0.000s
 
 ========================================
