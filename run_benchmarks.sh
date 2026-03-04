@@ -14,11 +14,10 @@ clang cbench_collatz.c -O3 -o c_collatz_bin
 
 # 2. Compile Onu Benchmarks
 echo "Compiling Onu benchmarks..."
-cargo run --quiet -- samples/fib_naive_only.onu -o fib_naive_only.ll 2>/dev/null
-clang fib_naive_only.ll -O3 -o fib_naive_only_bin -Wno-override-module 2>/dev/null
+# The --run flag realizes the bin to the same directory
+cargo run --quiet -- samples/fib_naive_only.onu -o fib_naive_only.ll 2>/dev/null >/dev/null
 
-cargo run --quiet -- collatz_benchmark.onu -o collatz_benchmark.ll 2>/dev/null
-clang collatz_benchmark.ll -O3 -o collatz_benchmark_bin -Wno-override-module 2>/dev/null
+cargo run --quiet -- collatz_benchmark.onu -o collatz_benchmark.ll 2>/dev/null >/dev/null
 
 echo "========================================" >> "$OUTPUT_FILE"
 echo " Naive Fibonacci (fib(40))" >> "$OUTPUT_FILE"

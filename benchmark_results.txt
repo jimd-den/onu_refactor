@@ -9,16 +9,16 @@
 --- C ---
 fib(40) = 102334155
 
-real	0m0.481s
-user	0m0.481s
-sys	0m0.000s
+real	0m0.471s
+user	0m0.467s
+sys	0m0.004s
 
 --- Onu ---
 fib(40) = 102334155
 
 real	0m0.002s
-user	0m0.002s
-sys	0m0.000s
+user	0m0.000s
+sys	0m0.002s
 
 ========================================
  Collatz Conjecture Loop (1 to 1,000,000)
@@ -27,16 +27,16 @@ sys	0m0.000s
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.175s
-user	0m0.175s
+real	0m0.228s
+user	0m0.228s
 sys	0m0.000s
 
 --- Onu ---
 Total Collatz steps for 1 to 1000000 is:
 131434424
 
-real	0m0.313s
-user	0m0.312s
+real	0m0.316s
+user	0m0.316s
 sys	0m0.000s
 
 ========================================
