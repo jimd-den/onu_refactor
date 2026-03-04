@@ -42,10 +42,12 @@ fn max_ssa_var(func: &MirFunction) -> usize {
                 MirInstruction::Index { dest, .. } => Some(*dest),
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
+                MirInstruction::Load { dest, .. } => Some(*dest),
                 MirInstruction::Emit(_)
                 | MirInstruction::Drop { .. }
                 | MirInstruction::MemCopy { .. }
-                | MirInstruction::Store { .. } => None,
+                | MirInstruction::Store { .. }
+                | MirInstruction::TypedStore { .. } => None,
             };
             if let Some(d) = dest_opt {
                 if d > max {
@@ -165,7 +167,10 @@ impl TcoPass {
             }
 
             // The block used to Return after the call. Now it loops back.
-            block.terminator = MirTerminator::Branch(loop_head_id);
+            // We jump to original_entry_id (1) rather than loop_head_id (0)
+            // to ensure that if this function is inlined, the INITIAL argument
+            // assignments injected into block 0 by InlinePass are not re-executed.
+            block.terminator = MirTerminator::Branch(original_entry_id);
         }
 
         // Step 4: Build the loop head block.

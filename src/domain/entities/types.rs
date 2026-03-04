@@ -6,26 +6,41 @@
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum OnuType {
     // --- Integers ---
-    I8, I16, I32, I64, I128,
-    U8, U16, U32, U64, U128,
-    
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+
     // --- Floats ---
-    F32, F64,
-    
+    F32,
+    F64,
+
     // --- Boolean ---
     Boolean,
 
     // --- Other Primitives ---
     Strings,
     Matrix,
-    Nothing,       // The void type
-    
+    Nothing, // The void type
+    /// Raw byte-pointer (i8*).
+    /// This is an internal type used by MemoPass to thread the allocator-backed
+    /// cache buffer from the public wrapper into the private inner function.
+    /// It is never surface-visible to Ọ̀nụ programmers — only present in
+    /// compiler-generated MIR.  Maps to `i8*` in LLVM IR.
+    Ptr,
+
     // --- Structural ---
-    Tuple(Vec<OnuType>), // Fixed-size collection
-    Array(Box<OnuType>), // Variable-size collection
+    Tuple(Vec<OnuType>),                 // Fixed-size collection
+    Array(Box<OnuType>),                 // Variable-size collection
     HashMap(Box<OnuType>, Box<OnuType>), // Key-Value pair collection
-    Tree(Box<OnuType>), // Ordered collection
-    
+    Tree(Box<OnuType>),                  // Ordered collection
+
     // --- Abstract ---
     Shape(String), // Reference to a Shape (Interface)
 }
@@ -44,6 +59,13 @@ impl OnuType {
 
     /// Returns true if this type is passed by reference/custody.
     pub fn is_resource(&self) -> bool {
-        matches!(self, OnuType::Strings | OnuType::Matrix | OnuType::Array(_) | OnuType::HashMap(_, _) | OnuType::Tree(_))
+        matches!(
+            self,
+            OnuType::Strings
+                | OnuType::Matrix
+                | OnuType::Array(_)
+                | OnuType::HashMap(_, _)
+                | OnuType::Tree(_)
+        )
     }
 }

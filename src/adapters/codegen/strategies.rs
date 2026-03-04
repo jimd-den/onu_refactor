@@ -6,6 +6,7 @@ use crate::domain::entities::error::OnuError;
 /// Each strategy is responsible for translating a specific MIR instruction
 /// into the corresponding LLVM IR.
 use crate::domain::entities::mir::{MirBinOp, MirInstruction, MirLiteral, MirOperand};
+use crate::domain::entities::types::OnuType;
 
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -662,7 +663,55 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
     }
 }
 
+/// Typed load from a raw pointer (i8*) produced by PointerOffset.
+///
+/// The memoization cache is an i8 byte array.  After PointerOffset navigates
+/// to the correct 8-byte-aligned slot, we need to load an i64.  LLVM requires
+/// the pointer type to match the load width, so we bitcast the i8* to i64*
+/// before loading.
+///
+/// Design Pattern: Strategy — same interface as every other instruction
+/// strategy, selected by the codegen dispatcher based on the MirInstruction
+/// variant.
+pub struct LoadStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::Load { dest, ptr, typ } = inst {
+            let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
+
+            // Cast the raw i8* to the target element pointer type.
+            // For i64 values: i8* → i64* so that build_load reads 8 bytes.
+            let dest_llvm_type = match typ {
+                OnuType::I64 => context.i64_type().as_basic_type_enum(),
+                OnuType::Boolean => context.bool_type().as_basic_type_enum(),
+                _ => context.i64_type().as_basic_type_enum(), // Fallback
+            };
+            let typed_ptr = builder
+                .build_pointer_cast(
+                    ptr_val,
+                    dest_llvm_type.ptr_type(inkwell::AddressSpace::default()),
+                    "typed_ptr",
+                )
+                .unwrap();
+
+            let loaded_val = builder.build_load(typed_ptr, "loaded_val").unwrap();
+            let ssa_ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, dest_llvm_type);
+            builder.build_store(ssa_ptr, loaded_val).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct StoreStrategy;
+
 impl<'ctx> InstructionStrategy<'ctx> for StoreStrategy {
     fn generate(
         &self,
@@ -700,7 +749,48 @@ impl<'ctx> InstructionStrategy<'ctx> for StoreStrategy {
     }
 }
 
+/// Typed store to a raw pointer (i8*) produced by PointerOffset.
+///
+/// The memoization cache is an i8 byte array. After computing a result we need
+/// to store an i64.  The regular StoreStrategy would truncate the i64 to i8
+/// because the target pointer is i8*.  TypedStoreStrategy explicitly bitcasts
+/// to typ* before calling build_store, preserving all 64 bits.
+pub struct TypedStoreStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::TypedStore { ptr, value, typ } = inst {
+            let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
+            let val = operand_to_llvm(context, builder, ssa_storage, value);
+
+            // Cast the i8* to the element pointer type matching the value width.
+            let dest_llvm_type = match typ {
+                OnuType::I64 => context.i64_type().as_basic_type_enum(),
+                OnuType::Boolean => context.bool_type().as_basic_type_enum(),
+                _ => context.i64_type().as_basic_type_enum(),
+            };
+            let typed_ptr = builder
+                .build_pointer_cast(
+                    ptr_val,
+                    dest_llvm_type.ptr_type(inkwell::AddressSpace::default()),
+                    "typed_store_ptr",
+                )
+                .unwrap();
+            builder.build_store(typed_ptr, val).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct IndexStrategy;
+
 impl<'ctx> InstructionStrategy<'ctx> for IndexStrategy {
     fn generate(
         &self,

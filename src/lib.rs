@@ -1,23 +1,23 @@
-pub mod domain;
-pub mod application;
-pub mod infrastructure;
 pub mod adapters;
+pub mod application;
+pub mod domain;
+pub mod infrastructure;
 
-use crate::application::use_cases::registry_service::RegistryService;
+use crate::adapters::lexer::OnuLexer;
+use crate::adapters::parser::OnuParser;
+use crate::application::options::{CompilationOptions, CompilerStage, LogLevel};
+use crate::application::ports::compiler_ports::{CodegenPort, LexerPort};
+use crate::application::ports::environment::EnvironmentPort;
 use crate::application::use_cases::analysis_service::AnalysisService;
 use crate::application::use_cases::lowering_service::LoweringService;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::module_service::ModuleService;
-use crate::application::ports::compiler_ports::{LexerPort, CodegenPort};
-use crate::application::ports::environment::EnvironmentPort;
-use crate::application::options::{CompilationOptions, CompilerStage, LogLevel};
-use crate::domain::entities::error::OnuError;
+use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::ast::Discourse;
-use crate::domain::entities::hir::HirDiscourse;
 use crate::domain::entities::core_module::{CoreModule, StandardMathModule};
+use crate::domain::entities::error::OnuError;
+use crate::domain::entities::hir::HirDiscourse;
 use crate::infrastructure::extensions::io::OnuIoModule;
-use crate::adapters::lexer::OnuLexer;
-use crate::adapters::parser::OnuParser;
 
 pub struct CompilationPipeline<E: EnvironmentPort, C: CodegenPort> {
     pub env: E,
@@ -33,7 +33,7 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         let mut registry = RegistryService::new();
         registry.log_level = options.log_level;
         let module_service = ModuleService::new(&env, options.log_level);
-        
+
         // Register Built-in Modules
         module_service.register_module(&mut registry, &CoreModule);
         module_service.register_module(&mut registry, &StandardMathModule);
@@ -50,28 +50,45 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
     }
 
     pub fn compile(&mut self, path: &str) -> Result<(), OnuError> {
-        self.env.log(LogLevel::Info, &format!("Starting compilation for: {}", path));
+        self.env.log(
+            LogLevel::Info,
+            &format!("Starting compilation for: {}", path),
+        );
 
         let source = self.env.read_file(path)?;
-        
+
         let tokens = self.lex(&source)?;
-        if self.options.stop_after == Some(CompilerStage::Lexing) { return Ok(()); }
+        if self.options.stop_after == Some(CompilerStage::Lexing) {
+            return Ok(());
+        }
 
         self.scan_headers(&tokens)?;
-        
+
         let discourses = self.parse(tokens)?;
-        if self.options.stop_after == Some(CompilerStage::Parsing) { return Ok(()); }
+        if self.options.stop_after == Some(CompilerStage::Parsing) {
+            return Ok(());
+        }
 
         let hir_discourses = self.lower_hir(discourses)?;
-        if self.options.stop_after == Some(CompilerStage::Analysis) { return Ok(()); }
+        if self.options.stop_after == Some(CompilerStage::Analysis) {
+            return Ok(());
+        }
 
         let mir = self.lower_mir(hir_discourses)?;
-        if self.options.stop_after == Some(CompilerStage::Mir) { return Ok(()); }
+        if self.options.stop_after == Some(CompilerStage::Mir) {
+            return Ok(());
+        }
 
         let ir = self.emit_ir(mir)?;
-        if self.options.stop_after == Some(CompilerStage::Codegen) { return Ok(()); }
+        if self.options.stop_after == Some(CompilerStage::Codegen) {
+            return Ok(());
+        }
 
-        let stem = std::path::Path::new(path).file_stem().unwrap().to_str().unwrap();
+        let stem = std::path::Path::new(path)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
         let ll_path = format!("{}.ll", stem);
         let prog_path = format!("{}_bin", stem);
 
@@ -81,15 +98,24 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         Ok(())
     }
 
-    pub fn lex(&self, source: &str) -> Result<Vec<crate::application::ports::compiler_ports::Token>, OnuError> {
+    pub fn lex(
+        &self,
+        source: &str,
+    ) -> Result<Vec<crate::application::ports::compiler_ports::Token>, OnuError> {
         self.lexer.lex(source)
     }
 
-    pub fn scan_headers(&mut self, tokens: &[crate::application::ports::compiler_ports::Token]) -> Result<(), OnuError> {
+    pub fn scan_headers(
+        &mut self,
+        tokens: &[crate::application::ports::compiler_ports::Token],
+    ) -> Result<(), OnuError> {
         self.parser.scan_headers(tokens, &mut self.registry)
     }
 
-    pub fn parse(&mut self, tokens: Vec<crate::application::ports::compiler_ports::Token>) -> Result<Vec<Discourse>, OnuError> {
+    pub fn parse(
+        &mut self,
+        tokens: Vec<crate::application::ports::compiler_ports::Token>,
+    ) -> Result<Vec<Discourse>, OnuError> {
         self.parser.parse_with_registry(tokens, &mut self.registry)
     }
 
@@ -99,29 +125,74 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         for discourse in discourses {
             let mut hir = LoweringService::lower_discourse(&discourse, &self.registry);
             analysis_service.analyze_discourse(&mut hir)?;
-            if self.options.emit_hir { self.env.log(LogLevel::Debug, &format!("HIR Emit: {:?}", hir)); }
+            if self.options.emit_hir {
+                self.env
+                    .log(LogLevel::Debug, &format!("HIR Emit: {:?}", hir));
+            }
             hir_discourses.push(hir);
         }
         Ok(hir_discourses)
     }
 
-    pub fn lower_mir(&self, hir_discourses: Vec<HirDiscourse>) -> Result<crate::domain::entities::mir::MirProgram, OnuError> {
+    pub fn lower_mir(
+        &self,
+        hir_discourses: Vec<HirDiscourse>,
+    ) -> Result<crate::domain::entities::mir::MirProgram, OnuError> {
+        use crate::application::use_cases::inline_pass::InlinePass;
+        use crate::application::use_cases::memo_pass::MemoPass;
+        use crate::application::use_cases::tco_pass::TcoPass;
+
+        // Stage 1: Lower HIR → raw MIR (SSA, recursive call structure).
         let mir_lowering_service = MirLoweringService::new(&self.env, &self.registry);
-        mir_lowering_service.lower_program(&hir_discourses)
+        let mir = mir_lowering_service.lower_program(&hir_discourses)?;
+
+        // Stage 2: Loop-lower self-tail-calls.
+        // Recursion → loop so the body becomes finite and inlineable.
+        let mir = TcoPass::run(mir);
+
+        // Stage 3: Inline pure loop-shaped callees into their callers.
+        // Now that single-recursive functions are loops, InlinePass can fuse them.
+        let mir = InlinePass::run(mir);
+
+        // Stage 4: Second TcoPass — catches tail calls exposed by inlining.
+        let mir = TcoPass::run(mir);
+
+        // Stage 5: Memoize doubly-recursive pure functions annotated with
+        // `with diminishing:`. Converts O(2^n) call trees to O(n) via a
+        // stack-allocated lookup table.
+        let mir = MemoPass::run(mir);
+
+        Ok(mir)
     }
 
-    pub fn emit_ir(&mut self, mir: crate::domain::entities::mir::MirProgram) -> Result<String, OnuError> {
+    pub fn emit_ir(
+        &mut self,
+        mir: crate::domain::entities::mir::MirProgram,
+    ) -> Result<String, OnuError> {
         self.env.log(LogLevel::Info, "Starting Codegen stage.");
         self.codegen.set_registry(self.registry.clone());
         let ir = self.codegen.generate(&mir)?;
-        self.env.log(LogLevel::Debug, &format!("Generated LLVM IR:\n{}", ir));
+        self.env
+            .log(LogLevel::Debug, &format!("Generated LLVM IR:\n{}", ir));
         Ok(ir)
     }
 
     fn realize(&self, bitcode_path: &str, output_path: &str) -> Result<(), OnuError> {
-        self.env.log(LogLevel::Info, &format!("Realizing binary: {} -> {}", bitcode_path, output_path));
+        self.env.log(
+            LogLevel::Info,
+            &format!("Realizing binary: {} -> {}", bitcode_path, output_path),
+        );
         // Link bitcode natively
-        self.env.run_command("clang", &[bitcode_path, "-O3", "-o", output_path, "-Wno-override-module"])?;
+        self.env.run_command(
+            "clang",
+            &[
+                bitcode_path,
+                "-O3",
+                "-o",
+                output_path,
+                "-Wno-override-module",
+            ],
+        )?;
         Ok(())
     }
 }

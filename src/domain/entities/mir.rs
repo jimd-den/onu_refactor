@@ -3,7 +3,6 @@
 /// This module defines the Mid-level Intermediate Representation.
 /// MIR is a flat, SSA-based representation suitable for optimizations
 /// and machine code generation.
-
 use crate::domain::entities::types::OnuType;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,29 +36,86 @@ pub struct BasicBlock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MirInstruction {
-    Assign { dest: usize, src: MirOperand },
-    BinaryOperation { dest: usize, op: MirBinOp, lhs: MirOperand, rhs: MirOperand },
-    Call { 
-        dest: usize, 
-        name: String, 
+    Assign {
+        dest: usize,
+        src: MirOperand,
+    },
+    BinaryOperation {
+        dest: usize,
+        op: MirBinOp,
+        lhs: MirOperand,
+        rhs: MirOperand,
+    },
+    Call {
+        dest: usize,
+        name: String,
         args: Vec<MirOperand>,
         return_type: OnuType,
         arg_types: Vec<OnuType>,
         is_tail_call: bool,
     },
-    Tuple { dest: usize, elements: Vec<MirOperand> },
-    Index { dest: usize, subject: MirOperand, index: usize },
+    Tuple {
+        dest: usize,
+        elements: Vec<MirOperand>,
+    },
+    Index {
+        dest: usize,
+        subject: MirOperand,
+        index: usize,
+    },
     Emit(MirOperand),
-    Drop { ssa_var: usize, typ: OnuType, name: String, is_dynamic: bool },
-    Alloc { dest: usize, size_bytes: MirOperand },
-    MemCopy { dest: MirOperand, src: MirOperand, size: MirOperand },
-    PointerOffset { dest: usize, ptr: MirOperand, offset: MirOperand },
-    Store { ptr: MirOperand, value: MirOperand },
+    Drop {
+        ssa_var: usize,
+        typ: OnuType,
+        name: String,
+        is_dynamic: bool,
+    },
+    Alloc {
+        dest: usize,
+        size_bytes: MirOperand,
+    },
+    MemCopy {
+        dest: MirOperand,
+        src: MirOperand,
+        size: MirOperand,
+    },
+    PointerOffset {
+        dest: usize,
+        ptr: MirOperand,
+        offset: MirOperand,
+    },
+    /// Load a value of `typ` from a raw pointer (e.g. an i8* produced by PointerOffset).
+    /// The codegen casts the pointer to `typ`* before loading.
+    /// This is how the memoization cache reads i64 values back from the byte arena.
+    Load {
+        dest: usize,
+        ptr: MirOperand,
+        typ: OnuType,
+    },
+    Store {
+        ptr: MirOperand,
+        value: MirOperand,
+    },
+    /// Typed store to a raw pointer (symmetric counterpart to Load).
+    /// Casts the i8* pointer from PointerOffset to `typ`* before writing.
+    /// Prevents StoreStrategy from truncating an i64 to i8 when stored via i8* pointer.
+    TypedStore {
+        ptr: MirOperand,
+        value: MirOperand,
+        typ: OnuType,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MirBinOp {
-    Add, Sub, Mul, Div, Eq, Ne, Gt, Lt,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Ne,
+    Gt,
+    Lt,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +137,10 @@ pub enum MirLiteral {
 pub enum MirTerminator {
     Return(MirOperand),
     Branch(usize), // block id
-    CondBranch { condition: MirOperand, then_block: usize, else_block: usize },
+    CondBranch {
+        condition: MirOperand,
+        then_block: usize,
+        else_block: usize,
+    },
     Unreachable,
 }

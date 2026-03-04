@@ -1,0 +1,81 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: Structural Bubble Sort
+-- Concern: Sorting fixed-size sequences using immutable transformations.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called BubbleSortModule
+    with concern: algorithmic data transformation
+
+-- A 4-element sequence
+the shape called Sequence4
+    takes:
+        an integer called a
+        an integer called b
+        an integer called c
+        an integer called d
+
+-- A single bubble pass moves the largest element to the end (d).
+the behavior called bubble-pass
+    takes: a Sequence4 called seq via observation
+    delivers: a Sequence4
+    as:
+        derivation: v1 derives-from seq utilizes a
+        derivation: v2 derives-from seq utilizes b
+        derivation: v3 derives-from seq utilizes c
+        derivation: v4 derives-from seq utilizes d
+
+        -- Step 1: Compare (v1, v2)
+        derivation: s1_a derives-from (if v1 exceeds v2 then v2 else v1)
+        derivation: s1_b derives-from (if v1 exceeds v2 then v1 else v2)
+        
+        -- Step 2: Compare (s1_b, v3)
+        derivation: s2_b derives-from (if s1_b exceeds v3 then v3 else s1_b)
+        derivation: s2_c derives-from (if s1_b exceeds v3 then s1_b else v3)
+        
+        -- Step 3: Compare (s2_c, v4)
+        derivation: s3_c derives-from (if s2_c exceeds v4 then v4 else s2_c)
+        derivation: s3_d derives-from (if s2_c exceeds v4 then s2_c else v4)
+        
+        s1_a utilizes Sequence4 s2_b s3_c s3_d
+
+-- Recursively run bubble-pass enough times to ensure sorting.
+the behavior called bsort
+    takes: 
+        a Sequence4 called seq via observation
+        an integer called passes
+    delivers: a Sequence4
+    as:
+        if passes matches 0 then seq
+        else
+            derivation: next_seq derives-from seq utilizes bubble-pass
+            derivation: next_rem derives-from passes decreased-by 1
+            next_seq utilizes bsort next_rem
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        -- Unsorted: 40, 10, 30, 20
+        derivation: initial derives-from 40 utilizes Sequence4 10 30 20
+        
+        broadcasts "Unsorted Sequence: 40, 10, 30, 20"
+        broadcasts "Sorting..."
+        
+        -- For 4 elements, 3 passes are sufficient.
+        derivation: sorted derives-from initial utilizes bsort 3
+        
+        derivation: r1 derives-from sorted utilizes a
+        derivation: r2 derives-from sorted utilizes b
+        derivation: r3 derives-from sorted utilizes c
+        derivation: r4 derives-from sorted utilizes d
+        
+        derivation: msg1 derives-from "Sorted Sequence: " joined-with (r1 utilizes as-text)
+        derivation: msg2 derives-from msg1 joined-with ", "
+        derivation: msg3 derives-from msg2 joined-with (r2 utilizes as-text)
+        derivation: msg4 derives-from msg3 joined-with ", "
+        derivation: msg5 derives-from msg4 joined-with (r3 utilizes as-text)
+        derivation: msg6 derives-from msg5 joined-with ", "
+        derivation: msg7 derives-from msg6 joined-with (r4 utilizes as-text)
+        
+        broadcasts msg7
+        nothing

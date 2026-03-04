@@ -52,7 +52,24 @@ impl InlinePass {
         let mut inlineable: std::collections::HashSet<String> = program
             .functions
             .iter()
-            .filter(|f| f.is_pure_data_leaf)
+            .filter(|f| {
+                if !f.is_pure_data_leaf {
+                    return false; // Not pure — hard no.
+                }
+                // Exclude functions that call themselves.
+                // A self-recursive function cannot be expanded at its own call sites
+                // because the expansion itself contains more self-calls, leading to
+                // infinite expansion at compile time.
+                // EXCEPTION: if TcoPass has already loop-lowered the function (converted
+                // the self-call into a backward Branch), the body is finite and safe.
+                // That case is handled at the per-call-site level in `inline_into`.
+                let is_self_recursive = f.blocks.iter().any(|b| {
+                    b.instructions.iter().any(
+                        |inst| matches!(inst, MirInstruction::Call { name, .. } if name == &f.name),
+                    )
+                });
+                !is_self_recursive
+            })
             .map(|f| f.name.clone())
             .collect();
 
@@ -69,23 +86,32 @@ impl InlinePass {
                 if inlineable.contains(&func.name) {
                     continue; // Already accepted.
                 }
-                // Check for hard side effects that make inlining unsafe.
+                // Hard guard 1: visible side effects — never inline.
                 let has_side_effects = func.blocks.iter().any(|b| {
                     b.instructions.iter().any(|inst| {
                         matches!(inst, MirInstruction::Emit(_) | MirInstruction::Store { .. })
                     })
                 });
                 if has_side_effects {
-                    continue; // Cannot inline — has visible effects.
+                    continue;
+                }
+                // Hard guard 2: self-recursive functions cannot be inlined safely.
+                // Expanding a self-recursive call would produce another self-call that
+                // also needs expanding — leading to infinite expansion at compile time.
+                // Loop-lowered functions (where TcoPass replaced the self-call with a Branch)
+                // are safe, and those are handled per-call-site in `inline_into`, not here.
+                let is_self_recursive = func.blocks.iter().any(|b| {
+                    b.instructions.iter().any(|inst| {
+                        matches!(inst, MirInstruction::Call { name, .. } if name == &func.name)
+                    })
+                });
+                if is_self_recursive {
+                    continue;
                 }
                 // Check: every in-module call target must already be inlineable.
                 let all_calls_safe = func.blocks.iter().all(|b| {
                     b.instructions.iter().all(|inst| {
                         if let MirInstruction::Call { name, .. } = inst {
-                            // Self-calls are fine (TcoPass will handle them after inline).
-                            if name == &func.name {
-                                return true;
-                            }
                             // In-module calls are only safe if the callee is inlineable.
                             if all_fn_names.contains(name) {
                                 return inlineable.contains(name);
@@ -163,15 +189,16 @@ impl InlinePass {
                         // terminator pointing backward (target < current block id) or branching to id 0.
                         // Actually, TcoPass shifts all blocks up and inserts a loop head at id 0.
                         if name == &caller.name {
-                            let is_loop_lowered = pure_functions.get(name.as_str()).map_or(false, |f| {
-                                f.blocks.iter().any(|b| {
-                                    if let MirTerminator::Branch(target) = b.terminator {
-                                        target < b.id
-                                    } else {
-                                        false
-                                    }
-                                })
-                            });
+                            let is_loop_lowered =
+                                pure_functions.get(name.as_str()).map_or(false, |f| {
+                                    f.blocks.iter().any(|b| {
+                                        if let MirTerminator::Branch(target) = b.terminator {
+                                            target < b.id
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                });
                             is_loop_lowered
                         } else {
                             true
@@ -274,10 +301,15 @@ fn remap_callee(
 
         // In the first callee block, bind the callee's argument SSA vars to the
         // call site's actual arguments. This replaces parameter passing.
+        //
+        // IMPORTANT: `call_args` live in the CALLER's SSA namespace — they must
+        // NOT be shifted by ssa_offset.  Only the callee-side destination
+        // (arg.ssa_var) gets remapped into the fresh namespace.
         if block_index == 0 {
             for (arg_idx, arg) in callee.args.iter().enumerate() {
                 let remapped_arg_ssa = arg.ssa_var + ssa_offset;
-                let src = remap_operand(&call_args[arg_idx], ssa_offset);
+                // Clone the caller-side operand verbatim (no remap).
+                let src = call_args[arg_idx].clone();
                 instructions.push(MirInstruction::Assign {
                     dest: remapped_arg_ssa,
                     src,
@@ -377,6 +409,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             ptr: remap_operand(ptr, ssa_offset),
             offset: remap_operand(offset, ssa_offset),
         },
+        MirInstruction::Load { dest, ptr, typ } => MirInstruction::Load {
+            dest: dest + ssa_offset,
+            ptr: remap_operand(ptr, ssa_offset),
+            typ: typ.clone(),
+        },
         MirInstruction::MemCopy { dest, src, size } => MirInstruction::MemCopy {
             dest: remap_operand(dest, ssa_offset),
             src: remap_operand(src, ssa_offset),
@@ -385,6 +422,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
         MirInstruction::Store { ptr, value } => MirInstruction::Store {
             ptr: remap_operand(ptr, ssa_offset),
             value: remap_operand(value, ssa_offset),
+        },
+        MirInstruction::TypedStore { ptr, value, typ } => MirInstruction::TypedStore {
+            ptr: remap_operand(ptr, ssa_offset),
+            value: remap_operand(value, ssa_offset),
+            typ: typ.clone(),
         },
         MirInstruction::Emit(op) => MirInstruction::Emit(remap_operand(op, ssa_offset)),
         MirInstruction::Drop {
@@ -423,6 +465,7 @@ fn max_ssa_in_function(func: &MirFunction) -> usize {
                 MirInstruction::Index { dest, .. } => Some(*dest),
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
+                MirInstruction::Load { dest, .. } => Some(*dest),
                 _ => None,
             };
             if let Some(d) = dest {

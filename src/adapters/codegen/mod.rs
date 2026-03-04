@@ -122,6 +122,29 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     }
 
     fn declare_function(&self, func: &MirFunction) {
+        use crate::application::use_cases::codegen_profile::{
+            CallingConvention, FunctionLinkage, OptimizerHint, derive_profile,
+        };
+        use inkwell::attributes::{Attribute, AttributeLoc};
+
+        // ── Step 1: Ask the Application layer what this function's profile is.
+        // All optimization policy lives in `derive_profile` — zero business logic here.
+        let profile = derive_profile(func);
+
+        // ── Step 2: Map linkage enum → LLVM linkage and function name.
+        let is_main = func.name == "run" || func.name == "main";
+        let llvm_name = if is_main {
+            "main".to_string()
+        } else {
+            func.name.clone()
+        };
+
+        let llvm_linkage = match profile.linkage {
+            FunctionLinkage::Public => Linkage::External,
+            FunctionLinkage::Internal => Linkage::Internal,
+        };
+
+        // ── Step 3: Build the LLVM function type and declare it in the module.
         let arg_types: Vec<inkwell::types::BasicMetadataTypeEnum> = func
             .args
             .iter()
@@ -132,92 +155,50 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             })
             .collect();
 
-        let is_main = func.name == "run" || func.name == "main";
-        let llvm_name = if is_main {
-            "main".to_string()
-        } else {
-            func.name.clone()
-        };
-
         let fn_val = if is_main {
             let fn_type = self.context.i32_type().fn_type(&arg_types, false);
             self.module
-                .add_function(&llvm_name, fn_type, Some(Linkage::External))
+                .add_function(&llvm_name, fn_type, Some(llvm_linkage))
         } else if let Some(ret_type) =
             LlvmTypeMapper::onu_to_llvm(self.context, &func.return_type, self.registry)
         {
             let fn_type = ret_type.fn_type(&arg_types, false);
             self.module
-                .add_function(&llvm_name, fn_type, Some(Linkage::External))
+                .add_function(&llvm_name, fn_type, Some(llvm_linkage))
         } else {
             let fn_type = self.context.void_type().fn_type(&arg_types, false);
             self.module
-                .add_function(&llvm_name, fn_type, Some(Linkage::External))
+                .add_function(&llvm_name, fn_type, Some(llvm_linkage))
         };
 
-        if !is_main {
-            // Use fastcc for all internal behaviors for better optimization
-            fn_val.set_call_conventions(8);
-
-            // Mark as local_unnamed_addr to allow more aggressive optimizations
-            fn_val
-                .as_global_value()
-                .set_unnamed_address(inkwell::values::UnnamedAddress::Local);
-
-            let mut is_recursive = false;
-            for block in &func.blocks {
-                for inst in &block.instructions {
-                    if let crate::domain::entities::mir::MirInstruction::Call { name, .. } = inst {
-                        if name == &func.name {
-                            is_recursive = true;
-                        }
-                    }
-                }
+        // ── Step 4: Apply calling convention from profile.
+        match profile.calling_convention {
+            CallingConvention::Fast => {
+                fn_val.set_call_conventions(8); // LLVM fastcc numeric id
+                // local_unnamed_addr: the symbol's address is not significant within
+                // this file, enabling link-time cloning and further optimisations.
+                fn_val
+                    .as_global_value()
+                    .set_unnamed_address(inkwell::values::UnnamedAddress::Local);
             }
+            CallingConvention::CDefault => {} // C ABI is the default — no action needed.
+        }
 
-            if func.is_pure_data_leaf {
-                use inkwell::attributes::{Attribute, AttributeLoc};
-                let readnone_id = Attribute::get_named_enum_kind_id("readnone");
-                let nounwind_id = Attribute::get_named_enum_kind_id("nounwind");
-                let nofree_id = Attribute::get_named_enum_kind_id("nofree");
-                let nosync_id = Attribute::get_named_enum_kind_id("nosync");
-
-                fn_val.add_attribute(
-                    AttributeLoc::Function,
-                    self.context.create_enum_attribute(readnone_id, 0),
-                );
-                fn_val.add_attribute(
-                    AttributeLoc::Function,
-                    self.context.create_enum_attribute(nounwind_id, 0),
-                );
-                fn_val.add_attribute(
-                    AttributeLoc::Function,
-                    self.context.create_enum_attribute(nofree_id, 0),
-                );
-                fn_val.add_attribute(
-                    AttributeLoc::Function,
-                    self.context.create_enum_attribute(nosync_id, 0),
-                );
-
-                if is_recursive {
-                    let cold_id = Attribute::get_named_enum_kind_id("cold");
-                    let noinline_id = Attribute::get_named_enum_kind_id("noinline");
-                    fn_val.add_attribute(
-                        AttributeLoc::Function,
-                        self.context.create_enum_attribute(cold_id, 0),
-                    );
-                    fn_val.add_attribute(
-                        AttributeLoc::Function,
-                        self.context.create_enum_attribute(noinline_id, 0),
-                    );
-                } else {
-                    let alwaysinline_id = Attribute::get_named_enum_kind_id("alwaysinline");
-                    fn_val.add_attribute(
-                        AttributeLoc::Function,
-                        self.context.create_enum_attribute(alwaysinline_id, 0),
-                    );
-                }
-            }
+        // ── Step 5: Translate each OptimizerHint to its LLVM attribute name.
+        // Pure mechanical mapping — adding a new hint only requires a new arm here.
+        for hint in &profile.optimizer_hints {
+            let attr_name = match hint {
+                OptimizerHint::ReadNone => "readnone",
+                OptimizerHint::NoUnwind => "nounwind",
+                OptimizerHint::NoFree => "nofree",
+                OptimizerHint::NoSync => "nosync",
+                OptimizerHint::AlwaysInline => "alwaysinline",
+            };
+            let kind_id = Attribute::get_named_enum_kind_id(attr_name);
+            fn_val.add_attribute(
+                AttributeLoc::Function,
+                self.context.create_enum_attribute(kind_id, 0),
+            );
         }
     }
 
@@ -347,7 +328,23 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 &mut self.ssa_storage,
                 inst,
             ),
+            MirInstruction::Load { .. } => LoadStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
             MirInstruction::Store { .. } => StoreStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::TypedStore { .. } => TypedStoreStrategy.generate(
                 self.context,
                 &self.module,
                 &self.builder,

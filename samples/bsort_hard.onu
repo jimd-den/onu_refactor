@@ -1,0 +1,230 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: Hard Structural Bubble Sort (16-Elements)
+-- Concern: Stressing the structural IR with a high-density sorting algorithm.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called HardSortModule
+    with concern: algorithmic data transformation
+
+-- Used to return two values from a swap
+the shape called Pair
+    takes:
+        an integer called low
+        an integer called high
+
+-- The primary structural buffer
+the shape called Sequence16
+    takes:
+        an integer called v1
+        an integer called v2
+        an integer called v3
+        an integer called v4
+        an integer called v5
+        an integer called v6
+        an integer called v7
+        an integer called v8
+        an integer called v9
+        an integer called v10
+        an integer called v11
+        an integer called v12
+        an integer called v13
+        an integer called v14
+        an integer called v15
+        an integer called v16
+
+-- Core atomic operation: Compare and Swap
+the behavior called swap-if-needed
+    takes:
+        an integer called left
+        an integer called right
+    delivers: a Pair
+    as:
+        if left exceeds right
+            then right utilizes Pair left
+            else left utilizes Pair right
+
+-- A single ripple pass (Moving the largest element to v16)
+the behavior called bubble-pass-16
+    takes: a Sequence16 called seq via observation
+    delivers: a Sequence16
+    as:
+        derivation: val1 derives-from seq utilizes v1
+        derivation: val2 derives-from seq utilizes v2
+        derivation: val3 derives-from seq utilizes v3
+        derivation: val4 derives-from seq utilizes v4
+        derivation: val5 derives-from seq utilizes v5
+        derivation: val6 derives-from seq utilizes v6
+        derivation: val7 derives-from seq utilizes v7
+        derivation: val8 derives-from seq utilizes v8
+        derivation: val9 derives-from seq utilizes v9
+        derivation: val10 derives-from seq utilizes v10
+        derivation: val11 derives-from seq utilizes v11
+        derivation: val12 derives-from seq utilizes v12
+        derivation: val13 derives-from seq utilizes v13
+        derivation: val14 derives-from seq utilizes v14
+        derivation: val15 derives-from seq utilizes v15
+        derivation: val16 derives-from seq utilizes v16
+
+        derivation: p1 derives-from val1 utilizes swap-if-needed val2
+        derivation: r1 derives-from p1 utilizes low
+        derivation: h1 derives-from p1 utilizes high
+
+        derivation: p2 derives-from h1 utilizes swap-if-needed val3
+        derivation: r2 derives-from p2 utilizes low
+        derivation: h2 derives-from p2 utilizes high
+
+        derivation: p3 derives-from h2 utilizes swap-if-needed val4
+        derivation: r3 derives-from p3 utilizes low
+        derivation: h3 derives-from p3 utilizes high
+
+        derivation: p4 derives-from h3 utilizes swap-if-needed val5
+        derivation: r4 derives-from p4 utilizes low
+        derivation: h4 derives-from p4 utilizes high
+
+        derivation: p5 derives-from h4 utilizes swap-if-needed val6
+        derivation: r5 derives-from p5 utilizes low
+        derivation: h5 derives-from p5 utilizes high
+
+        derivation: p6 derives-from h5 utilizes swap-if-needed val7
+        derivation: r6 derives-from p6 utilizes low
+        derivation: h6 derives-from p6 utilizes high
+
+        derivation: p7 derives-from h6 utilizes swap-if-needed val8
+        derivation: r7 derives-from p7 utilizes low
+        derivation: h7 derives-from p7 utilizes high
+
+        derivation: p8 derives-from h7 utilizes swap-if-needed val9
+        derivation: r8 derives-from p8 utilizes low
+        derivation: h8 derives-from p8 utilizes high
+
+        derivation: p9 derives-from h8 utilizes swap-if-needed val10
+        derivation: r9 derives-from p9 utilizes low
+        derivation: h9 derives-from p9 utilizes high
+
+        derivation: p10 derives-from h9 utilizes swap-if-needed val11
+        derivation: r10 derives-from p10 utilizes low
+        derivation: h10 derives-from p10 utilizes high
+
+        derivation: p11 derives-from h10 utilizes swap-if-needed val12
+        derivation: r11 derives-from p11 utilizes low
+        derivation: h11 derives-from p11 utilizes high
+
+        derivation: p12 derives-from h11 utilizes swap-if-needed val13
+        derivation: r12 derives-from p12 utilizes low
+        derivation: h12 derives-from p12 utilizes high
+
+        derivation: p13 derives-from h12 utilizes swap-if-needed val14
+        derivation: r13 derives-from p13 utilizes low
+        derivation: h13 derives-from p13 utilizes high
+
+        derivation: p14 derives-from h13 utilizes swap-if-needed val15
+        derivation: r14 derives-from p14 utilizes low
+        derivation: h14 derives-from p14 utilizes high
+
+        derivation: p15 derives-from h14 utilizes swap-if-needed val16
+        derivation: r15 derives-from p15 utilizes low
+        derivation: r16 derives-from p15 utilizes high
+
+        r1 utilizes Sequence16 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 r16
+
+-- Complete the sort in 15 passes
+the behavior called bsort-hard
+    takes:
+        a Sequence16 called seq via observation
+        an integer called remaining
+    delivers: a Sequence16
+    as:
+        if remaining matches 0 then seq
+        else
+            derivation: next_seq derives-from seq utilizes bubble-pass-16
+            derivation: next_rem derives-from remaining decreased-by 1
+            next_seq utilizes bsort-hard next_rem
+
+-- Simple LCG to generate pseudo-random numbers
+the behavior called next-rand
+    takes: an integer called seed
+    delivers: an integer
+    as:
+        -- LCG: (a * seed + c) mod m
+        -- Using small primes for easy modulo via decreased-by
+        derivation: m derives-from 10007
+        derivation: a derives-from 31
+        derivation: c derives-from 17
+        
+        derivation: step1 derives-from (seed scales-by a) added-to c
+        derivation: divm  derives-from step1 partitions-by m
+        derivation: mulm  derives-from divm scales-by m
+        step1 decreased-by mulm
+
+-- Build a Sequence16 from a seed
+the behavior called build-unsorted
+    takes: an integer called seed
+    delivers: a Sequence16
+    as:
+        derivation: s1 derives-from seed utilizes next-rand
+        derivation: s2 derives-from s1  utilizes next-rand
+        derivation: s3 derives-from s2  utilizes next-rand
+        derivation: s4 derives-from s3  utilizes next-rand
+        derivation: s5 derives-from s4  utilizes next-rand
+        derivation: s6 derives-from s5  utilizes next-rand
+        derivation: s7 derives-from s6  utilizes next-rand
+        derivation: s8 derives-from s7  utilizes next-rand
+        derivation: s9 derives-from s8  utilizes next-rand
+        derivation: s10 derives-from s9  utilizes next-rand
+        derivation: s11 derives-from s10 utilizes next-rand
+        derivation: s12 derives-from s11 utilizes next-rand
+        derivation: s13 derives-from s12 utilizes next-rand
+        derivation: s14 derives-from s13 utilizes next-rand
+        derivation: s15 derives-from s14 utilizes next-rand
+        derivation: s16 derives-from s15 utilizes next-rand
+        
+        s1 utilizes Sequence16 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14 s15 s16
+
+-- Benchmark loop with dynamic input
+the behavior called bsort-benchmark
+    takes:
+        an integer called seed
+        an integer called remaining
+        an integer called checksum
+    delivers: an integer
+    as:
+        if remaining matches 0
+            then checksum
+            else
+                derivation: unsorted derives-from seed utilizes build-unsorted
+                derivation: sorted   derives-from unsorted utilizes bsort-hard 15
+                
+                derivation: first    derives-from sorted utilizes v1
+                derivation: next_sum derives-from checksum added-to first
+                
+                derivation: next_seed derives-from seed utilizes next-rand
+                derivation: next_rem  derives-from remaining decreased-by 1
+                next_seed utilizes bsort-benchmark next_rem next_sum
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        -- Verify logic first
+        derivation: initial derives-from 16 utilizes build-unsorted
+        broadcasts "Initial unsorted (first 2): "
+        derivation: v1_init derives-from initial utilizes v1
+        derivation: v2_init derives-from initial utilizes v2
+        broadcasts (v1_init utilizes as-text)
+        broadcasts (v2_init utilizes as-text)
+        
+        broadcasts "\nSorting..."
+        derivation: sorted derives-from initial utilizes bsort-hard 15
+        derivation: f1 derives-from sorted utilizes v1
+        derivation: f16 derives-from sorted utilizes v16
+        broadcasts "Sorted First/Last: "
+        broadcasts (f1 utilizes as-text)
+        broadcasts (f16 utilizes as-text)
+        
+        broadcasts "\nStarting Hard Benchmark (1,000,000 sorts, 225M swaps)...\n"
+        -- Use 7 as initial seed
+        derivation: total_res derives-from 7 utilizes bsort-benchmark 1000000 0
+        
+        derivation: end_msg derives-from "Benchmark Complete. Checksum: " joined-with (total_res utilizes as-text)
+        broadcasts end_msg
+        nothing

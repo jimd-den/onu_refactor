@@ -1,0 +1,206 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: Tiny-GPT (Character Predictor)
+-- Concern: Structural Transformer-inspired sequence generation.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called TinyGptModule
+    with concern: sequence modeling
+
+-- 4-Dimensional Vector for Embeddings and Activations
+the shape called Vector4
+    takes:
+        an integer called a
+        an integer called b
+        an integer called c
+        an integer called d
+
+-- 4x4 Matrix (as 4 rows of Vector4)
+the shape called Matrix4x4
+    takes:
+        a Vector4 called r1
+        a Vector4 called r2
+        a Vector4 called r3
+        a Vector4 called r4
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Mathematical Behaviors
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the behavior called dot-product
+    takes:
+        a Vector4 called left via observation
+        a Vector4 called right via observation
+    delivers: an integer
+    as:
+        derivation: p1 derives-from (left utilizes a) scales-by (right utilizes a)
+        derivation: p2 derives-from (left utilizes b) scales-by (right utilizes b)
+        derivation: p3 derives-from (left utilizes c) scales-by (right utilizes c)
+        derivation: p4 derives-from (left utilizes d) scales-by (right utilizes d)
+        p1 added-to p2 added-to p3 added-to p4
+
+the behavior called mat-vec-mul
+    takes:
+        a Matrix4x4 called mat via observation
+        a Vector4 called vec via observation
+    delivers: a Vector4
+    as:
+        derivation: row1 derives-from mat utilizes r1
+        derivation: row2 derives-from mat utilizes r2
+        derivation: row3 derives-from mat utilizes r3
+        derivation: row4 derives-from mat utilizes r4
+        
+        derivation: o1 derives-from row1 utilizes dot-product vec
+        derivation: o2 derives-from row2 utilizes dot-product vec
+        derivation: o3 derives-from row3 utilizes dot-product vec
+        derivation: o4 derives-from row4 utilizes dot-product vec
+        
+        o1 utilizes Vector4 o2 o3 o4
+
+the behavior called relu
+    takes: an integer called x
+    delivers: an integer
+    as: if x exceeds 0 then x else 0
+
+the behavior called vec-relu
+    takes: a Vector4 called v via observation
+    delivers: a Vector4
+    as:
+        derivation: a1 derives-from (v utilizes a) utilizes relu
+        derivation: b1 derives-from (v utilizes b) utilizes relu
+        derivation: c1 derives-from (v utilizes c) utilizes relu
+        derivation: d1 derives-from (v utilizes d) utilizes relu
+        a1 utilizes Vector4 b1 c1 d1
+
+the behavior called vec-add
+    takes:
+        a Vector4 called v1 via observation
+        a Vector4 called v2 via observation
+    delivers: a Vector4
+    as:
+        derivation: a1 derives-from (v1 utilizes a) added-to (v2 utilizes a)
+        derivation: b1 derives-from (v1 utilizes b) added-to (v2 utilizes b)
+        derivation: c1 derives-from (v1 utilizes c) added-to (v2 utilizes c)
+        derivation: d1 derives-from (v1 utilizes d) added-to (v2 utilizes d)
+        a1 utilizes Vector4 b1 c1 d1
+
+-- Simplified "Softmax": Pick the index of the highest value
+-- Index 0=H, 1=E, 2=L, 3=O
+the behavior called argmax
+    takes: a Vector4 called v via observation
+    delivers: an integer
+    as:
+        derivation: va derives-from v utilizes a
+        derivation: vb derives-from v utilizes b
+        derivation: vc derives-from v utilizes c
+        derivation: vd derives-from v utilizes d
+        
+        derivation: m1 derives-from (if va exceeds vb then va else vb)
+        derivation: m2 derives-from (if vc exceeds vd then vc else vd)
+        derivation: max_val derives-from (if m1 exceeds m2 then m1 else m2)
+        
+        if max_val matches va then 0
+        else if max_val matches vb then 1
+        else if max_val matches vc then 2
+        else 3
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Inference Engine
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Lookup embedding for a character index
+the behavior called get-embedding
+    takes: an integer called idx
+    delivers: a Vector4
+    as:
+        if idx matches 0 then 1 utilizes Vector4 0 0 0 -- 0:H -> [1,0,0,0]
+        else if idx matches 1 then 0 utilizes Vector4 1 0 0 -- 1:E -> [0,1,0,0]
+        else if idx matches 2 then 0 utilizes Vector4 0 1 0 -- 2:L -> [0,0,1,0]
+        else if idx matches 3 then 0 utilizes Vector4 0 0 1 -- 3:O -> [0,0,0,1]
+        else 0 utilizes Vector4 0 0 0 -- Pad
+
+the behavior called char-to-text
+    takes: an integer called idx
+    delivers: a string
+    as:
+        if idx matches 0 then "H"
+        else if idx matches 1 then "E"
+        else if idx matches 2 then "L"
+        else "O"
+
+the behavior called predict-next
+    takes: 
+        an integer called prev_char
+        an integer called curr_char
+        a Matrix4x4 called weights via observation
+    delivers: an integer
+    as:
+        derivation: emb_p derives-from prev_char utilizes get-embedding
+        derivation: emb_c derives-from curr_char utilizes get-embedding
+        
+        -- Summed embedding (Context=2)
+        -- Weight current character more heavily to distinguish transitions
+        derivation: emb_c2 derives-from emb_c utilizes vec-add emb_c
+        derivation: combined derives-from emb_p utilizes vec-add emb_c2
+        
+        derivation: hidden derives-from weights utilizes mat-vec-mul combined
+        derivation: activated derives-from hidden utilizes vec-relu
+        activated utilizes argmax
+
+the behavior called generate
+    takes:
+        an integer called prev_char
+        an integer called curr_char
+        an integer called remaining
+        a Matrix4x4 called weights via observation
+    delivers: nothing
+    as:
+        if remaining matches 0 then nothing
+        else
+            derivation: next_char derives-from prev_char utilizes predict-next curr_char weights
+            derivation: text      derives-from next_char utilizes char-to-text
+            broadcasts text
+            
+            derivation: next_rem derives-from remaining decreased-by 1
+            curr_char utilizes generate next_char next_rem weights
+
+the behavior called benchmark
+    takes:
+        an integer called prev_char
+        an integer called curr_char
+        an integer called remaining
+        a Matrix4x4 called weights via observation
+    delivers: an integer
+    as:
+        if remaining matches 0 then curr_char
+        else
+            derivation: next_char derives-from prev_char utilizes predict-next curr_char weights
+            derivation: next_rem derives-from remaining decreased-by 1
+            curr_char utilizes benchmark next_char next_rem weights
+
+the effect behavior called run
+    takes: nothing
+    delivers: nothing
+    as:
+        -- Target Sequence: H -> E -> L -> L -> O -> H
+        -- Row 0-3 defined and weights built as before...
+        
+        derivation: row_vH derives-from 0 utilizes Vector4 0 0 10
+        derivation: row_vE derives-from 10 utilizes Vector4 0 0 0
+        derivation: row_vL derives-from 0 utilizes Vector4 20 5 0
+        derivation: row_vO derives-from 0 utilizes Vector4 0 10 0
+        derivation: final_weights derives-from row_vH utilizes Matrix4x4 row_vE row_vL row_vO
+        
+        broadcasts "Tiny-GPT (Context=2) Generating: "
+        derivation: start_char derives-from 0  -- 'H'
+        derivation: pad_char   derives-from 99 -- '#'
+        
+        broadcasts "H"
+        pad_char utilizes generate start_char 4 final_weights
+        
+        broadcasts "\nStarting 10,000,000 Step Bigram Benchmark...\n"
+        derivation: final_res derives-from pad_char utilizes benchmark start_char 10000000 final_weights
+        
+        derivation: final_text derives-from final_res utilizes char-to-text
+        derivation: end_msg    derives-from "Benchmark Complete. Final Char: " joined-with final_text
+        broadcasts end_msg
+        nothing

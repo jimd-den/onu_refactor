@@ -1,6 +1,8 @@
 pub mod analysis_service;
+pub mod codegen_profile;
 pub mod inline_pass;
 pub mod lowering_service;
+pub mod memo_pass;
 pub mod mir_builder;
 pub mod mir_lowering;
 pub mod mir_lowering_service;
@@ -9,5 +11,4 @@ pub mod module_service;
 pub mod registry_service;
 pub mod stages;
 pub mod stdlib;
-pub mod memo_pass;
 pub mod tco_pass;
