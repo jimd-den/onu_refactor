@@ -167,7 +167,10 @@ impl TcoPass {
             }
 
             // The block used to Return after the call. Now it loops back.
-            block.terminator = MirTerminator::Branch(loop_head_id);
+            // We jump to original_entry_id (1) rather than loop_head_id (0)
+            // to ensure that if this function is inlined, the INITIAL argument
+            // assignments injected into block 0 by InlinePass are not re-executed.
+            block.terminator = MirTerminator::Branch(original_entry_id);
         }
 
         // Step 4: Build the loop head block.

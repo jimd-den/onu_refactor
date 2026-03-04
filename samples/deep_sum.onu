@@ -1,0 +1,32 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Deep Sum
+-- Concern: Testing the boundaries of infinite recursion.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called ArithmeticBounds
+    with concern: stack depth verification
+
+-- Recursive summation
+-- This should crash C if not optimized, but run forever in Onu.
+the behavior called sum-to
+    with intent: sum all integers down to zero
+    takes:
+        an integer called n
+        an integer called accumulator
+    delivers: an integer
+    as:
+        if n matches 0
+            then accumulator
+            else (n decreased-by 1) utilizes sum-to (accumulator added-to n)
+
+the effect behavior called run
+    with intent: calculate the sum of the first 1 billion integers
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: target derives-from an integer 1000000000
+        derivation: result derives-from target utilizes sum-to 0
+        
+        derivation: msg derives-from "The sum of the first 1B integers is: " joined-with (result utilizes as-text)
+        broadcasts msg
+        nothing
