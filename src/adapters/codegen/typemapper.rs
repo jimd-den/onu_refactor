@@ -1,7 +1,7 @@
-use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::registry_service::RegistryService;
+use crate::domain::entities::types::OnuType;
 use inkwell::context::Context;
-use inkwell::types::{BasicTypeEnum, BasicType};
+use inkwell::types::{BasicType, BasicTypeEnum};
 
 pub struct LlvmTypeMapper;
 
@@ -20,28 +20,55 @@ impl LlvmTypeMapper {
                 let i64t = context.i64_type();
                 let i8ptr = context.i8_type().ptr_type(inkwell::AddressSpace::default());
                 let bool_t = context.bool_type();
-                Some(context.struct_type(
-                    &[i64t.into(), i8ptr.into(), bool_t.into()],
-                    false
-                ).as_basic_type_enum())
+                Some(
+                    context
+                        .struct_type(&[i64t.into(), i8ptr.into(), bool_t.into()], false)
+                        .as_basic_type_enum(),
+                )
             }
             OnuType::Tuple(elements) => {
-                let llvm_elements: Vec<inkwell::types::BasicTypeEnum> = elements.iter()
-                    .map(|t| Self::onu_to_llvm(context, t, registry).unwrap_or(context.i64_type().as_basic_type_enum()))
+                let llvm_elements: Vec<inkwell::types::BasicTypeEnum> = elements
+                    .iter()
+                    .map(|t| {
+                        Self::onu_to_llvm(context, t, registry)
+                            .unwrap_or(context.i64_type().as_basic_type_enum())
+                    })
                     .collect();
-                Some(context.struct_type(&llvm_elements, false).as_basic_type_enum())
+                Some(
+                    context
+                        .struct_type(&llvm_elements, false)
+                        .as_basic_type_enum(),
+                )
             }
             OnuType::Shape(name) => {
                 if let Some(shape_def) = registry.get_shape(name) {
-                    let llvm_elements: Vec<inkwell::types::BasicTypeEnum> = shape_def.fields.iter()
-                        .map(|(_, t)| Self::onu_to_llvm(context, t, registry).unwrap_or(context.i64_type().as_basic_type_enum()))
+                    let llvm_elements: Vec<inkwell::types::BasicTypeEnum> = shape_def
+                        .fields
+                        .iter()
+                        .map(|(_, t)| {
+                            Self::onu_to_llvm(context, t, registry)
+                                .unwrap_or(context.i64_type().as_basic_type_enum())
+                        })
                         .collect();
-                    Some(context.struct_type(&llvm_elements, false).as_basic_type_enum())
+                    Some(
+                        context
+                            .struct_type(&llvm_elements, false)
+                            .as_basic_type_enum(),
+                    )
                 } else {
                     Some(context.i64_type().as_basic_type_enum())
                 }
             }
+            // Raw byte-pointer (internal compiler type, used only in MemoPass-generated code).
+            // A Ptr is an i8* in LLVM — the natural type for a bump-allocator arena cache buffer.
+            OnuType::Ptr => Some(
+                context
+                    .i8_type()
+                    .ptr_type(inkwell::AddressSpace::default())
+                    .as_basic_type_enum(),
+            ),
             OnuType::Nothing => None,
+
             _ => Some(context.i64_type().as_basic_type_enum()),
         }
     }

@@ -42,10 +42,12 @@ fn max_ssa_var(func: &MirFunction) -> usize {
                 MirInstruction::Index { dest, .. } => Some(*dest),
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
+                MirInstruction::Load { dest, .. } => Some(*dest),
                 MirInstruction::Emit(_)
                 | MirInstruction::Drop { .. }
                 | MirInstruction::MemCopy { .. }
-                | MirInstruction::Store { .. } => None,
+                | MirInstruction::Store { .. }
+                | MirInstruction::TypedStore { .. } => None,
             };
             if let Some(d) = dest_opt {
                 if d > max {

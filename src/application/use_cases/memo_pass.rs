@@ -20,15 +20,33 @@ impl MemoPass {
                 new_functions.push(func);
             }
         }
-        MirProgram { functions: new_functions }
+        MirProgram {
+            functions: new_functions,
+        }
     }
 
     fn is_memoizable(func: &MirFunction) -> bool {
-        func.is_pure_data_leaf && func.diminishing.is_some() && func.args.len() == 1 && func.args[0].typ == OnuType::I64
+        let r = func.is_pure_data_leaf
+            && func.diminishing.is_some()
+            && func.args.len() == 1
+            && func.args[0].typ == OnuType::I64;
+        eprintln!(
+            "[MemoPass] fn='{}' pure={} dim={:?} args={} arg0={:?} => {}",
+            func.name,
+            func.is_pure_data_leaf,
+            func.diminishing,
+            func.args.len(),
+            func.args.first().map(|a| &a.typ),
+            r
+        );
+        r
     }
 
     fn create_wrapper_and_inner(mut func: MirFunction) -> (MirFunction, MirFunction) {
-        eprintln!("[MemoPass] Memoizing pure recursive function '{}'", func.name);
+        eprintln!(
+            "[MemoPass] Memoizing pure recursive function '{}'",
+            func.name
+        );
 
         let cache_size = DEFAULT_MEMO_CACHE_SIZE;
 
@@ -41,8 +59,10 @@ impl MemoPass {
         let mut next_block_id = func.blocks.iter().map(|b| b.id).max().unwrap_or(0) + 1;
 
         // 1. Build Wrapper Function
-        let cache_ptr_ssa = next_ssa; next_ssa += 1;
-        let size_bytes_ssa = next_ssa; next_ssa += 1;
+        let cache_ptr_ssa = next_ssa;
+        next_ssa += 1;
+        let size_bytes_ssa = next_ssa;
+        next_ssa += 1;
 
         let mut entry_instructions = vec![
             MirInstruction::Assign {
@@ -55,16 +75,25 @@ impl MemoPass {
             },
         ];
 
-        let loop_cond_ssa = next_ssa; next_ssa += 1;
-        let loop_idx_ssa = next_ssa; next_ssa += 1;
-        let loop_idx_next_ssa = next_ssa; next_ssa += 1;
-        let loop_ptr_offset_ssa = next_ssa; next_ssa += 1;
-        let sentinel_val_ssa = next_ssa; next_ssa += 1;
-        let max_idx_ssa = next_ssa; next_ssa += 1;
+        let loop_cond_ssa = next_ssa;
+        next_ssa += 1;
+        let loop_idx_ssa = next_ssa;
+        next_ssa += 1;
+        let loop_idx_next_ssa = next_ssa;
+        next_ssa += 1;
+        let loop_ptr_offset_ssa = next_ssa;
+        next_ssa += 1;
+        let sentinel_val_ssa = next_ssa;
+        next_ssa += 1;
+        let max_idx_ssa = next_ssa;
+        next_ssa += 1;
 
-        let init_loop_head_id = next_block_id; next_block_id += 1;
-        let init_loop_body_id = next_block_id; next_block_id += 1;
-        let call_inner_id = next_block_id; next_block_id += 1;
+        let init_loop_head_id = next_block_id;
+        next_block_id += 1;
+        let init_loop_body_id = next_block_id;
+        next_block_id += 1;
+        let call_inner_id = next_block_id;
+        next_block_id += 1;
 
         entry_instructions.push(MirInstruction::Assign {
             dest: loop_idx_ssa,
@@ -87,14 +116,12 @@ impl MemoPass {
 
         let init_loop_head = BasicBlock {
             id: init_loop_head_id,
-            instructions: vec![
-                MirInstruction::BinaryOperation {
-                    dest: loop_cond_ssa,
-                    op: MirBinOp::Lt,
-                    lhs: MirOperand::Variable(loop_idx_ssa, false),
-                    rhs: MirOperand::Variable(max_idx_ssa, false),
-                }
-            ],
+            instructions: vec![MirInstruction::BinaryOperation {
+                dest: loop_cond_ssa,
+                op: MirBinOp::Lt,
+                lhs: MirOperand::Variable(loop_idx_ssa, false),
+                rhs: MirOperand::Variable(max_idx_ssa, false),
+            }],
             terminator: MirTerminator::CondBranch {
                 condition: MirOperand::Variable(loop_cond_ssa, false),
                 then_block: init_loop_body_id,
@@ -123,12 +150,13 @@ impl MemoPass {
                 MirInstruction::Assign {
                     dest: loop_idx_ssa,
                     src: MirOperand::Variable(loop_idx_next_ssa, false),
-                }
+                },
             ],
             terminator: MirTerminator::Branch(init_loop_head_id),
         };
 
-        let result_ssa = next_ssa; next_ssa += 1;
+        let result_ssa = next_ssa;
+        next_ssa += 1;
 
         let call_inner_block = BasicBlock {
             id: call_inner_id,
@@ -141,7 +169,7 @@ impl MemoPass {
                         MirOperand::Variable(cache_ptr_ssa, false),
                     ],
                     return_type: OnuType::I64,
-                    arg_types: vec![OnuType::I64, OnuType::Nothing], // cache is pointer
+                    arg_types: vec![OnuType::I64, OnuType::Ptr], // cache is i8* pointer
                     is_tail_call: false,
                 },
                 // Drop the allocated cache manually if we use a bump allocator or malloc
@@ -149,10 +177,10 @@ impl MemoPass {
                 // if the alloc creates a heap pointer
                 MirInstruction::Drop {
                     ssa_var: cache_ptr_ssa,
-                    typ: OnuType::Nothing,
+                    typ: OnuType::Ptr, // The Drop type for the cache allocation tracker
                     name: "memo_cache".to_string(),
                     is_dynamic: true,
-                }
+                },
             ],
             terminator: MirTerminator::Return(MirOperand::Variable(result_ssa, false)),
         };
@@ -161,18 +189,27 @@ impl MemoPass {
             name: original_name.clone(),
             args: func.args.clone(),
             return_type: func.return_type.clone(),
-            blocks: vec![wrapper_entry_block, init_loop_head, init_loop_body, call_inner_block],
-            is_pure_data_leaf: true,
+            blocks: vec![
+                wrapper_entry_block,
+                init_loop_head,
+                init_loop_body,
+                call_inner_block,
+            ],
+            is_pure_data_leaf: false, // Wrapper calls Alloc — it touches memory, so NOT pure.
+
             diminishing: func.diminishing.clone(),
         };
 
         // 2. Build Inner Function
-        let inner_cache_ptr_ssa = next_ssa; next_ssa += 1;
-        inner_func.args.push(crate::domain::entities::mir::MirArgument {
-            name: "cache_ptr".to_string(),
-            typ: OnuType::Nothing, // representing pointer
-            ssa_var: inner_cache_ptr_ssa,
-        });
+        let inner_cache_ptr_ssa = next_ssa;
+        next_ssa += 1;
+        inner_func
+            .args
+            .push(crate::domain::entities::mir::MirArgument {
+                name: "cache_ptr".to_string(),
+                typ: OnuType::Ptr, // i8* pointer to the memoization cache buffer
+                ssa_var: inner_cache_ptr_ssa,
+            });
 
         let mut rewritten_blocks = vec![];
         for block in inner_func.blocks {
@@ -202,23 +239,43 @@ impl MemoPass {
 
                 let call_inst = block.instructions[call_idx].clone();
                 let (dest, args, is_tail_call) = match &call_inst {
-                    MirInstruction::Call { dest, args, is_tail_call, .. } => (*dest, args.clone(), *is_tail_call),
+                    MirInstruction::Call {
+                        dest,
+                        args,
+                        is_tail_call,
+                        ..
+                    } => (*dest, args.clone(), *is_tail_call),
                     _ => unreachable!(),
                 };
 
                 let arg_op = args[0].clone();
 
-                let bounds_check_upper_ssa = next_ssa; next_ssa += 1;
-                let bounds_check_lower_ssa = next_ssa; next_ssa += 1;
-                let offset_ssa = next_ssa; next_ssa += 1;
-                let cached_val_ssa = next_ssa; next_ssa += 1;
-                let hit_cond_ssa = next_ssa; next_ssa += 1;
+                let bounds_check_upper_ssa = next_ssa;
+                next_ssa += 1;
+                let bounds_check_lower_ssa = next_ssa;
+                next_ssa += 1;
+                // Bug 1 fix: i64 cache slots are 8 bytes each.
+                // We must multiply the logical index by 8 to get the correct byte offset
+                // before calling PointerOffset. Without scaling, slot N lands at byte N
+                // (inside slot 0 for small N), corrupting every read and write.
+                let byte_offset_ssa = next_ssa;
+                next_ssa += 1;
+                let offset_ssa = next_ssa;
+                next_ssa += 1;
+                let cached_val_ssa = next_ssa;
+                next_ssa += 1;
+                let hit_cond_ssa = next_ssa;
+                next_ssa += 1;
 
                 let check_block_id = current_block_id;
-                let fetch_block_id = next_block_id; next_block_id += 1;
-                let miss_block_id = next_block_id; next_block_id += 1;
-                let store_block_id = next_block_id; next_block_id += 1;
-                let cont_block_id = next_block_id; next_block_id += 1;
+                let fetch_block_id = next_block_id;
+                next_block_id += 1;
+                let miss_block_id = next_block_id;
+                next_block_id += 1;
+                let store_block_id = next_block_id;
+                next_block_id += 1;
+                let cont_block_id = next_block_id;
+                next_block_id += 1;
 
                 // Bounds Check: arg < cache_size AND arg >= 0
                 current_instructions.push(MirInstruction::BinaryOperation {
@@ -229,7 +286,8 @@ impl MemoPass {
                 });
 
                 // First check upper:
-                let lower_check_block_id = next_block_id; next_block_id += 1;
+                let lower_check_block_id = next_block_id;
+                next_block_id += 1;
 
                 rewritten_blocks.push(BasicBlock {
                     id: check_block_id,
@@ -242,6 +300,8 @@ impl MemoPass {
                 });
 
                 // Lower bound check (arg >= 0 -> !(arg < 0))
+                // We also compute the byte-scaled offset here (logical_index * 8) so it
+                // is available to both the fetch block and the store block below.
                 let lower_check_instructions = vec![
                     MirInstruction::BinaryOperation {
                         dest: bounds_check_lower_ssa,
@@ -249,39 +309,45 @@ impl MemoPass {
                         lhs: arg_op.clone(),
                         rhs: MirOperand::Constant(MirLiteral::I64(0)),
                     },
+                    // Scaling: convert logical slot index → byte offset for i64 cache
+                    MirInstruction::BinaryOperation {
+                        dest: byte_offset_ssa,
+                        op: MirBinOp::Mul,
+                        lhs: arg_op.clone(),
+                        rhs: MirOperand::Constant(MirLiteral::I64(8)),
+                    },
                 ];
                 rewritten_blocks.push(BasicBlock {
                     id: lower_check_block_id,
                     instructions: lower_check_instructions,
                     terminator: MirTerminator::CondBranch {
                         condition: MirOperand::Variable(bounds_check_lower_ssa, false),
-                        then_block: miss_block_id, // less than 0 -> miss
+                        then_block: miss_block_id,  // less than 0 -> miss
                         else_block: fetch_block_id, // >= 0 -> fetch
-                    }
+                    },
                 });
 
                 let fetch_instructions = vec![
                     MirInstruction::PointerOffset {
                         dest: offset_ssa,
                         ptr: MirOperand::Variable(inner_cache_ptr_ssa, false),
-                        offset: arg_op.clone(),
+                        // Use the scaled byte offset to address the correct i64 slot.
+                        offset: MirOperand::Variable(byte_offset_ssa, false),
                     },
-                    // Since MIR has no `Load` instruction, `Index` instruction supports
-                    // memory reads when given a pointer, but its argument must be an integer index.
-                    // Wait, `cbench_collatz.c` translation uses `Index`? No, Codegen reads pointer values with a `Load`.
-                    // Actually, let's use `Index` correctly. The subject is pointer, index is the integer offset.
-                    // Wait, if it is a pointer `offset_ssa`, we just read offset 0!
-                    MirInstruction::Index {
+                    // Load the i64 value stored at the cache slot.
+                    // The arena is an i8 byte array, so the pointer (offset_ssa) is i8*.
+                    // MirInstruction::Load performs the required bitcast to i64* before reading.
+                    MirInstruction::Load {
                         dest: cached_val_ssa,
-                        subject: MirOperand::Variable(offset_ssa, false),
-                        index: 0,
+                        ptr: MirOperand::Variable(offset_ssa, false),
+                        typ: OnuType::I64,
                     },
                     MirInstruction::BinaryOperation {
                         dest: hit_cond_ssa,
                         op: MirBinOp::Ne,
                         lhs: MirOperand::Variable(cached_val_ssa, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(-1)),
-                    }
+                    },
                 ];
 
                 rewritten_blocks.push(BasicBlock {
@@ -297,50 +363,53 @@ impl MemoPass {
                 let mut new_args = args.clone();
                 new_args.push(MirOperand::Variable(inner_cache_ptr_ssa, false));
 
-                let miss_instructions = vec![
-                    MirInstruction::Call {
-                        dest,
-                        name: inner_func.name.clone(),
-                        args: new_args,
-                        return_type: OnuType::I64,
-                        arg_types: vec![OnuType::I64, OnuType::Nothing],
-                        is_tail_call,
-                    }
-                ];
+                let miss_instructions = vec![MirInstruction::Call {
+                    dest,
+                    name: inner_func.name.clone(),
+                    args: new_args,
+                    return_type: OnuType::I64,
+                    arg_types: vec![OnuType::I64, OnuType::Ptr],
+                    is_tail_call,
+                }];
                 rewritten_blocks.push(BasicBlock {
                     id: miss_block_id,
                     instructions: miss_instructions,
                     terminator: MirTerminator::Branch(store_block_id),
                 });
 
-                let safe_offset_ssa = next_ssa; next_ssa += 1;
+                let safe_offset_ssa = next_ssa;
+                next_ssa += 1;
                 let safe_store_instructions = vec![
                     MirInstruction::PointerOffset {
                         dest: safe_offset_ssa,
                         ptr: MirOperand::Variable(inner_cache_ptr_ssa, false),
-                        offset: arg_op.clone(),
+                        // Use the same byte-scaled offset for storing the computed result.
+                        offset: MirOperand::Variable(byte_offset_ssa, false),
                     },
-                    MirInstruction::Store {
+                    // TypedStore: bitcasts the i8* (safe_offset_ssa) to i64* before writing.
+                    // The plain Store instruction truncates i64 to i8 when the pointer is i8*.
+                    // That was the bug: the fib result was stored as 1 byte, losing 7 bytes.
+                    MirInstruction::TypedStore {
                         ptr: MirOperand::Variable(safe_offset_ssa, false),
                         value: MirOperand::Variable(dest, false),
-                    }
+                        typ: OnuType::I64,
+                    },
                 ];
 
-                let miss_bounds_block_id = next_block_id; next_block_id += 1;
+                let miss_bounds_block_id = next_block_id;
+                next_block_id += 1;
                 let mut miss_bounds_args = args.clone();
                 miss_bounds_args.push(MirOperand::Variable(inner_cache_ptr_ssa, false));
                 rewritten_blocks.push(BasicBlock {
                     id: miss_bounds_block_id,
-                    instructions: vec![
-                        MirInstruction::Call {
-                            dest,
-                            name: inner_func.name.clone(),
-                            args: miss_bounds_args,
-                            return_type: OnuType::I64,
-                            arg_types: vec![OnuType::I64, OnuType::Nothing],
-                            is_tail_call,
-                        }
-                    ],
+                    instructions: vec![MirInstruction::Call {
+                        dest,
+                        name: inner_func.name.clone(),
+                        args: miss_bounds_args,
+                        return_type: OnuType::I64,
+                        arg_types: vec![OnuType::I64, OnuType::Ptr],
+                        is_tail_call,
+                    }],
                     terminator: MirTerminator::Branch(cont_block_id), // Skip store
                 });
 
@@ -368,15 +437,14 @@ impl MemoPass {
                     terminator: MirTerminator::Branch(cont_block_id),
                 });
 
-                let hit_block_id = next_block_id; next_block_id += 1;
+                let hit_block_id = next_block_id;
+                next_block_id += 1;
                 let hit_block = BasicBlock {
                     id: hit_block_id,
-                    instructions: vec![
-                        MirInstruction::Assign {
-                            dest: dest,
-                            src: MirOperand::Variable(cached_val_ssa, false),
-                        }
-                    ],
+                    instructions: vec![MirInstruction::Assign {
+                        dest: dest,
+                        src: MirOperand::Variable(cached_val_ssa, false),
+                    }],
                     terminator: MirTerminator::Branch(cont_block_id),
                 };
 

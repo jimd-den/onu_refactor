@@ -54,7 +54,7 @@ the effect behavior called run
     takes: nothing
     delivers: an integer
     as:
-        derivation: target derives-from an integer 40
+        derivation: target derives-from an integer 92
         derivation: result derives-from target utilizes calculate-growth
         
         derivation: msg derives-from "The population at generation " joined-with (target utilizes as-text)
