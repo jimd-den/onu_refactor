@@ -7,8 +7,8 @@ use crate::domain::entities::types::OnuType;
 
 // --- LAYER 1: INFRASTRUCTURE (The Builder) ---
 struct MirBuilder {
-    next_ssa: usize,      // Changed from u32 to usize
-    next_block_id: usize, // Changed from u32 to usize
+    next_ssa: usize,
+    next_block_id: usize,
 }
 
 impl MirBuilder {
@@ -121,6 +121,7 @@ impl MemoStrategy for PrimitiveMemoStrategy {
             &mut builder,
             inner_cache_ptr_ssa,
             &original_name,
+            cache_size,
         );
 
         (wrapper_func, inner_func)
@@ -263,6 +264,7 @@ impl PrimitiveMemoStrategy {
         builder: &mut MirBuilder,
         cache_ptr: usize,
         orig_name: &str,
+        cache_size: usize,
     ) -> Vec<BasicBlock> {
         let mut rewritten = vec![];
         let mut accessor = CacheAccessor {
@@ -277,39 +279,81 @@ impl PrimitiveMemoStrategy {
             for inst in block.instructions {
                 match inst {
                     MirInstruction::Call {
-                        name,
+                        ref name,
                         dest,
-                        args,
+                        ref args,
                         is_tail_call,
-                        return_type,
-                        arg_types,
+                        ref return_type,
+                        ref arg_types,
                     } if name == orig_name => {
-                        let hit_id = accessor.builder.alloc_block();
+                        let upper_check_id = accessor.builder.alloc_block();
+                        let fetch_id = accessor.builder.alloc_block();
                         let miss_id = accessor.builder.alloc_block();
+                        let hit_id = accessor.builder.alloc_block();
+                        let store_id = accessor.builder.alloc_block();
                         let cont_id = accessor.builder.alloc_block();
-                        let cond_ssa = accessor.builder.alloc_ssa();
 
-                        let offset =
-                            accessor.compute_byte_offset(&mut current_insts, args[0].clone());
-                        let val = accessor.emit_load(&mut current_insts, offset);
-
+                        // 1. Lower Bound Check (arg >= 0)
+                        let l_check = accessor.builder.alloc_ssa();
                         current_insts.push(MirInstruction::BinaryOperation {
-                            dest: cond_ssa,
-                            op: MirBinOp::Ne,
-                            lhs: MirOperand::Variable(val, false),
-                            rhs: MirOperand::Constant(MirLiteral::I64(-1)),
+                            dest: l_check,
+                            op: MirBinOp::Lt,
+                            lhs: args[0].clone(),
+                            rhs: MirOperand::Constant(MirLiteral::I64(0)),
                         });
 
                         rewritten.push(BasicBlock {
                             id: current_block_id,
                             instructions: current_insts.drain(..).collect(),
                             terminator: MirTerminator::CondBranch {
-                                condition: MirOperand::Variable(cond_ssa, false),
+                                condition: MirOperand::Variable(l_check, false),
+                                then_block: miss_id,
+                                else_block: upper_check_id,
+                            },
+                        });
+
+                        // 2. Upper Bound Check (arg < cache_size)
+                        let u_check = accessor.builder.alloc_ssa();
+                        rewritten.push(BasicBlock {
+                            id: upper_check_id,
+                            instructions: vec![MirInstruction::BinaryOperation {
+                                dest: u_check,
+                                op: MirBinOp::Lt,
+                                lhs: args[0].clone(),
+                                rhs: MirOperand::Constant(MirLiteral::I64(cache_size as i64)),
+                            }],
+                            terminator: MirTerminator::CondBranch {
+                                condition: MirOperand::Variable(u_check, false),
+                                then_block: fetch_id,
+                                else_block: miss_id,
+                            },
+                        });
+
+                        // 3. FETCH BLOCK
+                        let mut fetch_insts = vec![];
+                        let offset =
+                            accessor.compute_byte_offset(&mut fetch_insts, args[0].clone());
+                        let val = accessor.emit_load(&mut fetch_insts, offset);
+
+                        let hit_cond = accessor.builder.alloc_ssa();
+                        fetch_insts.push(MirInstruction::BinaryOperation {
+                            dest: hit_cond,
+                            op: MirBinOp::Ne,
+                            lhs: MirOperand::Variable(val, false),
+                            rhs: MirOperand::Constant(MirLiteral::I64(-1)),
+                        });
+
+                        rewritten.push(BasicBlock {
+                            id: fetch_id,
+                            instructions: fetch_insts,
+                            terminator: MirTerminator::CondBranch {
+                                condition: MirOperand::Variable(hit_cond, false),
                                 then_block: hit_id,
                                 else_block: miss_id,
                             },
                         });
 
+                        // 4. HIT BLOCK
                         rewritten.push(BasicBlock {
                             id: hit_id,
                             instructions: vec![MirInstruction::Assign {
@@ -319,25 +363,41 @@ impl PrimitiveMemoStrategy {
                             terminator: MirTerminator::Branch(cont_id),
                         });
 
-                        let mut miss_insts = vec![MirInstruction::Call {
-                            name: format!("{}.inner", name),
-                            dest,
-                            args: vec![args[0].clone(), MirOperand::Variable(cache_ptr, false)],
-                            is_tail_call,
-                            return_type,
-                            arg_types,
-                        }];
-                        accessor.emit_safe_store(&mut miss_insts, offset, dest);
+                        // 5. MISS BLOCK - Fix: Update arg_types to include Ptr for the cache pointer
+                        let mut new_arg_types = arg_types.clone();
+                        new_arg_types.push(OnuType::Ptr);
+
+                        let mut new_args = args.clone();
+                        new_args.push(MirOperand::Variable(cache_ptr, false));
 
                         rewritten.push(BasicBlock {
                             id: miss_id,
-                            instructions: miss_insts,
+                            instructions: vec![MirInstruction::Call {
+                                name: format!("{}.inner", orig_name),
+                                dest,
+                                args: new_args,
+                                is_tail_call,
+                                return_type: return_type.clone(),
+                                arg_types: new_arg_types,
+                            }],
+                            terminator: MirTerminator::Branch(store_id),
+                        });
+
+                        // 6. STORE BLOCK
+                        let mut store_insts = vec![];
+                        let store_offset =
+                            accessor.compute_byte_offset(&mut store_insts, args[0].clone());
+                        accessor.emit_safe_store(&mut store_insts, store_offset, dest);
+
+                        rewritten.push(BasicBlock {
+                            id: store_id,
+                            instructions: store_insts,
                             terminator: MirTerminator::Branch(cont_id),
                         });
 
                         current_block_id = cont_id;
                     }
-                    _ => current_insts.push(inst),
+                    inst => current_insts.push(inst),
                 }
             }
             rewritten.push(BasicBlock {

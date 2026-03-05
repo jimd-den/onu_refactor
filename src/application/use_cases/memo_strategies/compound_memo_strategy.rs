@@ -5,7 +5,7 @@ use crate::domain::entities::mir::{
 };
 use crate::domain::entities::types::OnuType;
 
-// --- LAYER 1: INFRASTRUCTURE (Managed MIR Builder) ---
+// --- LAYER 1: INFRASTRUCTURE ---
 struct MirBuilder {
     next_ssa: usize,
     next_block_id: usize,
@@ -32,24 +32,23 @@ impl MirBuilder {
     }
 }
 
-// --- LAYER 2: DOMAIN LOGIC (Type-Aware Cache Provider) ---
+// --- LAYER 2: DOMAIN LOGIC (Security & Layout) ---
 struct CacheProvider<'a> {
     builder: &'a mut MirBuilder,
     cache_ptr_ssa: usize,
     ret_type: OnuType,
+    cache_size: usize,
 }
 
 impl<'a> CacheProvider<'a> {
-    /// Determines the stride (byte size) for the specific return type.
     fn get_stride(&self) -> i64 {
         match self.ret_type {
             OnuType::I64 | OnuType::Ptr => 8,
             OnuType::I32 | OnuType::F32 => 4,
-            _ => 8, // Defaulting to 8 for safety with compound types
+            _ => 8,
         }
     }
 
-    /// Calculates the byte offset based on the type's stride.
     fn compute_offset(
         &mut self,
         insts: &mut Vec<MirInstruction>,
@@ -64,41 +63,9 @@ impl<'a> CacheProvider<'a> {
         });
         offset_ssa
     }
-
-    /// Emits a robust load. If it's a primitive, we can check a sentinel.
-    fn emit_load(&mut self, insts: &mut Vec<MirInstruction>, offset: usize) -> usize {
-        let ptr_ssa = self.builder.alloc_ssa();
-        let val_ssa = self.builder.alloc_ssa();
-        insts.push(MirInstruction::PointerOffset {
-            dest: ptr_ssa,
-            ptr: MirOperand::Variable(self.cache_ptr_ssa, false),
-            offset: MirOperand::Variable(offset, false),
-        });
-        insts.push(MirInstruction::Load {
-            dest: val_ssa,
-            ptr: MirOperand::Variable(ptr_ssa, false),
-            typ: self.ret_type.clone(),
-        });
-        val_ssa
-    }
-
-    /// Emits a robust TypedStore to prevent truncation[cite: 80].
-    fn emit_store(&mut self, insts: &mut Vec<MirInstruction>, offset: usize, value_ssa: usize) {
-        let ptr_ssa = self.builder.alloc_ssa();
-        insts.push(MirInstruction::PointerOffset {
-            dest: ptr_ssa,
-            ptr: MirOperand::Variable(self.cache_ptr_ssa, false),
-            offset: MirOperand::Variable(offset, false),
-        });
-        insts.push(MirInstruction::TypedStore {
-            ptr: MirOperand::Variable(ptr_ssa, false),
-            value: MirOperand::Variable(value_ssa, false),
-            typ: self.ret_type.clone(),
-        });
-    }
 }
 
-// --- LAYER 3: APPLICATION (The Compound Strategy) ---
+// --- LAYER 3: THE FULL STRATEGY ---
 pub struct CompoundMemoStrategy;
 
 impl MemoStrategy for CompoundMemoStrategy {
@@ -111,14 +78,11 @@ impl MemoStrategy for CompoundMemoStrategy {
         let orig_name = func.name.clone();
         let ret_type = func.return_type.clone();
 
-        // 1. Generate Wrapper (Handles Allocation and Cleanup)
         let (wrapper, _) = self.build_wrapper(&func, &mut builder, cache_size, &ret_type);
 
-        // 2. Generate Inner (Rewrites recursion to use the provider)
         let mut inner = func.clone();
         inner.name = format!("{}.inner", orig_name);
         let cache_arg_ssa = builder.alloc_ssa();
-
         inner.args.push(MirArgument {
             name: "cache_ptr".to_string(),
             typ: OnuType::Ptr,
@@ -131,6 +95,7 @@ impl MemoStrategy for CompoundMemoStrategy {
             cache_arg_ssa,
             &orig_name,
             ret_type,
+            cache_size,
         );
 
         (wrapper, inner)
@@ -146,22 +111,19 @@ impl CompoundMemoStrategy {
         typ: &OnuType,
     ) -> (MirFunction, usize) {
         let cache_ptr = builder.alloc_ssa();
-
-        // Use the provider to get the correct stride for this type
-        let provider = CacheProvider {
-            builder,
-            cache_ptr_ssa: cache_ptr,
-            ret_type: typ.clone(),
-        };
-        let stride = provider.get_stride();
-
-        let total_bytes = (size as i64) * stride;
         let size_ssa = builder.alloc_ssa();
         let loop_idx = builder.alloc_ssa();
 
         let head_id = builder.alloc_block();
         let body_id = builder.alloc_block();
         let call_id = builder.alloc_block();
+
+        let stride = match typ {
+            OnuType::I64 | OnuType::Ptr => 8,
+            OnuType::I32 | OnuType::F32 => 4,
+            _ => 8,
+        };
+        let total_bytes = (size as i64) * stride;
 
         // 1. Entry Block
         let entry_insts = vec![
@@ -282,15 +244,17 @@ impl CompoundMemoStrategy {
         &self,
         blocks: Vec<BasicBlock>,
         builder: &mut MirBuilder,
-        cache_ptr: usize,
+        _cache_ptr: usize, // Renamed to _cache_ptr as it's now accessed via provider
         orig_name: &str,
         ret_type: OnuType,
+        _cache_size: usize, // Renamed to _cache_size as it's now accessed via provider
     ) -> Vec<BasicBlock> {
         let mut rewritten = vec![];
         let mut provider = CacheProvider {
             builder,
-            cache_ptr_ssa: cache_ptr,
+            cache_ptr_ssa: _cache_ptr,
             ret_type,
+            cache_size: _cache_size,
         };
 
         for block in blocks {
@@ -298,61 +262,149 @@ impl CompoundMemoStrategy {
             let mut curr_id = block.id;
 
             for inst in block.instructions {
-                if let MirInstruction::Call {
-                    name, dest, args, ..
-                } = &inst
-                {
-                    if name == orig_name {
-                        let hit_id = provider.builder.alloc_block();
+                match inst {
+                    MirInstruction::Call {
+                        ref name,
+                        dest,
+                        ref args,
+                        is_tail_call,
+                        ref return_type,
+                        ref arg_types,
+                    } if name == orig_name => {
+                        let upper_check_id = provider.builder.alloc_block();
+                        let fetch_id = provider.builder.alloc_block();
                         let miss_id = provider.builder.alloc_block();
+                        let hit_id = provider.builder.alloc_block();
+                        let store_id = provider.builder.alloc_block();
                         let cont_id = provider.builder.alloc_block();
-                        let cond = provider.builder.alloc_ssa();
 
-                        // Access logic: Scaling  and Loading [cite: 67]
-                        let offset = provider.compute_offset(&mut insts, args[0].clone());
-                        let val = provider.emit_load(&mut insts, offset);
-
+                        // 1. Lower Bound Check (arg >= 0)
+                        let l_check = provider.builder.alloc_ssa();
                         insts.push(MirInstruction::BinaryOperation {
-                            dest: cond,
-                            op: MirBinOp::Ne,
-                            lhs: MirOperand::Variable(val, false),
-                            rhs: MirOperand::Constant(MirLiteral::I64(-1)),
+                            dest: l_check,
+                            op: MirBinOp::Lt,
+                            lhs: args[0].clone(),
+                            rhs: MirOperand::Constant(MirLiteral::I64(0)),
                         });
 
                         rewritten.push(BasicBlock {
                             id: curr_id,
                             instructions: insts.drain(..).collect(),
                             terminator: MirTerminator::CondBranch {
-                                condition: MirOperand::Variable(cond, false),
+                                condition: MirOperand::Variable(l_check, false),
+                                then_block: miss_id,
+                                else_block: upper_check_id,
+                            },
+                        });
+
+                        // 2. Upper Bound Check (arg < cache_size)
+                        let u_check = provider.builder.alloc_ssa();
+                        rewritten.push(BasicBlock {
+                            id: upper_check_id,
+                            instructions: vec![MirInstruction::BinaryOperation {
+                                dest: u_check,
+                                op: MirBinOp::Lt,
+                                lhs: args[0].clone(),
+                                rhs: MirOperand::Constant(MirLiteral::I64(
+                                    provider.cache_size as i64,
+                                )),
+                            }],
+                            terminator: MirTerminator::CondBranch {
+                                condition: MirOperand::Variable(u_check, false),
+                                then_block: fetch_id,
+                                else_block: miss_id,
+                            },
+                        });
+
+                        // 3. FETCH BLOCK
+                        let mut fetch_insts = vec![];
+                        let offset = provider.compute_offset(&mut fetch_insts, args[0].clone());
+                        let ptr_ssa = provider.builder.alloc_ssa();
+                        let val_ssa = provider.builder.alloc_ssa();
+                        fetch_insts.push(MirInstruction::PointerOffset {
+                            dest: ptr_ssa,
+                            ptr: MirOperand::Variable(provider.cache_ptr_ssa, false),
+                            offset: MirOperand::Variable(offset, false),
+                        });
+                        fetch_insts.push(MirInstruction::Load {
+                            dest: val_ssa,
+                            ptr: MirOperand::Variable(ptr_ssa, false),
+                            typ: provider.ret_type.clone(),
+                        });
+
+                        let hit_cond = provider.builder.alloc_ssa();
+                        fetch_insts.push(MirInstruction::BinaryOperation {
+                            dest: hit_cond,
+                            op: MirBinOp::Ne,
+                            lhs: MirOperand::Variable(val_ssa, false),
+                            rhs: MirOperand::Constant(MirLiteral::I64(-1)),
+                        });
+
+                        rewritten.push(BasicBlock {
+                            id: fetch_id,
+                            instructions: fetch_insts,
+                            terminator: MirTerminator::CondBranch {
+                                condition: MirOperand::Variable(hit_cond, false),
                                 then_block: hit_id,
                                 else_block: miss_id,
                             },
                         });
 
-                        // Hit: Return cached [cite: 92]
+                        // 4. HIT BLOCK
                         rewritten.push(BasicBlock {
                             id: hit_id,
                             instructions: vec![MirInstruction::Assign {
-                                dest: *dest,
-                                src: MirOperand::Variable(val, false),
+                                dest,
+                                src: MirOperand::Variable(val_ssa, false),
                             }],
                             terminator: MirTerminator::Branch(cont_id),
                         });
 
-                        // Miss: Call then Safe Store [cite: 73, 80]
-                        let mut miss_insts = vec![inst.clone()];
-                        provider.emit_store(&mut miss_insts, offset, *dest);
+                        // 5. MISS BLOCK (Fix Recursive Target & Signature)
+                        let mut new_arg_types = arg_types.clone();
+                        new_arg_types.push(OnuType::Ptr);
+                        let mut new_args = args.clone();
+                        new_args.push(MirOperand::Variable(provider.cache_ptr_ssa, false));
+
                         rewritten.push(BasicBlock {
                             id: miss_id,
-                            instructions: miss_insts,
+                            instructions: vec![MirInstruction::Call {
+                                name: format!("{}.inner", orig_name),
+                                dest,
+                                args: new_args,
+                                is_tail_call,
+                                return_type: return_type.clone(),
+                                arg_types: new_arg_types,
+                            }],
+                            terminator: MirTerminator::Branch(store_id),
+                        });
+
+                        // 6. STORE BLOCK
+                        let mut store_insts = vec![];
+                        let store_ptr = provider.builder.alloc_ssa();
+                        let store_offset =
+                            provider.compute_offset(&mut store_insts, args[0].clone());
+                        store_insts.push(MirInstruction::PointerOffset {
+                            dest: store_ptr,
+                            ptr: MirOperand::Variable(provider.cache_ptr_ssa, false),
+                            offset: MirOperand::Variable(store_offset, false),
+                        });
+                        store_insts.push(MirInstruction::TypedStore {
+                            ptr: MirOperand::Variable(store_ptr, false),
+                            value: MirOperand::Variable(dest, false),
+                            typ: provider.ret_type.clone(),
+                        });
+
+                        rewritten.push(BasicBlock {
+                            id: store_id,
+                            instructions: store_insts,
                             terminator: MirTerminator::Branch(cont_id),
                         });
 
                         curr_id = cont_id;
-                        continue;
                     }
+                    inst => insts.push(inst),
                 }
-                insts.push(inst);
             }
             rewritten.push(BasicBlock {
                 id: curr_id,
