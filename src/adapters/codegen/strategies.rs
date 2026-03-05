@@ -318,10 +318,60 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
         {
             let llvm_name = name.clone(); // Use original hyphenated names
 
+            // Compute expected LLVM types from the MIR arg_types annotation.
+            // Used below to cast arguments that may have a different width
+            // (e.g. an I64 constant passed to a WideInt parameter).
+            let expected_llvm_types: Vec<Option<inkwell::types::BasicTypeEnum<'ctx>>> = arg_types
+                .iter()
+                .map(|t| {
+                    crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                        context, t, registry,
+                    )
+                })
+                .collect();
+
             let mut llvm_args = Vec::new();
-            for arg in args {
+            for (i, arg) in args.iter().enumerate() {
                 let val = operand_to_llvm(context, builder, ssa_storage, arg);
-                llvm_args.push(val.into());
+                // Width-cast integer arguments to the expected parameter type so
+                // that e.g. an i64 constant passed to __onu_wide_div_1024(i1024,i1024)
+                // is zero-extended to i1024 rather than causing an LLVM type error.
+                let cast_val = if val.is_int_value() {
+                    if let Some(Some(expected)) = expected_llvm_types.get(i) {
+                        if expected.is_int_type() {
+                            let src_w = val.into_int_value().get_type().get_bit_width();
+                            let dst_w = expected.into_int_type().get_bit_width();
+                            if src_w < dst_w {
+                                builder
+                                    .build_int_z_extend(
+                                        val.into_int_value(),
+                                        expected.into_int_type(),
+                                        "call_arg_zext",
+                                    )
+                                    .unwrap()
+                                    .into()
+                            } else if src_w > dst_w {
+                                builder
+                                    .build_int_truncate(
+                                        val.into_int_value(),
+                                        expected.into_int_type(),
+                                        "call_arg_trunc",
+                                    )
+                                    .unwrap()
+                                    .into()
+                            } else {
+                                val
+                            }
+                        } else {
+                            val
+                        }
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                };
+                llvm_args.push(cast_val.into());
             }
 
             let func = if let Some(f) = module.get_function(&llvm_name) {
@@ -738,7 +788,7 @@ impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -747,11 +797,9 @@ impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
 
             // Cast the raw i8* to the target element pointer type.
             // For i64 values: i8* → i64* so that build_load reads 8 bytes.
-            let dest_llvm_type = match typ {
-                OnuType::I64 => context.i64_type().as_basic_type_enum(),
-                OnuType::Boolean => context.bool_type().as_basic_type_enum(),
-                _ => context.i64_type().as_basic_type_enum(), // Fallback
-            };
+            // For WideInt(N): i8* → iN* so that build_load reads N/8 bytes.
+            let dest_llvm_type = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, typ, registry)
+                .unwrap_or_else(|| context.i64_type().as_basic_type_enum());
             let typed_ptr = builder
                 .build_pointer_cast(
                     ptr_val,
@@ -820,7 +868,7 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -829,11 +877,12 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
             let val = operand_to_llvm(context, builder, ssa_storage, value);
 
             // Cast the i8* to the element pointer type matching the value width.
-            let dest_llvm_type = match typ {
-                OnuType::I64 => context.i64_type().as_basic_type_enum(),
-                OnuType::Boolean => context.bool_type().as_basic_type_enum(),
-                _ => context.i64_type().as_basic_type_enum(),
-            };
+            // WideInt(N) → iN* so that all N/8 bytes are written.
+            let dest_llvm_type =
+                crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                    context, typ, registry,
+                )
+                .unwrap_or_else(|| context.i64_type().as_basic_type_enum());
             let typed_ptr = builder
                 .build_pointer_cast(
                     ptr_val,

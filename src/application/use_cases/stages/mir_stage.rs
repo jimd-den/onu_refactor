@@ -1,6 +1,7 @@
 use super::PipelineStage;
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::use_cases::inline_pass::InlinePass;
+use crate::application::use_cases::integer_upgrade_pass::IntegerUpgradePass;
 use crate::application::use_cases::memo_pass::MemoPass;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::registry_service::RegistryService;
@@ -40,6 +41,12 @@ impl<'a, E: EnvironmentPort> PipelineStage for MirStage<'a, E> {
         let mir_program = InlinePass::run(mir_program);
         // Stage 4: Run TcoPass again to catch any new self-tail-calls that emerged.
         let mir_program = TcoPass::run(mir_program);
+        // Stage 4.5: Automatically promote doubly-recursive pure functions from I64
+        // to WideInt(bits) when call-site literals imply overflow.  This gives the
+        // correct full-precision answer (e.g. fib(1000) as a 209-digit integer)
+        // using native LLVM wide integers — no external BigInt library required.
+        // MemoPass (Stage 5) will then memoize the widened function for O(n) time.
+        let mir_program = IntegerUpgradePass::run(mir_program);
         // Stage 5: Memoization for recursive algorithms based on diminishing hints.
         let mir_program = MemoPass::run(mir_program, self.registry);
         // Stage 6: Operation Legalization — replace any WideInt (> 128-bit) division or

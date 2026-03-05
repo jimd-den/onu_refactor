@@ -57,6 +57,7 @@ fn make_recursive_pure_fn(name: &str) -> MirFunction {
         }],
         is_pure_data_leaf: true,
         diminishing: Some("n".to_string()),
+        memo_cache_size: None,
     }
 }
 

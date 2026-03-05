@@ -18,6 +18,11 @@ pub struct MirFunction {
     pub blocks: Vec<BasicBlock>,
     pub is_pure_data_leaf: bool,
     pub diminishing: Option<String>,
+    /// Override the memoization cache entry count.  When `None` the MemoPass
+    /// uses its internal default (10 000).  IntegerUpgradePass sets this to
+    /// `max_call_arg + 1` so that the per-entry WideInt allocation stays well
+    /// within the 1 MB arena.
+    pub memo_cache_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -133,6 +133,7 @@ mod tests {
             }],
             is_pure_data_leaf: true,
             diminishing: None,
+            memo_cache_size: None,
         }
     }
 
@@ -207,6 +208,7 @@ mod tests {
             }],
             is_pure_data_leaf: true,
             diminishing: None,
+            memo_cache_size: None,
         };
         let program = MirProgram {
             functions: vec![func],
@@ -253,6 +255,7 @@ mod tests {
             }],
             is_pure_data_leaf: true,
             diminishing: None,
+            memo_cache_size: None,
         };
         let program = MirProgram {
             functions: vec![func],

@@ -249,6 +249,7 @@ impl MirBuilder {
             blocks: self.blocks,
             is_pure_data_leaf: self.is_pure_data_leaf,
             diminishing: self.diminishing,
+            memo_cache_size: None,
         }
     }
 }

@@ -39,6 +39,7 @@ fn test_mir_call_has_tco_metadata() {
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -95,6 +96,7 @@ fn test_if_tail_call_propagation() {
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -151,6 +153,7 @@ fn test_nested_if_tail_call_propagation() {
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     

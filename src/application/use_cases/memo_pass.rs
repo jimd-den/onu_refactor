@@ -16,14 +16,21 @@ impl MemoPass {
         let mut new_functions = vec![];
         for func in program.functions {
             if Self::is_memoizable(&func) {
+                // WideInt values can be cached with PrimitiveMemoStrategy because
+                // LLVM supports arbitrary-width integer load/store natively.
                 let strategy: Box<dyn MemoStrategy> = match func.return_type {
-                    OnuType::I64 | OnuType::Boolean | OnuType::Nothing | OnuType::Ptr => {
+                    OnuType::I64 | OnuType::Boolean | OnuType::Nothing | OnuType::Ptr
+                    | OnuType::WideInt(_) => {
                         Box::new(PrimitiveMemoStrategy)
                     }
                     _ => Box::new(CompoundMemoStrategy),
                 };
+                // Use function-specific cache size when set (e.g. by IntegerUpgradePass
+                // to cap arena usage for large WideInt entries), else fall back to the
+                // global default.
+                let cache_size = func.memo_cache_size.unwrap_or(DEFAULT_MEMO_CACHE_SIZE);
                 let (wrapper, inner) =
-                    strategy.create_wrapper_and_inner(func, DEFAULT_MEMO_CACHE_SIZE, registry);
+                    strategy.create_wrapper_and_inner(func, cache_size, registry);
                 new_functions.push(wrapper);
                 new_functions.push(inner);
             } else {
@@ -41,12 +48,13 @@ impl MemoPass {
             && func.args.len() == 1
             && func.args[0].typ == OnuType::I64;
         eprintln!(
-            "[MemoPass] fn='{}' pure={} dim={:?} args={} arg0={:?} => {}",
+            "[MemoPass] fn='{}' pure={} dim={:?} args={} arg0={:?} ret={:?} => {}",
             func.name,
             func.is_pure_data_leaf,
             func.diminishing,
             func.args.len(),
             func.args.first().map(|a| &a.typ),
+            func.return_type,
             r
         );
         r
@@ -75,6 +83,7 @@ mod tests {
             }],
             is_pure_data_leaf: true,
             diminishing: Some("x".to_string()),
+            memo_cache_size: None,
         };
 
         let program = MirProgram {
