@@ -1,5 +1,5 @@
 use crate::application::options::LogLevel;
-use crate::application::ports::compiler_ports::{ParserPort, Token};
+use crate::application::ports::compiler_ports::Token;
 use crate::adapters::parser::OnuParser;
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::ast::Discourse;

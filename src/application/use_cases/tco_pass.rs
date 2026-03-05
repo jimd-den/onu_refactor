@@ -24,7 +24,7 @@
 /// No shared mutable state, no side effects. This is deliberately simple — a
 /// stateful pass would be a maze; this is a bridge.
 use crate::domain::entities::mir::{
-    BasicBlock, MirArgument, MirFunction, MirInstruction, MirOperand, MirProgram, MirTerminator,
+    BasicBlock, MirFunction, MirInstruction, MirProgram, MirTerminator,
 };
 
 /// Returns true if the given block terminates with a self-tail-call —

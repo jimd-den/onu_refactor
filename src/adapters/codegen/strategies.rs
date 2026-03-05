@@ -13,7 +13,7 @@ use inkwell::context::Context;
 use inkwell::llvm_sys;
 use inkwell::module::Module;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{AnyValue, AsValueRef, BasicValueEnum, CallableValue, PointerValue};
+use inkwell::values::{AsValueRef, BasicValueEnum, CallableValue, PointerValue};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 

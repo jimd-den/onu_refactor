@@ -11,11 +11,10 @@ use crate::application::ports::compiler_ports::CodegenPort;
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 use crate::domain::entities::mir::*;
-use crate::domain::entities::types::OnuType;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::BasicType;
 use inkwell::values::PointerValue;
 use std::collections::HashMap;
 
