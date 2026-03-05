@@ -181,7 +181,7 @@ impl CompoundMemoStrategy {
                 MirInstruction::TypedStore {
                     ptr: MirOperand::Variable(ptr_ssa, false),
                     value: MirOperand::Constant(MirLiteral::I64(-1)),
-                    typ: OnuType::I64,
+                    typ: typ.clone(),
                 },
                 MirInstruction::BinaryOperation {
                     dest: next_idx_ssa,
