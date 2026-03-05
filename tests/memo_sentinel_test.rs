@@ -204,3 +204,83 @@ fn memo_multi_arg_guard_test() {
         panic!("Expected a Call instruction");
     }
 }
+
+#[test]
+fn memo_compound_occupancy_test() {
+    let name = "get_struct";
+    // Returns a Tuple (Compound type)
+    let func = MirFunction {
+        name: name.to_string(),
+        args: vec![MirArgument {
+            name: "id".to_string(),
+            typ: OnuType::I64,
+            ssa_var: 0,
+        }],
+        return_type: OnuType::Tuple(vec![OnuType::I64, OnuType::I64]),
+        blocks: vec![BasicBlock {
+            id: 0,
+            instructions: vec![MirInstruction::Call {
+                dest: 1,
+                name: name.to_string(),
+                args: vec![MirOperand::Variable(0, false)],
+                return_type: OnuType::Tuple(vec![OnuType::I64, OnuType::I64]),
+                arg_types: vec![OnuType::I64],
+                is_tail_call: false,
+            }],
+            terminator: MirTerminator::Return(MirOperand::Variable(1, false)),
+        }],
+        is_pure_data_leaf: true,
+        diminishing: Some("id".to_string()),
+    };
+
+    let registry = RegistryService::new();
+    use onu_refactor::application::use_cases::memo_strategies::MemoStrategy;
+    use onu_refactor::application::use_cases::memo_strategies::compound_memo_strategy::CompoundMemoStrategy;
+
+    let strategy = CompoundMemoStrategy;
+    let (_wrapper, inner) = strategy.create_wrapper_and_inner(func, 100, &registry);
+
+    let mut found_occupancy_load = false;
+    let mut found_hit_cond = false;
+    let mut all_calls_not_tail = true;
+
+    for block in &inner.blocks {
+        for inst in &block.instructions {
+            match inst {
+                MirInstruction::Load {
+                    typ: OnuType::I8, ..
+                } => {
+                    found_occupancy_load = true;
+                }
+                MirInstruction::BinaryOperation {
+                    op: MirBinOp::Ne,
+                    rhs: MirOperand::Constant(MirLiteral::I64(0)),
+                    ..
+                } => {
+                    found_hit_cond = true;
+                }
+                MirInstruction::Call {
+                    is_tail_call, name, ..
+                } if name.ends_with(".inner") => {
+                    if *is_tail_call {
+                        all_calls_not_tail = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    assert!(
+        found_occupancy_load,
+        "Compound strategy should load from occupancy buffer"
+    );
+    assert!(
+        found_hit_cond,
+        "Compound strategy should check occupancy flag"
+    );
+    assert!(
+        all_calls_not_tail,
+        "Injected calls in compound strategy must not be tail calls"
+    );
+}
