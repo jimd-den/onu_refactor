@@ -69,6 +69,7 @@ fn memo_occupancy_buffer_test() {
     let mut found_minus_one_check = false;
     let mut found_occupancy_load = false;
     let mut found_hit_eq_one = false;
+    let mut all_inner_calls_not_tail = true;
 
     for block in &inner.blocks {
         for inst in &block.instructions {
@@ -92,6 +93,13 @@ fn memo_occupancy_buffer_test() {
                 } => {
                     found_minus_one_check = true;
                 }
+                MirInstruction::Call {
+                    name, is_tail_call, ..
+                } if name.ends_with(".inner") => {
+                    if *is_tail_call {
+                        all_inner_calls_not_tail = false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -103,4 +111,96 @@ fn memo_occupancy_buffer_test() {
         "Should load from occupancy buffer (I8)"
     );
     assert!(found_hit_eq_one, "Should compare occupancy flag with Ne 0");
+    assert!(
+        all_inner_calls_not_tail,
+        "All injected .inner calls MUST have is_tail_call = false"
+    );
+}
+
+#[test]
+fn memo_multi_arg_guard_test() {
+    // A function with TWO arguments.
+    // PrimitiveMemoStrategy should NOT rewrite this because it only supports single-arg indexing.
+    let name = "add_recursive";
+    let func = MirFunction {
+        name: name.to_string(),
+        args: vec![
+            MirArgument {
+                name: "a".to_string(),
+                typ: OnuType::I64,
+                ssa_var: 0,
+            },
+            MirArgument {
+                name: "b".to_string(),
+                typ: OnuType::I64,
+                ssa_var: 1,
+            },
+        ],
+        return_type: OnuType::I64,
+        blocks: vec![BasicBlock {
+            id: 0,
+            instructions: vec![MirInstruction::Call {
+                dest: 2,
+                name: name.to_string(),
+                args: vec![
+                    MirOperand::Variable(0, false),
+                    MirOperand::Variable(1, false),
+                ],
+                return_type: OnuType::I64,
+                arg_types: vec![OnuType::I64, OnuType::I64],
+                is_tail_call: false,
+            }],
+            terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
+        }],
+        is_pure_data_leaf: true,
+        diminishing: Some("a".to_string()),
+    };
+
+    let program = MirProgram {
+        functions: vec![func],
+    };
+    let registry = RegistryService::new();
+
+    // NOTE: MemoPass currently filters for args.len() == 1,
+    // but we want to ensure the strategy itself is also safe.
+    // We'll bypass MemoPass's filter by manually invoking the strategy if needed,
+    // or just trust that MemoPass + Strategy guard provide defense-in-depth.
+
+    // Let's test MemoPass first. It should return 1 function (no wrapper/inner)
+    // because it filters for single-arg.
+    let result = MemoPass::run(program.clone(), &registry);
+    assert_eq!(
+        result.functions.len(),
+        1,
+        "MemoPass should have ignored the 2-arg function"
+    );
+
+    // Now let's test the strategy directly to ensure ITS guard works.
+    use onu_refactor::application::use_cases::memo_strategies::MemoStrategy;
+    use onu_refactor::application::use_cases::memo_strategies::primitive_memo_strategy::PrimitiveMemoStrategy;
+
+    let strategy = PrimitiveMemoStrategy;
+    let (_wrapper, inner) =
+        strategy.create_wrapper_and_inner(program.functions[0].clone(), 100, &registry);
+
+    // The inner function's blocks should NOT be rewritten (stay as 1 block with the original call).
+    // If it were rewritten, it would have many more blocks (fetch, hit, miss, store, etc.)
+    assert_eq!(
+        inner.blocks.len(),
+        1,
+        "Strategy should NOT have rewritten the blocks for a 2-arg call"
+    );
+
+    let inst = &inner.blocks[0].instructions[0];
+    if let MirInstruction::Call {
+        name: call_name, ..
+    } = inst
+    {
+        assert_eq!(
+            call_name, name,
+            "The call should still point to the original name, not .inner"
+        );
+    } else {
+        panic!("Expected a Call instruction");
+    }
 }

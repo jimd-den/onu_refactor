@@ -346,10 +346,10 @@ impl PrimitiveMemoStrategy {
                         ref name,
                         dest,
                         ref args,
-                        is_tail_call,
                         ref return_type,
                         ref arg_types,
-                    } if name == orig_name => {
+                        ..
+                    } if name == orig_name && args.len() == 1 => {
                         let upper_check_id = accessor.builder.alloc_block();
                         let fetch_id = accessor.builder.alloc_block();
                         let miss_id = accessor.builder.alloc_block();
@@ -468,7 +468,7 @@ impl PrimitiveMemoStrategy {
                                 name: format!("{}.inner", orig_name),
                                 dest,
                                 args: raw_args,
-                                is_tail_call,
+                                is_tail_call: false, // Must be false as we are not in tail position
                                 return_type: return_type.clone(),
                                 arg_types: raw_arg_types,
                             }],
@@ -489,7 +489,7 @@ impl PrimitiveMemoStrategy {
                                 name: format!("{}.inner", orig_name),
                                 dest,
                                 args: miss_args,
-                                is_tail_call,
+                                is_tail_call: false, // Must be false as we follow with store
                                 return_type: return_type.clone(),
                                 arg_types: miss_arg_types,
                             }],
