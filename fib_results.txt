@@ -1,0 +1,22 @@
+Ọ̀nụ Fibonacci Results
+======================
+
+Generated: 2026-03-05 20:21:45 UTC
+Compiler:  onu_refactor 0.1.0
+
+--- samples/fibonacci.onu (memoized, generation 92) ---
+The population at generation 92 has reached: 7540113804746346429
+
+--- samples/fib_naive_only.onu (naive recursion, n=1000 mod 2^63) ---
+fib(1000) = 817770325994397771
+
+--- samples/fib_bench.onu (performance benchmark) ---
+fib-naive(40) = 102334155
+fib-tco(10000) mod 1000000 = 
+sum(fib(0..92)) = 1293530146158671550
+
+--- Benchmark timing ---
+
+real	0m0.001s
+user	0m0.001s
+sys	0m0.000s
