@@ -212,7 +212,14 @@ impl MirBuilder {
     }
 
     pub fn build_binop(&mut self, dest: usize, op: crate::domain::entities::mir::MirBinOp, lhs: crate::domain::entities::mir::MirOperand, rhs: crate::domain::entities::mir::MirOperand) {
-        self.emit(MirInstruction::BinaryOperation { dest, op, lhs, rhs });
+        let dest_type = match op {
+            crate::domain::entities::mir::MirBinOp::Eq |
+            crate::domain::entities::mir::MirBinOp::Ne |
+            crate::domain::entities::mir::MirBinOp::Gt |
+            crate::domain::entities::mir::MirBinOp::Lt => OnuType::Boolean,
+            _ => OnuType::I64,
+        };
+        self.emit(MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type });
     }
 
     pub fn build_assign(&mut self, dest: usize, src: crate::domain::entities::mir::MirOperand) {

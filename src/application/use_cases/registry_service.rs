@@ -104,6 +104,7 @@ impl RegistryService {
             OnuType::I32 | OnuType::U32 | OnuType::F32 => 4,
             OnuType::I64 | OnuType::U64 | OnuType::F64 | OnuType::Ptr => 8,
             OnuType::I128 | OnuType::U128 => 16,
+            OnuType::WideInt(bits) => (*bits as usize + 7) / 8,
             OnuType::Strings => {
                 // Strings is { i64 len, i8* ptr, i1 is_dynamic }
                 // We calculate this dynamically to ensure alignment is handled correctly.
@@ -150,6 +151,7 @@ impl RegistryService {
             OnuType::I32 | OnuType::U32 | OnuType::F32 => 4,
             OnuType::I64 | OnuType::U64 | OnuType::F64 | OnuType::Ptr => 8,
             OnuType::I128 | OnuType::U128 => 16,
+            OnuType::WideInt(bits) => (*bits as usize + 7) / 8,
             OnuType::Strings => 8, // Max alignment of { i64, i8*, i1 } is 8
             OnuType::Matrix => 8,
             OnuType::Nothing => 1,

@@ -58,6 +58,7 @@ impl<'a> CacheProvider<'a> {
             op: MirBinOp::Mul,
             lhs: logical_idx,
             rhs: MirOperand::Constant(MirLiteral::I64(self.get_stride())),
+            dest_type: OnuType::I64,
         });
         offset_ssa
     }
@@ -256,6 +257,7 @@ impl CompoundMemoStrategy {
                             op: MirBinOp::Lt,
                             lhs: args[0].clone(),
                             rhs: MirOperand::Constant(MirLiteral::I64(0)),
+                            dest_type: OnuType::Boolean,
                         });
 
                         rewritten.push(BasicBlock {
@@ -279,6 +281,7 @@ impl CompoundMemoStrategy {
                                 rhs: MirOperand::Constant(MirLiteral::I64(
                                     provider.cache_size as i64,
                                 )),
+                                dest_type: OnuType::Boolean,
                             }],
                             terminator: MirTerminator::CondBranch {
                                 condition: MirOperand::Variable(u_check, false),
@@ -313,6 +316,7 @@ impl CompoundMemoStrategy {
                             op: MirBinOp::Ne,
                             lhs: MirOperand::Variable(occ_flag_ssa, false),
                             rhs: MirOperand::Constant(MirLiteral::I64(0)),
+                            dest_type: OnuType::Boolean,
                         });
 
                         // Load actual value (only used in hit_id)

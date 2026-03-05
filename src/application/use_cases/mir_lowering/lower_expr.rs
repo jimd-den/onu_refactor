@@ -119,11 +119,18 @@ impl ExprLowerer for BinaryOpLowerer {
                 HirBinOp::GreaterThan => MirBinOp::Gt,
             };
             
+            // Register type for the result
+            let res_type = match op {
+                HirBinOp::Equal | HirBinOp::NotEqual | HirBinOp::LessThan | HirBinOp::GreaterThan => OnuType::Boolean,
+                _ => OnuType::I64,
+            };
+
             builder.emit(MirInstruction::BinaryOperation { 
                 dest, 
                 op: mir_op, 
                 lhs: lhs.clone(), 
-                rhs: rhs.clone() 
+                rhs: rhs.clone(),
+                dest_type: res_type.clone()
             });
             
             // Parent cleanup: mark inputs as consumed and drop if resources
@@ -154,11 +161,6 @@ impl ExprLowerer for BinaryOpLowerer {
                 }
             }
 
-            // Register type for the result
-            let res_type = match op {
-                HirBinOp::Equal | HirBinOp::NotEqual | HirBinOp::LessThan | HirBinOp::GreaterThan => OnuType::Boolean,
-                _ => OnuType::I64,
-            };
             builder.set_ssa_type(dest, res_type);
 
             Ok(MirOperand::Variable(dest, true))

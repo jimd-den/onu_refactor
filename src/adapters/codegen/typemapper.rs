@@ -14,6 +14,7 @@ impl LlvmTypeMapper {
         match typ {
             OnuType::I32 => Some(context.i32_type().as_basic_type_enum()),
             OnuType::I64 => Some(context.i64_type().as_basic_type_enum()),
+            OnuType::WideInt(bits) => Some(context.custom_width_int_type(*bits).as_basic_type_enum()),
             OnuType::Boolean => Some(context.bool_type().as_basic_type_enum()),
             OnuType::Strings => {
                 // Canonical 3-field struct: { i64 len, i8* ptr, i1 is_dynamic }

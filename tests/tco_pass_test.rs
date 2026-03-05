@@ -52,6 +52,7 @@ fn make_self_tail_call_function() -> MirFunction {
                         op: MirBinOp::Eq,
                         lhs: MirOperand::Variable(0, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                        dest_type: OnuType::Boolean,
                     },
                 ],
                 terminator: MirTerminator::CondBranch {
@@ -76,6 +77,7 @@ fn make_self_tail_call_function() -> MirFunction {
                         op: MirBinOp::Div,
                         lhs: MirOperand::Variable(0, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(2)),
+                        dest_type: OnuType::I64,
                     },
                     // count_next = count + 1
                     MirInstruction::BinaryOperation {
@@ -83,6 +85,7 @@ fn make_self_tail_call_function() -> MirFunction {
                         op: MirBinOp::Add,
                         lhs: MirOperand::Variable(1, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                        dest_type: OnuType::I64,
                     },
                     // result = collatz-steps(n_half, count_next)  ← SELF TAIL CALL
                     MirInstruction::Call {
@@ -244,6 +247,7 @@ fn tco_pass_is_identity_for_non_recursive_functions() {
                 op: MirBinOp::Add,
                 lhs: MirOperand::Variable(0, false),
                 rhs: MirOperand::Variable(1, false),
+                dest_type: OnuType::I64,
             }],
             terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
         }],

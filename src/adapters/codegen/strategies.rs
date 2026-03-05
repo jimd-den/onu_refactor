@@ -29,6 +29,34 @@ pub trait InstructionStrategy<'ctx> {
     ) -> Result<(), OnuError>;
 }
 
+pub struct PromoteStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for PromoteStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::Promote { dest, src, to_type } = inst {
+            let src_val = operand_to_llvm(context, builder, ssa_storage, src);
+            let target_llvm_type = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, to_type, registry)
+                .unwrap().into_int_type();
+
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, target_llvm_type.into());
+
+            let promoted = builder
+                .build_int_z_extend(src_val.into_int_value(), target_llvm_type, "promote_zext")
+                .unwrap();
+
+            builder.build_store(ptr, promoted).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct BinaryOpStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
     fn generate(
@@ -40,9 +68,20 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::BinaryOperation { dest, op, lhs, rhs } = inst {
-            let l_val = operand_to_llvm(context, builder, ssa_storage, lhs);
-            let r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
+        if let MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type: _ } = inst {
+            let mut l_val = operand_to_llvm(context, builder, ssa_storage, lhs);
+            let mut r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
+
+            // Check if widths match for integers
+            if l_val.is_int_value() && r_val.is_int_value() {
+                let l_width = l_val.into_int_value().get_type().get_bit_width();
+                let r_width = r_val.into_int_value().get_type().get_bit_width();
+                if l_width < r_width {
+                    l_val = builder.build_int_z_extend(l_val.into_int_value(), r_val.into_int_value().get_type(), "implicit_zext_l").unwrap().into();
+                } else if r_width < l_width {
+                    r_val = builder.build_int_z_extend(r_val.into_int_value(), l_val.into_int_value().get_type(), "implicit_zext_r").unwrap().into();
+                }
+            }
 
             let res: BasicValueEnum = match op {
                 MirBinOp::Add => builder
@@ -974,6 +1013,9 @@ pub fn operand_to_llvm<'ctx>(
                 string_val.into()
             }
             MirLiteral::Nothing => context.i64_type().const_int(0, false).into(),
+            MirLiteral::WideInt(val_str, bits) => {
+                context.custom_width_int_type(*bits).const_int_from_string(val_str, inkwell::types::StringRadix::Decimal).unwrap().into()
+            }
         },
         MirOperand::Variable(id, _) => {
             let ptr = ssa_storage
