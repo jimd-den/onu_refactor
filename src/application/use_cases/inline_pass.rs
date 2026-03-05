@@ -445,6 +445,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             name: name.clone(),
             is_dynamic: *is_dynamic,
         },
+        MirInstruction::Promote { dest, src, to_type } => MirInstruction::Promote {
+            dest: dest + ssa_offset,
+            src: remap_operand(src, ssa_offset),
+            to_type: to_type.clone(),
+        },
     }
 }
 
@@ -471,6 +476,7 @@ fn max_ssa_in_function(func: &MirFunction) -> usize {
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
                 MirInstruction::Load { dest, .. } => Some(*dest),
+                MirInstruction::Promote { dest, .. } => Some(*dest),
                 _ => None,
             };
             if let Some(d) = dest {

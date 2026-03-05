@@ -139,6 +139,7 @@ impl RegistryService {
                 }
             }
             OnuType::Array(_) | OnuType::HashMap(_, _) | OnuType::Tree(_) => 8, // Reference types
+            OnuType::WideInt(bits) => ((*bits as usize) + 7) / 8,
         }
     }
 
@@ -168,6 +169,7 @@ impl RegistryService {
                 }
             }
             OnuType::Array(_) | OnuType::HashMap(_, _) | OnuType::Tree(_) => 8,
+            OnuType::WideInt(_) => 8,
         }
     }
 }

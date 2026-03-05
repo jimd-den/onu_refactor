@@ -1,0 +1,24 @@
+the module called FibLoop
+
+the behavior called fib
+    takes:
+        an integer called n
+    delivers: an integer with 256 bits
+    with diminishing: n
+    as:
+        if n matches 0
+            then 0
+            else if (n decreased-by 1) matches 0
+                then 1
+                else
+                    derivation: a derives-from (n decreased-by 1) utilizes fib
+                    derivation: b derives-from (n decreased-by 2) utilizes fib
+                    a added-to b
+
+the effect behavior called run
+    takes: nothing
+    delivers: an integer
+    as:
+        derivation: result derives-from 250 utilizes fib
+        broadcasts (result utilizes as-text)
+        0

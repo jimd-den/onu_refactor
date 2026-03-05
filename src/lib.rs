@@ -150,6 +150,9 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         // Recursion → loop so the body becomes finite and inlineable.
         let mir = TcoPass::run(mir);
 
+        // Phase 2.5: Promote I64 to WideInt where requested.
+        let mir = crate::application::use_cases::promotion_pass::PromotionPass::run(mir);
+
         // Stage 3: Inline pure loop-shaped callees into their callers.
         // Now that single-recursive functions are loops, InlinePass can fuse them.
         let mir = InlinePass::run(mir);

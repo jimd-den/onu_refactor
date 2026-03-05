@@ -61,12 +61,13 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                     .build_int_signed_div(l_val.into_int_value(), r_val.into_int_value(), "divtmp")
                     .unwrap()
                     .into(),
-                MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt => {
+                MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt | MirBinOp::Ge => {
                     let pred = match op {
                         MirBinOp::Eq => inkwell::IntPredicate::EQ,
                         MirBinOp::Ne => inkwell::IntPredicate::NE,
                         MirBinOp::Gt => inkwell::IntPredicate::SGT,
                         MirBinOp::Lt => inkwell::IntPredicate::SLT,
+                        MirBinOp::Ge => inkwell::IntPredicate::SGE,
                         _ => unreachable!(),
                     };
 
@@ -974,6 +975,16 @@ pub fn operand_to_llvm<'ctx>(
                 string_val.into()
             }
             MirLiteral::Nothing => context.i64_type().const_int(0, false).into(),
+            MirLiteral::WideInt(decimal_str, bits) => {
+                let wide_type = context.custom_width_int_type(*bits);
+                wide_type
+                    .const_int_from_string(decimal_str, inkwell::types::StringRadix::Decimal)
+                    .expect(&format!(
+                        "Failed to parse WideInt constant '{}' as {}-bit integer",
+                        decimal_str, bits
+                    ))
+                    .into()
+            }
         },
         MirOperand::Variable(id, _) => {
             let ptr = ssa_storage
@@ -1008,4 +1019,40 @@ pub fn get_or_create_ssa<'ctx>(
     let ptr = temp_builder.build_alloca(typ, &format!("v{}", id)).unwrap();
     ssa_storage.insert(id, ptr);
     ptr
+}
+
+pub struct PromoteStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for PromoteStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::Promote { dest, src, to_type } = inst {
+            let src_val = operand_to_llvm(context, builder, ssa_storage, src);
+            let src_int = src_val.into_int_value();
+            let target_llvm_type =
+                crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                    context, to_type, registry,
+                )
+                .expect("Promote target type must be resolvable");
+            let target_int_type = target_llvm_type.into_int_type();
+            let promoted = builder
+                .build_int_s_extend(src_int, target_int_type, "promoted")
+                .unwrap();
+            let ptr = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                promoted.get_type().as_basic_type_enum(),
+            );
+            builder.build_store(ptr, promoted).unwrap();
+        }
+        Ok(())
+    }
 }

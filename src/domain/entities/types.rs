@@ -43,6 +43,7 @@ pub enum OnuType {
 
     // --- Abstract ---
     Shape(String), // Reference to a Shape (Interface)
+    WideInt(u32),  // Arbitrary width integer (bits)
 }
 
 impl OnuType {
