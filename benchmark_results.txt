@@ -1,24 +1,23 @@
 ========================================
-        Onu vs C Benchmark Tests        
+        Onu vs C Benchmark Tests
+        Run: 2026-03-05 22:08 UTC
 ========================================
 
 ========================================
- Naive Fibonacci (fib(40))
+ Naive Fibonacci
+   C  : fib(40)   — i64, unoptimized recursion
+   Onu: fib(1000) — WideInt(704) auto-upgraded + O(n) memoized
 ========================================
 
 --- C ---
 fib(40) = 102334155
-
-real	0m0.355s
-user	0m0.355s
-sys	0m0.000s
+0.31user 0.00system 0:00.31elapsed 100%CPU (0avgtext+0avgdata 1512maxresident)k
+0inputs+0outputs (0major+76minor)pagefaults 0swaps
 
 --- Onu ---
-fib(1000) = 817770325994397771 (integer_overflow)
-
-real	0m0.001s
-user	0m0.001s
-sys	0m0.000s
+fib(1000) = 43466557686937456435688527675040625802564660517371780402481729089536555417949051890403879840079255169295922593080322634775209689623239873322471161642996440906533187938298969649928516003704476137795166849228875
+0.00user 0.00system 0:00.00elapsed 100%CPU (0avgtext+0avgdata 1832maxresident)k
+0inputs+0outputs (0major+229minor)pagefaults 0swaps
 
 ========================================
  Collatz Conjecture Loop (1 to 1,000,000)
@@ -26,17 +25,13 @@ sys	0m0.000s
 
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
-
-real	0m0.302s
-user	0m0.302s
-sys	0m0.000s
+0.12user 0.00system 0:00.12elapsed 100%CPU (0avgtext+0avgdata 1512maxresident)k
+0inputs+0outputs (0major+75minor)pagefaults 0swaps
 
 --- Onu ---
 Total Collatz steps for 1 to 1000000 is: 131434424
-
-real	0m0.265s
-user	0m0.265s
-sys	0m0.000s
+0.21user 0.00system 0:00.21elapsed 100%CPU (0avgtext+0avgdata 1192maxresident)k
+0inputs+0outputs (0major+69minor)pagefaults 0swaps
 
 ========================================
  Ackermann Function (3, 11)
@@ -44,17 +39,23 @@ sys	0m0.000s
 
 --- C ---
 Ackermann(3, 11) Result: 16381
-
-real	0m0.671s
-user	0m0.671s
-sys	0m0.000s
+0.14user 0.00system 0:00.14elapsed 99%CPU (0avgtext+0avgdata 1768maxresident)k
+0inputs+0outputs (0major+138minor)pagefaults 0swaps
 
 --- Onu ---
 Ackermann(3, 11) Result: 16381
+0.15user 0.00system 0:00.15elapsed 100%CPU (0avgtext+0avgdata 1444maxresident)k
+0inputs+0outputs (0major+133minor)pagefaults 0swaps
 
-real	0m0.671s
-user	0m0.665s
-sys	0m0.004s
+========================================
+ Onu fib_bench (naive-40 + TCO-10k + sum-range)
+========================================
+
+fib-naive(40) = 102334155
+fib-tco(10000) mod 1000000 = 
+sum(fib(0..92)) = 1293530146158671550
+0.00user 0.00system 0:00.00elapsed 86%CPU (0avgtext+0avgdata 1192maxresident)k
+0inputs+0outputs (0major+73minor)pagefaults 0swaps
 
 ========================================
  Benchmarks Complete
