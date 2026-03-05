@@ -68,7 +68,26 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type: _ } = inst {
+        if let MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type } = inst {
+            // Width-Aware Strategy: guard against unsupported LLVM backend widths.
+            // LLVM's compiler-rt only provides division helpers up to i128.  Any
+            // division on WideInt(bits > 128) must have been replaced by the
+            // WideDivLegalizationPass before reaching the codegen layer.  If we
+            // somehow encounter one here, it is a compiler bug — surface a clear error
+            // instead of silently producing a segfault in the LLVM backend.
+            if matches!(op, MirBinOp::Div) {
+                if let OnuType::WideInt(bits) = dest_type {
+                    if *bits > 128 {
+                        return Err(OnuError::CodeGenError { message: format!(
+                            "Codegen reached an unsupported WideInt({}) division instruction. \
+                             This instruction should have been legalized by WideDivLegalizationPass \
+                             before reaching the LLVM backend.",
+                            bits
+                        )});
+                    }
+                }
+            }
+
             let mut l_val = operand_to_llvm(context, builder, ssa_storage, lhs);
             let mut r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
 
@@ -1050,4 +1069,45 @@ pub fn get_or_create_ssa<'ctx>(
     let ptr = temp_builder.build_alloca(typ, &format!("v{}", id)).unwrap();
     ssa_storage.insert(id, ptr);
     ptr
+}
+
+/// Strategy for the `BitCast` MIR instruction.
+///
+/// Reinterprets the bit-pattern of the source operand as the target type,
+/// using LLVM's `bitcast` instruction.  This is the codegen implementation
+/// of the Clean Architecture boundary described in the problem statement:
+/// it allows the compiler to safely transition from a "Mathematical Integer"
+/// (e.g. WideInt(1024)) to a "Memory Detail" (e.g. an array of i64 limbs).
+pub struct BitCastStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for BitCastStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::BitCast { dest, src, to_type } = inst {
+            let src_val = operand_to_llvm(context, builder, ssa_storage, src);
+            let target_llvm_type =
+                crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                    context, to_type, registry,
+                )
+                .ok_or_else(|| OnuError::CodeGenError {
+                    message: format!("BitCast: cannot map target type {:?} to LLVM", to_type),
+                })?;
+
+            let cast_val = builder
+                .build_bit_cast(src_val, target_llvm_type, "bitcast_tmp")
+                .map_err(|e| OnuError::CodeGenError {
+                    message: format!("BitCast build failed: {:?}", e),
+                })?;
+
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, cast_val.get_type());
+            builder.build_store(ptr, cast_val).unwrap();
+        }
+        Ok(())
+    }
 }

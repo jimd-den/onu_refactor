@@ -115,6 +115,16 @@ pub enum MirInstruction {
         src: MirOperand,
         to_type: OnuType,
     },
+    /// Reinterpret the bit-pattern of `src` as `to_type` (equivalent to LLVM `bitcast`).
+    /// Used by the wide-int legalization layer to transition between a "Mathematical Integer"
+    /// (e.g. WideInt(1024)) and a lower-level representation such as a byte array,
+    /// satisfying the Clean Architecture boundary between the domain model and the
+    /// memory-detail (limb) layer.
+    BitCast {
+        dest: usize,
+        src: MirOperand,
+        to_type: OnuType,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

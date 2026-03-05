@@ -13,3 +13,4 @@ pub mod registry_service;
 pub mod stages;
 pub mod stdlib;
 pub mod tco_pass;
+pub mod wide_div_legalization_pass;
