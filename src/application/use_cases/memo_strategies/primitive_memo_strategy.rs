@@ -1,4 +1,5 @@
 use super::{MemoStrategy, max_ssa_in_function};
+use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::mir::{
     BasicBlock, MirArgument, MirBinOp, MirFunction, MirInstruction, MirLiteral, MirOperand,
     MirTerminator,
@@ -32,28 +33,41 @@ impl MirBuilder {
     }
 }
 
-// --- LAYER 2: DOMAIN LOGIC (Cache Accessor) ---
+/// --- LAYER 2: DOMAIN LOGIC (Cache Accessor) ---
+/// This component manages the low-level MIR generation for cache interactions.
+/// It is decoupled from the high-level strategy to ensure that memory layout
+/// logic remains consistent and testable.
 struct CacheAccessor<'a> {
     builder: &'a mut MirBuilder,
     cache_ptr_ssa: usize,
+    ret_type: OnuType,
+    registry: &'a RegistryService,
 }
 
 impl<'a> CacheAccessor<'a> {
+    /// Computes the physical byte offset for a given logical cache index.
+    /// We use dynamic stride calculation via the RegistryService to ensure
+    /// that we always allocate and access the correct amount of memory,
+    /// preventing sub-word corruption.
     fn compute_byte_offset(
         &mut self,
         insts: &mut Vec<MirInstruction>,
         logical_idx: MirOperand,
     ) -> usize {
+        let stride = self.registry.size_of(&self.ret_type) as i64;
         let byte_offset_ssa = self.builder.alloc_ssa();
         insts.push(MirInstruction::BinaryOperation {
             dest: byte_offset_ssa,
             op: MirBinOp::Mul,
             lhs: logical_idx,
-            rhs: MirOperand::Constant(MirLiteral::I64(8)),
+            rhs: MirOperand::Constant(MirLiteral::I64(stride)),
         });
         byte_offset_ssa
     }
 
+    /// Emits a Load instruction from the cache.
+    /// The load is typed according to the function's return type to ensure
+    /// that the correct number of bytes are fetched.
     fn emit_load(&mut self, insts: &mut Vec<MirInstruction>, byte_offset: usize) -> usize {
         let ptr_ssa = self.builder.alloc_ssa();
         let val_ssa = self.builder.alloc_ssa();
@@ -65,16 +79,20 @@ impl<'a> CacheAccessor<'a> {
         insts.push(MirInstruction::Load {
             dest: val_ssa,
             ptr: MirOperand::Variable(ptr_ssa, false),
-            typ: OnuType::I64,
+            typ: self.ret_type.clone(),
         });
         val_ssa
     }
 
+    /// Emits a Store instruction to the cache.
+    /// Fixes the previous scope error by explicitly using the provided type.
+    /// This ensures memory safety by matching the store width to the data width.
     fn emit_safe_store(
         &mut self,
         insts: &mut Vec<MirInstruction>,
         byte_offset: usize,
         value_ssa: usize,
+        typ: OnuType,
     ) {
         let ptr_ssa = self.builder.alloc_ssa();
         insts.push(MirInstruction::PointerOffset {
@@ -85,7 +103,7 @@ impl<'a> CacheAccessor<'a> {
         insts.push(MirInstruction::TypedStore {
             ptr: MirOperand::Variable(ptr_ssa, false),
             value: MirOperand::Variable(value_ssa, false),
-            typ: OnuType::I64,
+            typ,
         });
     }
 }
@@ -98,13 +116,15 @@ impl MemoStrategy for PrimitiveMemoStrategy {
         &self,
         func: MirFunction,
         cache_size: usize,
-        _registry: &crate::application::use_cases::registry_service::RegistryService,
+        registry: &RegistryService,
     ) -> (MirFunction, MirFunction) {
         let mut builder = MirBuilder::new(&func);
         let original_name = func.name.clone();
+        let ret_type = func.return_type.clone();
 
         // 1. Build Wrapper
-        let (wrapper_func, _) = self.build_wrapper(&func, &mut builder, cache_size);
+        let (wrapper_func, _) =
+            self.build_wrapper(&func, &mut builder, cache_size, &ret_type, registry);
 
         // 2. Build Inner
         let mut inner_func = func.clone();
@@ -123,6 +143,8 @@ impl MemoStrategy for PrimitiveMemoStrategy {
             inner_cache_ptr_ssa,
             &original_name,
             cache_size,
+            ret_type,
+            registry,
         );
 
         (wrapper_func, inner_func)
@@ -135,6 +157,8 @@ impl PrimitiveMemoStrategy {
         func: &MirFunction,
         builder: &mut MirBuilder,
         cache_size: usize,
+        ret_type: &OnuType,
+        registry: &RegistryService,
     ) -> (MirFunction, usize) {
         let cache_ptr = builder.alloc_ssa();
         let size_ssa = builder.alloc_ssa();
@@ -144,11 +168,13 @@ impl PrimitiveMemoStrategy {
         let body_id = builder.alloc_block();
         let call_id = builder.alloc_block();
 
+        let stride = registry.size_of(ret_type) as i64;
+
         // 1. Entry Block (ID 0)
         let entry_insts = vec![
             MirInstruction::Assign {
                 dest: size_ssa,
-                src: MirOperand::Constant(MirLiteral::I64(cache_size as i64 * 8)),
+                src: MirOperand::Constant(MirLiteral::I64(cache_size as i64 * stride)),
             },
             MirInstruction::Alloc {
                 dest: cache_ptr,
@@ -194,7 +220,7 @@ impl PrimitiveMemoStrategy {
                     dest: byte_offset_ssa,
                     op: MirBinOp::Mul,
                     lhs: MirOperand::Variable(loop_idx, false),
-                    rhs: MirOperand::Constant(MirLiteral::I64(8)),
+                    rhs: MirOperand::Constant(MirLiteral::I64(stride)),
                 },
                 MirInstruction::PointerOffset {
                     dest: ptr_ssa,
@@ -204,7 +230,7 @@ impl PrimitiveMemoStrategy {
                 MirInstruction::TypedStore {
                     ptr: MirOperand::Variable(ptr_ssa, false),
                     value: MirOperand::Constant(MirLiteral::I64(-1)),
-                    typ: OnuType::I64,
+                    typ: ret_type.clone(),
                 },
                 MirInstruction::BinaryOperation {
                     dest: next_idx_ssa,
@@ -266,11 +292,15 @@ impl PrimitiveMemoStrategy {
         cache_ptr: usize,
         orig_name: &str,
         cache_size: usize,
+        ret_type: OnuType,
+        registry: &RegistryService,
     ) -> Vec<BasicBlock> {
         let mut rewritten = vec![];
         let mut accessor = CacheAccessor {
             builder,
             cache_ptr_ssa: cache_ptr,
+            ret_type: ret_type.clone(),
+            registry,
         };
 
         for block in blocks {
@@ -388,7 +418,12 @@ impl PrimitiveMemoStrategy {
                         let mut store_insts = vec![];
                         let store_offset =
                             accessor.compute_byte_offset(&mut store_insts, args[0].clone());
-                        accessor.emit_safe_store(&mut store_insts, store_offset, dest);
+                        accessor.emit_safe_store(
+                            &mut store_insts,
+                            store_offset,
+                            dest,
+                            accessor.ret_type.clone(),
+                        );
 
                         rewritten.push(BasicBlock {
                             id: store_id,
