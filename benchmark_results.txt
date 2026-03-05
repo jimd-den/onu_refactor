@@ -9,12 +9,12 @@
 --- C ---
 fib(40) = 102334155
 
-real	0m0.371s
-user	0m0.367s
+real	0m0.340s
+user	0m0.339s
 sys	0m0.000s
 
 --- Onu ---
-fib(40) = 102334155
+fib(1000) = 817770325994397771
 
 real	0m0.001s
 user	0m0.001s
@@ -27,15 +27,15 @@ sys	0m0.000s
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.307s
-user	0m0.304s
+real	0m0.345s
+user	0m0.333s
 sys	0m0.000s
 
 --- Onu ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.262s
-user	0m0.262s
+real	0m0.295s
+user	0m0.291s
 sys	0m0.000s
 
 ========================================
@@ -45,15 +45,15 @@ sys	0m0.000s
 --- C ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.695s
-user	0m0.687s
-sys	0m0.008s
+real	0m0.703s
+user	0m0.701s
+sys	0m0.000s
 
 --- Onu ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.666s
-user	0m0.666s
+real	0m0.753s
+user	0m0.744s
 sys	0m0.000s
 
 ========================================

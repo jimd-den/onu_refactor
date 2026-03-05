@@ -104,8 +104,13 @@ impl RegistryService {
             OnuType::I32 | OnuType::U32 | OnuType::F32 => 4,
             OnuType::I64 | OnuType::U64 | OnuType::F64 | OnuType::Ptr => 8,
             OnuType::I128 | OnuType::U128 => 16,
-            OnuType::Strings => 17, // { i64, i8*, i1 } => 8 + 8 + 1
-            OnuType::Matrix => 8,   // Pointer to heap structure
+            OnuType::Strings => {
+                // Strings is { i64 len, i8* ptr, i1 is_dynamic }
+                // We calculate this dynamically to ensure alignment is handled correctly.
+                let fields = vec![OnuType::I64, OnuType::Ptr, OnuType::Boolean];
+                self.size_of(&OnuType::Tuple(fields))
+            }
+            OnuType::Matrix => 8, // Pointer to heap structure
             OnuType::Nothing => 0,
             OnuType::Tuple(elements) => {
                 let mut offset = 0;
@@ -145,7 +150,7 @@ impl RegistryService {
             OnuType::I32 | OnuType::U32 | OnuType::F32 => 4,
             OnuType::I64 | OnuType::U64 | OnuType::F64 | OnuType::Ptr => 8,
             OnuType::I128 | OnuType::U128 => 16,
-            OnuType::Strings => 8,
+            OnuType::Strings => 8, // Max alignment of { i64, i8*, i1 } is 8
             OnuType::Matrix => 8,
             OnuType::Nothing => 1,
             OnuType::Tuple(elements) => {
@@ -174,5 +179,33 @@ impl Clone for RegistryService {
             shapes: self.shapes.clone(),
             log_level: self.log_level,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_string_size_and_alignment() {
+        let registry = RegistryService::new();
+        let string_type = OnuType::Strings;
+
+        // Strings is { i64, i8*, i1 }
+        // Alignment should be 8
+        assert_eq!(registry.align_of(&string_type), 8);
+
+        // Size should be 24 (8 + 8 + 1, padded to 8-byte boundary)
+        assert_eq!(registry.size_of(&string_type), 24);
+    }
+
+    #[test]
+    fn test_tuple_alignment() {
+        let registry = RegistryService::new();
+        let tuple = OnuType::Tuple(vec![OnuType::I8, OnuType::I64, OnuType::I8]);
+
+        // { i8, (7 bytes padding), i64, i8, (7 bytes padding) } => 24 bytes
+        assert_eq!(registry.align_of(&tuple), 8);
+        assert_eq!(registry.size_of(&tuple), 24);
     }
 }

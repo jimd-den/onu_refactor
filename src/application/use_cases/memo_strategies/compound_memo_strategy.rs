@@ -123,17 +123,12 @@ impl CompoundMemoStrategy {
     ) -> (MirFunction, usize, usize) {
         let cache_ptr = builder.alloc_ssa();
         let occ_ptr = builder.alloc_ssa();
-        let size_ssa = builder.alloc_ssa();
+        let cache_size_ssa = builder.alloc_ssa();
         let occ_size_ssa = builder.alloc_ssa();
-        let loop_idx = builder.alloc_ssa();
 
-        let head_id = builder.alloc_block();
-        let body_id = builder.alloc_block();
         let call_id = builder.alloc_block();
 
         let stride = registry.size_of(typ) as i64;
-
-        // Use checked_mul for safety
         let total_bytes = (size as i64)
             .checked_mul(stride)
             .expect("Cache allocation overflow");
@@ -142,12 +137,12 @@ impl CompoundMemoStrategy {
         // 1. Entry Block
         let entry_insts = vec![
             MirInstruction::Assign {
-                dest: size_ssa,
+                dest: cache_size_ssa,
                 src: MirOperand::Constant(MirLiteral::I64(total_bytes)),
             },
             MirInstruction::Alloc {
                 dest: cache_ptr,
-                size_bytes: MirOperand::Variable(size_ssa, false),
+                size_bytes: MirOperand::Variable(cache_size_ssa, false),
             },
             MirInstruction::Assign {
                 dest: occ_size_ssa,
@@ -157,66 +152,20 @@ impl CompoundMemoStrategy {
                 dest: occ_ptr,
                 size_bytes: MirOperand::Variable(occ_size_ssa, false),
             },
-            MirInstruction::Assign {
-                dest: loop_idx,
-                src: MirOperand::Constant(MirLiteral::I64(0)),
+            MirInstruction::MemSet {
+                ptr: MirOperand::Variable(occ_ptr, false),
+                value: MirOperand::Constant(MirLiteral::I64(0)),
+                size: MirOperand::Variable(occ_size_ssa, false),
             },
         ];
 
         let entry_block = BasicBlock {
             id: 0,
             instructions: entry_insts,
-            terminator: MirTerminator::Branch(head_id),
+            terminator: MirTerminator::Branch(call_id),
         };
 
-        // 2. Head Block
-        let cond_ssa = builder.alloc_ssa();
-        let head_block = BasicBlock {
-            id: head_id,
-            instructions: vec![MirInstruction::BinaryOperation {
-                dest: cond_ssa,
-                op: MirBinOp::Lt,
-                lhs: MirOperand::Variable(loop_idx, false),
-                rhs: MirOperand::Constant(MirLiteral::I64(size as i64)),
-            }],
-            terminator: MirTerminator::CondBranch {
-                condition: MirOperand::Variable(cond_ssa, false),
-                then_block: body_id,
-                else_block: call_id,
-            },
-        };
-
-        // 3. Body Block (Initialize ONLY occupancy to 0)
-        let ptr_ssa = builder.alloc_ssa();
-        let next_idx_ssa = builder.alloc_ssa();
-        let body_block = BasicBlock {
-            id: body_id,
-            instructions: vec![
-                MirInstruction::PointerOffset {
-                    dest: ptr_ssa,
-                    ptr: MirOperand::Variable(occ_ptr, false),
-                    offset: MirOperand::Variable(loop_idx, false),
-                },
-                MirInstruction::TypedStore {
-                    ptr: MirOperand::Variable(ptr_ssa, false),
-                    value: MirOperand::Constant(MirLiteral::I64(0)),
-                    typ: OnuType::I8,
-                },
-                MirInstruction::BinaryOperation {
-                    dest: next_idx_ssa,
-                    op: MirBinOp::Add,
-                    lhs: MirOperand::Variable(loop_idx, false),
-                    rhs: MirOperand::Constant(MirLiteral::I64(1)),
-                },
-                MirInstruction::Assign {
-                    dest: loop_idx,
-                    src: MirOperand::Variable(next_idx_ssa, false),
-                },
-            ],
-            terminator: MirTerminator::Branch(head_id),
-        };
-
-        // 4. Call Block
+        // 2. Call Block
         let res_ssa = builder.alloc_ssa();
         let mut call_args: Vec<MirOperand> = func
             .args
@@ -249,7 +198,7 @@ impl CompoundMemoStrategy {
             MirFunction {
                 name: func.name.clone(),
                 args: func.args.clone(),
-                blocks: vec![entry_block, head_block, body_block, call_block],
+                blocks: vec![entry_block, call_block],
                 is_pure_data_leaf: false,
                 ..func.clone()
             },

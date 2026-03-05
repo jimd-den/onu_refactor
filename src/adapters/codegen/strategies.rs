@@ -789,6 +789,74 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
     }
 }
 
+pub struct MemSetStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for MemSetStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::MemSet { ptr, value, size } = inst {
+            let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
+            let value_val = operand_to_llvm(context, builder, ssa_storage, value).into_int_value();
+            let size_val = operand_to_llvm(context, builder, ssa_storage, size).into_int_value();
+
+            // LLVM intrinsic for memset: @llvm.memset.p0i8.i64(i8* align 1 %ptr, i8 %value, i64 %size, i1 %isvolatile)
+            let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+            let i8_type = context.i8_type();
+            let i64_type = context.i64_type();
+            let bool_type = context.bool_type();
+
+            let memset_type = context.void_type().fn_type(
+                &[
+                    i8_ptr_type.into(),
+                    i8_type.into(),
+                    i64_type.into(),
+                    bool_type.into(),
+                ],
+                false,
+            );
+
+            let memset_fn = module
+                .get_function("llvm.memset.p0i8.i64")
+                .unwrap_or_else(|| {
+                    module.add_function(
+                        "llvm.memset.p0i8.i64",
+                        memset_type,
+                        Some(inkwell::module::Linkage::External),
+                    )
+                });
+
+            // Ensure value is i8
+            let val_i8 = if value_val.get_type().get_bit_width() > 8 {
+                builder
+                    .build_int_truncate(value_val, i8_type, "memset_val_trunc")
+                    .unwrap()
+            } else {
+                value_val
+            };
+
+            builder
+                .build_call(
+                    memset_fn,
+                    &[
+                        ptr_val.into(),
+                        val_i8.into(),
+                        size_val.into(),
+                        context.bool_type().const_int(0, false).into(), // isvolatile = false
+                    ],
+                    "memset_call",
+                )
+                .unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct IndexStrategy;
 
 impl<'ctx> InstructionStrategy<'ctx> for IndexStrategy {

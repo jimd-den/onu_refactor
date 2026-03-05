@@ -428,6 +428,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             value: remap_operand(value, ssa_offset),
             typ: typ.clone(),
         },
+        MirInstruction::MemSet { ptr, value, size } => MirInstruction::MemSet {
+            ptr: remap_operand(ptr, ssa_offset),
+            value: remap_operand(value, ssa_offset),
+            size: remap_operand(size, ssa_offset),
+        },
         MirInstruction::Emit(op) => MirInstruction::Emit(remap_operand(op, ssa_offset)),
         MirInstruction::Drop {
             ssa_var,

@@ -170,26 +170,17 @@ impl PrimitiveMemoStrategy {
         registry: &RegistryService,
     ) -> (MirFunction, usize) {
         // 1. Safe Size Calculation (Checked Math)
-        // We use checked_mul to prevent silent wrap-around during allocation.
-        // If the cache_size * stride exceeds architectural limits, we panic
-        // early as this is a configuration error in the compiler pass.
         let stride = registry.size_of(ret_type) as i64;
         let total_bytes = (cache_size as i64)
             .checked_mul(stride)
             .expect("Memo cache size calculation overflowed i64");
 
         // 2. Double-Buffer Allocation
-        // Pattern: Decoupling (Metadata from Data).
-        // cache_ptr holds the actual results (I64, F64, etc.).
-        // occ_ptr holds 1-byte booleans (0=empty, 1=occupied).
         let cache_ptr = builder.alloc_ssa();
         let occ_ptr = builder.alloc_ssa();
         let val_size_ssa = builder.alloc_ssa();
         let occ_size_ssa = builder.alloc_ssa();
-        let loop_idx = builder.alloc_ssa();
 
-        let head_id = builder.alloc_block();
-        let body_id = builder.alloc_block();
         let call_id = builder.alloc_block();
 
         // 3. Entry Block (ID 0)
@@ -210,70 +201,17 @@ impl PrimitiveMemoStrategy {
                 dest: occ_ptr,
                 size_bytes: MirOperand::Variable(occ_size_ssa, false),
             },
-            MirInstruction::Assign {
-                dest: loop_idx,
-                src: MirOperand::Constant(MirLiteral::I64(0)),
+            MirInstruction::MemSet {
+                ptr: MirOperand::Variable(occ_ptr, false),
+                value: MirOperand::Constant(MirLiteral::I64(0)),
+                size: MirOperand::Variable(occ_size_ssa, false),
             },
         ];
 
         let entry_block = BasicBlock {
             id: 0,
             instructions: entry_insts,
-            terminator: MirTerminator::Branch(head_id),
-        };
-
-        // 2. Head Block (While loop condition)
-        let cond_ssa = builder.alloc_ssa();
-        let head_block = BasicBlock {
-            id: head_id,
-            instructions: vec![MirInstruction::BinaryOperation {
-                dest: cond_ssa,
-                op: MirBinOp::Lt,
-                lhs: MirOperand::Variable(loop_idx, false),
-                rhs: MirOperand::Constant(MirLiteral::I64(cache_size as i64)),
-            }],
-            terminator: MirTerminator::CondBranch {
-                condition: MirOperand::Variable(cond_ssa, false),
-                then_block: body_id,
-                else_block: call_id,
-            },
-        };
-
-        // 5. Body Block (Initialize ONLY occupancy buffer, value buffer is lazy)
-        let occ_offset_ssa = builder.alloc_ssa();
-        let occ_ptr_fixed_ssa = builder.alloc_ssa();
-        let next_idx_ssa = builder.alloc_ssa();
-        let body_block = BasicBlock {
-            id: body_id,
-            instructions: vec![
-                MirInstruction::BinaryOperation {
-                    dest: occ_offset_ssa,
-                    op: MirBinOp::Mul,
-                    lhs: MirOperand::Variable(loop_idx, false),
-                    rhs: MirOperand::Constant(MirLiteral::I64(1)), // 1 byte per occupancy slot
-                },
-                MirInstruction::PointerOffset {
-                    dest: occ_ptr_fixed_ssa,
-                    ptr: MirOperand::Variable(occ_ptr, false),
-                    offset: MirOperand::Variable(occ_offset_ssa, false),
-                },
-                MirInstruction::TypedStore {
-                    ptr: MirOperand::Variable(occ_ptr_fixed_ssa, false),
-                    value: MirOperand::Constant(MirLiteral::I64(0)), // 0 = Not Occupied
-                    typ: OnuType::I8,
-                },
-                MirInstruction::BinaryOperation {
-                    dest: next_idx_ssa,
-                    op: MirBinOp::Add,
-                    lhs: MirOperand::Variable(loop_idx, false),
-                    rhs: MirOperand::Constant(MirLiteral::I64(1)),
-                },
-                MirInstruction::Assign {
-                    dest: loop_idx,
-                    src: MirOperand::Variable(next_idx_ssa, false),
-                },
-            ],
-            terminator: MirTerminator::Branch(head_id),
+            terminator: MirTerminator::Branch(call_id),
         };
 
         // 4. Call Block (Call inner and return)
@@ -308,7 +246,7 @@ impl PrimitiveMemoStrategy {
             MirFunction {
                 name: func.name.clone(),
                 args: func.args.clone(),
-                blocks: vec![entry_block, head_block, body_block, call_block],
+                blocks: vec![entry_block, call_block],
                 is_pure_data_leaf: false,
                 ..func.clone()
             },

@@ -104,6 +104,11 @@ pub enum MirInstruction {
         value: MirOperand,
         typ: OnuType,
     },
+    MemSet {
+        ptr: MirOperand,
+        value: MirOperand,
+        size: MirOperand,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -21,7 +21,7 @@ the effect behavior called run
     takes: nothing
     delivers: an integer
     as:
-        derivation: result derives-from 40 utilizes fib-naive
-        derivation: msg derives-from "fib(40) = " joined-with (result utilizes as-text)
+        derivation: result derives-from 1000 utilizes fib-naive
+        derivation: msg derives-from "fib(1000) = " joined-with (result utilizes as-text)
         broadcasts msg
         0
