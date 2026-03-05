@@ -38,15 +38,12 @@ struct CacheProvider<'a> {
     cache_ptr_ssa: usize,
     ret_type: OnuType,
     cache_size: usize,
+    registry: &'a crate::application::use_cases::registry_service::RegistryService,
 }
 
 impl<'a> CacheProvider<'a> {
     fn get_stride(&self) -> i64 {
-        match self.ret_type {
-            OnuType::I64 | OnuType::Ptr => 8,
-            OnuType::I32 | OnuType::F32 => 4,
-            _ => 8,
-        }
+        self.registry.size_of(&self.ret_type) as i64
     }
 
     fn compute_offset(
@@ -73,12 +70,13 @@ impl MemoStrategy for CompoundMemoStrategy {
         &self,
         func: MirFunction,
         cache_size: usize,
+        registry: &crate::application::use_cases::registry_service::RegistryService,
     ) -> (MirFunction, MirFunction) {
         let mut builder = MirBuilder::new(&func);
         let orig_name = func.name.clone();
         let ret_type = func.return_type.clone();
 
-        let (wrapper, _) = self.build_wrapper(&func, &mut builder, cache_size, &ret_type);
+        let (wrapper, _) = self.build_wrapper(&func, &mut builder, cache_size, &ret_type, registry);
 
         let mut inner = func.clone();
         inner.name = format!("{}.inner", orig_name);
@@ -96,6 +94,7 @@ impl MemoStrategy for CompoundMemoStrategy {
             &orig_name,
             ret_type,
             cache_size,
+            registry,
         );
 
         (wrapper, inner)
@@ -109,6 +108,7 @@ impl CompoundMemoStrategy {
         builder: &mut MirBuilder,
         size: usize,
         typ: &OnuType,
+        registry: &crate::application::use_cases::registry_service::RegistryService,
     ) -> (MirFunction, usize) {
         let cache_ptr = builder.alloc_ssa();
         let size_ssa = builder.alloc_ssa();
@@ -118,11 +118,7 @@ impl CompoundMemoStrategy {
         let body_id = builder.alloc_block();
         let call_id = builder.alloc_block();
 
-        let stride = match typ {
-            OnuType::I64 | OnuType::Ptr => 8,
-            OnuType::I32 | OnuType::F32 => 4,
-            _ => 8,
-        };
+        let stride = registry.size_of(typ) as i64;
         let total_bytes = (size as i64) * stride;
 
         // 1. Entry Block
@@ -244,10 +240,11 @@ impl CompoundMemoStrategy {
         &self,
         blocks: Vec<BasicBlock>,
         builder: &mut MirBuilder,
-        _cache_ptr: usize, // Renamed to _cache_ptr as it's now accessed via provider
+        _cache_ptr: usize,
         orig_name: &str,
         ret_type: OnuType,
-        _cache_size: usize, // Renamed to _cache_size as it's now accessed via provider
+        _cache_size: usize,
+        registry: &crate::application::use_cases::registry_service::RegistryService,
     ) -> Vec<BasicBlock> {
         let mut rewritten = vec![];
         let mut provider = CacheProvider {
@@ -255,6 +252,7 @@ impl CompoundMemoStrategy {
             cache_ptr_ssa: _cache_ptr,
             ret_type,
             cache_size: _cache_size,
+            registry,
         };
 
         for block in blocks {

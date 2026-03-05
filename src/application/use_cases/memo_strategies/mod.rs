@@ -3,11 +3,14 @@ pub mod primitive_memo_strategy;
 
 use crate::domain::entities::mir::MirFunction;
 
+use crate::application::use_cases::registry_service::RegistryService;
+
 pub trait MemoStrategy {
     fn create_wrapper_and_inner(
         &self,
         func: MirFunction,
         cache_size: usize,
+        registry: &RegistryService,
     ) -> (MirFunction, MirFunction);
 }
 

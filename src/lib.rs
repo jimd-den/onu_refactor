@@ -160,7 +160,7 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         // Stage 5: Memoize doubly-recursive pure functions annotated with
         // `with diminishing:`. Converts O(2^n) call trees to O(n) via a
         // stack-allocated lookup table.
-        let mir = MemoPass::run(mir);
+        let mir = MemoPass::run(mir, &self.registry);
 
         Ok(mir)
     }

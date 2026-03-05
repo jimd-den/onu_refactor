@@ -1,4 +1,5 @@
 use onu_refactor::application::use_cases::memo_pass::MemoPass;
+use onu_refactor::application::use_cases::registry_service::RegistryService;
 use onu_refactor::domain::entities::mir::{
     BasicBlock, MirArgument, MirFunction, MirInstruction, MirLiteral, MirOperand, MirProgram,
     MirTerminator,
@@ -30,13 +31,14 @@ fn test_primitive_memo_wrapper_integrity() {
     let program = MirProgram {
         functions: vec![func],
     };
-    let result = MemoPass::run(program);
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
 
     // Should have wrapper and inner
     assert_eq!(result.functions.len(), 2);
 
     let wrapper = result.functions.iter().find(|f| f.name == "fib").unwrap();
-    let inner = result
+    let _inner = result
         .functions
         .iter()
         .find(|f| f.name == "fib.inner")
@@ -96,7 +98,8 @@ fn test_compound_memo_wrapper_integrity() {
     let program = MirProgram {
         functions: vec![func],
     };
-    let result = MemoPass::run(program);
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
 
     assert_eq!(result.functions.len(), 2);
     let wrapper = result

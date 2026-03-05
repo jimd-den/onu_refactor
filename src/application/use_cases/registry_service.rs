@@ -1,13 +1,12 @@
+use crate::application::options::LogLevel;
 /// Ọ̀nụ Registry Service: Application Layer Orchestration
 ///
 /// This service coordinates the domain-level SymbolTable and SemanticEngine.
 /// It acts as the primary interface for the compiler's compilation stages.
-
-use crate::domain::entities::registry::{SymbolTable, BehaviorSignature, BehaviorRegistryPort};
+use crate::domain::entities::registry::{BehaviorRegistryPort, BehaviorSignature, SymbolTable};
 use crate::domain::entities::types::OnuType;
-use crate::application::options::LogLevel;
-use std::collections::HashMap;
 use chrono::Local;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShapeDefinition {
@@ -44,13 +43,22 @@ impl RegistryService {
     }
 
     pub fn get_signature(&self, name: &str) -> Option<&BehaviorSignature> {
-        self.log(LogLevel::Trace, &format!("Looking up signature for: {}", name));
+        self.log(
+            LogLevel::Trace,
+            &format!("Looking up signature for: {}", name),
+        );
         self.symbols.get_signature(name)
     }
 
-    pub fn add_shape(&mut self, name: &str, fields: Vec<(String, OnuType)>, behaviors: Vec<(String, BehaviorSignature)>) {
+    pub fn add_shape(
+        &mut self,
+        name: &str,
+        fields: Vec<(String, OnuType)>,
+        behaviors: Vec<(String, BehaviorSignature)>,
+    ) {
         self.log(LogLevel::Debug, &format!("Adding shape: {}", name));
-        self.shapes.insert(name.to_string(), ShapeDefinition { fields, behaviors });
+        self.shapes
+            .insert(name.to_string(), ShapeDefinition { fields, behaviors });
     }
 
     pub fn is_shape(&self, name: &str) -> bool {
@@ -61,7 +69,11 @@ impl RegistryService {
 
     pub fn get_shape(&self, name: &str) -> Option<&ShapeDefinition> {
         let res = self.shapes.get(name);
-        eprintln!("[DEBUG] Looking up shape definition for {}: {}", name, res.is_some());
+        eprintln!(
+            "[DEBUG] Looking up shape definition for {}: {}",
+            name,
+            res.is_some()
+        );
         res
     }
 
@@ -81,6 +93,77 @@ impl RegistryService {
     pub fn mark_implemented(&mut self, name: &str) {
         self.log(LogLevel::Trace, &format!("Marking implemented: {}", name));
         self.symbols.mark_implemented(name);
+    }
+
+    /// Returns the size in bytes of a given OnuType.
+    /// Follows C-style packing/alignment for Tuples and Shapes.
+    pub fn size_of(&self, typ: &OnuType) -> usize {
+        match typ {
+            OnuType::I8 | OnuType::U8 | OnuType::Boolean => 1,
+            OnuType::I16 | OnuType::U16 => 2,
+            OnuType::I32 | OnuType::U32 | OnuType::F32 => 4,
+            OnuType::I64 | OnuType::U64 | OnuType::F64 | OnuType::Ptr => 8,
+            OnuType::I128 | OnuType::U128 => 16,
+            OnuType::Strings => 17, // { i64, i8*, i1 } => 8 + 8 + 1
+            OnuType::Matrix => 8,   // Pointer to heap structure
+            OnuType::Nothing => 0,
+            OnuType::Tuple(elements) => {
+                let mut offset = 0;
+                for elem in elements {
+                    let size = self.size_of(elem);
+                    let align = self.align_of(elem);
+                    offset = (offset + align - 1) & !(align - 1); // Align
+                    offset += size;
+                }
+                let total_align = self.align_of(typ);
+                (offset + total_align - 1) & !(total_align - 1) // Final padding
+            }
+            OnuType::Shape(name) => {
+                if let Some(def) = self.get_shape(name) {
+                    let mut offset = 0;
+                    for (_, ftype) in &def.fields {
+                        let size = self.size_of(ftype);
+                        let align = self.align_of(ftype);
+                        offset = (offset + align - 1) & !(align - 1);
+                        offset += size;
+                    }
+                    let total_align = self.align_of(typ);
+                    (offset + total_align - 1) & !(total_align - 1)
+                } else {
+                    8 // Default to pointer/i64 for unknown shapes
+                }
+            }
+            OnuType::Array(_) | OnuType::HashMap(_, _) | OnuType::Tree(_) => 8, // Reference types
+        }
+    }
+
+    /// Returns the data alignment requirement of a given OnuType.
+    pub fn align_of(&self, typ: &OnuType) -> usize {
+        match typ {
+            OnuType::I8 | OnuType::U8 | OnuType::Boolean => 1,
+            OnuType::I16 | OnuType::U16 => 2,
+            OnuType::I32 | OnuType::U32 | OnuType::F32 => 4,
+            OnuType::I64 | OnuType::U64 | OnuType::F64 | OnuType::Ptr => 8,
+            OnuType::I128 | OnuType::U128 => 16,
+            OnuType::Strings => 8,
+            OnuType::Matrix => 8,
+            OnuType::Nothing => 1,
+            OnuType::Tuple(elements) => {
+                elements.iter().map(|e| self.align_of(e)).max().unwrap_or(1)
+            }
+            OnuType::Shape(name) => {
+                if let Some(def) = self.get_shape(name) {
+                    def.fields
+                        .iter()
+                        .map(|(_, t)| self.align_of(t))
+                        .max()
+                        .unwrap_or(1)
+                } else {
+                    8
+                }
+            }
+            OnuType::Array(_) | OnuType::HashMap(_, _) | OnuType::Tree(_) => 8,
+        }
     }
 }
 

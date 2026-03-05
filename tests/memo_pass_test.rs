@@ -20,6 +20,7 @@
 /// every memoizable function with an 80KB cache allocation.  12 calls = 960KB,
 /// 13th call overflows the arena and overwrites adjacent globals.
 use onu_refactor::application::use_cases::memo_pass::MemoPass;
+use onu_refactor::application::use_cases::registry_service::RegistryService;
 use onu_refactor::domain::entities::mir::{
     BasicBlock, MirArgument, MirFunction, MirInstruction, MirLiteral, MirOperand, MirProgram,
     MirTerminator,
@@ -64,7 +65,8 @@ fn run_memo_pass(func: MirFunction) -> (MirFunction, MirFunction) {
     let program = MirProgram {
         functions: vec![func],
     };
-    let result = MemoPass::run(program);
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
     assert_eq!(
         result.functions.len(),
         2,

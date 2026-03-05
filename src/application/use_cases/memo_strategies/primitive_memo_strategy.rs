@@ -98,6 +98,7 @@ impl MemoStrategy for PrimitiveMemoStrategy {
         &self,
         func: MirFunction,
         cache_size: usize,
+        _registry: &crate::application::use_cases::registry_service::RegistryService,
     ) -> (MirFunction, MirFunction) {
         let mut builder = MirBuilder::new(&func);
         let original_name = func.name.clone();
