@@ -62,6 +62,7 @@ impl<'a> CacheAccessor<'a> {
             op: MirBinOp::Mul,
             lhs: logical_idx,
             rhs: MirOperand::Constant(MirLiteral::I64(stride)),
+            dest_type: OnuType::I64,
         });
         byte_offset_ssa
     }
@@ -305,6 +306,7 @@ impl PrimitiveMemoStrategy {
                             op: MirBinOp::Mul,
                             lhs: args[0].clone(),
                             rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                            dest_type: OnuType::I64,
                         });
 
                         let val_offset =
@@ -317,6 +319,7 @@ impl PrimitiveMemoStrategy {
                             op: MirBinOp::Lt,
                             lhs: args[0].clone(),
                             rhs: MirOperand::Constant(MirLiteral::I64(0)),
+                            dest_type: OnuType::Boolean,
                         });
 
                         rewritten.push(BasicBlock {
@@ -338,6 +341,7 @@ impl PrimitiveMemoStrategy {
                                 op: MirBinOp::Lt,
                                 lhs: args[0].clone(),
                                 rhs: MirOperand::Constant(MirLiteral::I64(cache_size as i64)),
+                                dest_type: OnuType::Boolean,
                             }],
                             terminator: MirTerminator::CondBranch {
                                 condition: MirOperand::Variable(u_check, false),
@@ -367,6 +371,7 @@ impl PrimitiveMemoStrategy {
                             op: MirBinOp::Ne,
                             lhs: MirOperand::Variable(occ_flag, false),
                             rhs: MirOperand::Constant(MirLiteral::I64(0)),
+                            dest_type: OnuType::Boolean,
                         });
 
                         rewritten.push(BasicBlock {

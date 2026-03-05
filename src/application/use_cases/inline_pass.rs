@@ -363,11 +363,12 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             dest: dest + ssa_offset,
             src: remap_operand(src, ssa_offset),
         },
-        MirInstruction::BinaryOperation { dest, op, lhs, rhs } => MirInstruction::BinaryOperation {
+        MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type } => MirInstruction::BinaryOperation {
             dest: dest + ssa_offset,
             op: op.clone(),
             lhs: remap_operand(lhs, ssa_offset),
             rhs: remap_operand(rhs, ssa_offset),
+            dest_type: dest_type.clone(),
         },
         MirInstruction::Call {
             dest,
@@ -444,6 +445,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             typ: typ.clone(),
             name: name.clone(),
             is_dynamic: *is_dynamic,
+        },
+        MirInstruction::Promote { dest, src, to_type } => MirInstruction::Promote {
+            dest: dest + ssa_offset,
+            src: remap_operand(src, ssa_offset),
+            to_type: to_type.clone(),
         },
     }
 }

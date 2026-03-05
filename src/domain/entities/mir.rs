@@ -45,6 +45,7 @@ pub enum MirInstruction {
         op: MirBinOp,
         lhs: MirOperand,
         rhs: MirOperand,
+        dest_type: OnuType,
     },
     Call {
         dest: usize,
@@ -109,6 +110,11 @@ pub enum MirInstruction {
         value: MirOperand,
         size: MirOperand,
     },
+    Promote {
+        dest: usize,
+        src: MirOperand,
+        to_type: OnuType,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +142,7 @@ pub enum MirLiteral {
     Boolean(bool),
     Text(String),
     Nothing,
+    WideInt(String, u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]

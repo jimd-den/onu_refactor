@@ -1,0 +1,1 @@
+### Summary\nThe destination type for arithmetic binary operations is hardcoded as `OnuType::I64`. This can cause truncation issues with `WideInt` operations, defeating the purpose of integer promotion.\n\n### Recommendation\nInfer the destination type based on operand types (e.g., selecting the wider type), ensuring no integer overflow vulnerabilities.
