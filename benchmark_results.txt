@@ -1,5 +1,5 @@
 ========================================
-        Onu vs C Benchmark Tests
+        Onu vs C Benchmark Tests        
 ========================================
 
 ========================================
@@ -9,15 +9,15 @@
 --- C ---
 fib(40) = 102334155
 
-real	0m0.459s
-user	0m0.458s
+real	0m0.327s
+user	0m0.323s
 sys	0m0.000s
 
 --- Onu ---
 fib(40) = 102334155
 
-real	0m0.002s
-user	0m0.002s
+real	0m0.001s
+user	0m0.001s
 sys	0m0.000s
 
 ========================================
@@ -27,17 +27,16 @@ sys	0m0.000s
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.175s
-user	0m0.175s
+real	0m0.295s
+user	0m0.295s
 sys	0m0.000s
 
 --- Onu ---
-Total Collatz steps for 1 to 1000000 is:
-131434424
+Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.316s
-user	0m0.311s
-sys	0m0.004s
+real	0m0.261s
+user	0m0.261s
+sys	0m0.000s
 
 ========================================
  Ackermann Function (3, 11)
@@ -46,16 +45,16 @@ sys	0m0.004s
 --- C ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.771s
-user	0m0.770s
+real	0m0.670s
+user	0m0.670s
 sys	0m0.000s
 
 --- Onu ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.727s
-user	0m0.723s
-sys	0m0.004s
+real	0m0.668s
+user	0m0.665s
+sys	0m0.000s
 
 ========================================
  Benchmarks Complete

@@ -16,7 +16,7 @@ clang cbench_ackermann.c -O3 -o c_ackermann_bin
 echo "Compiling Onu benchmarks..."
 # The --run flag realizes the bin to the same directory
 cargo run --quiet -- samples/fib_naive_only.onu --run > /dev/null 2>&1
-cargo run --quiet -- collatz_benchmark.onu --run > /dev/null 2>&1
+cargo run --quiet -- samples/collatz_benchmark.onu --run > /dev/null 2>&1
 cargo run --quiet -- samples/ackermann_bench.onu --run > /dev/null 2>&1
 
 echo "========================================" >> "$OUTPUT_FILE"
@@ -43,7 +43,7 @@ echo "--- C ---" >> "$OUTPUT_FILE"
 
 echo "" >> "$OUTPUT_FILE"
 echo "--- Onu ---" >> "$OUTPUT_FILE"
-{ time ./collatz_benchmark_bin; } 2>> "$OUTPUT_FILE" >> "$OUTPUT_FILE"
+{ time ./collatz_bench_bin; } 2>> "$OUTPUT_FILE" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
 
 
