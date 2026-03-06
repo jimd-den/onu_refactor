@@ -152,7 +152,7 @@ mod tests {
                 is_effect: false,
                 args,
                 return_type: OnuType::I64,
-                diminishing: None,
+                diminishing: vec![],
                 memo_cache_size: None,
             },
             body,

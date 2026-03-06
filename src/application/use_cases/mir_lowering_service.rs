@@ -221,7 +221,7 @@ mod tests {
         let env = NativeOsEnvironment::new(LogLevel::Error);
         let registry = RegistryService::new();
         let service = MirLoweringService::new(&env, &registry);
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean, None);
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean, vec![]);
 
         // 1. Define a resource variable (String)
         let ssa_id = 100;

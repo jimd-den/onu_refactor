@@ -244,7 +244,7 @@ impl ExprLowerer for VariableLowerer {
 // --- Legacy Compatibility ---
 impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
     pub fn lower_literal(&self, lit: &HirLiteral) -> Result<MirOperand, OnuError> {
-        LiteralLowerer.lower(&HirExpression::Literal(lit.clone()), &self.context, &mut MirBuilder::new("tmp".to_string(), OnuType::Nothing, None), false)
+        LiteralLowerer.lower(&HirExpression::Literal(lit.clone()), &self.context, &mut MirBuilder::new("tmp".to_string(), OnuType::Nothing, vec![]), false)
     }
 
     pub fn lower_variable(&self, name: &str, is_consuming: bool, builder: &mut MirBuilder) -> Result<MirOperand, OnuError> {

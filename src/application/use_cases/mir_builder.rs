@@ -23,7 +23,7 @@ pub struct MirBuilder {
 }
 
 impl MirBuilder {
-    pub fn new(name: String, return_type: OnuType, diminishing: Option<String>) -> Self {
+    pub fn new(name: String, return_type: OnuType, diminishing: Vec<String>) -> Self {
         let entry_block = BasicBlock {
             id: 0,
             instructions: Vec::new(),
@@ -42,7 +42,7 @@ impl MirBuilder {
             ssa_types: HashMap::new(),
             ssa_is_dynamic: HashMap::new(),
             is_pure_data_leaf: false,
-            diminishing: diminishing.map(|s| vec![s]).unwrap_or_default(),
+            diminishing,
         }
     }
 
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_resolve_variable_consumed() {
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing, None);
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Nothing, vec![]);
         builder.enter_scope();
         builder.define_variable("x", 10, OnuType::I64, false);
         

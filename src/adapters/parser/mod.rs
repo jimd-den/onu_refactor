@@ -343,7 +343,7 @@ impl ParserInternal {
         let mut intent = String::new();
         let mut takes = Vec::new();
         let mut delivers = ReturnType(OnuType::Nothing);
-        let mut diminishing = None;
+        let mut diminishing = Vec::new();
         let mut skip_termination_check = false;
 
         while let Some(token) = self.peek() {
@@ -378,8 +378,28 @@ impl ParserInternal {
                 Token::WithDiminishing => {
                     self.advance();
                     self.match_token(Token::Operator(":".to_string()));
+                    
+                    // Parse first identifier
                     if let Some(Token::Identifier(d)) = self.advance() {
-                        diminishing = Some(d.clone());
+                        diminishing.push(d.clone());
+                    }
+
+                    // Parse optional subsequent identifiers (comma-separated or just space-separated)
+                    while let Some(t) = self.peek() {
+                        if matches!(t, Token::Takes | Token::Delivers | Token::WithIntent | Token::NoGuaranteedTermination | Token::As) {
+                            break;
+                        }
+                        
+                        // Consume optional comma
+                        if matches!(t, Token::Operator(op) if op == ",") {
+                            self.advance();
+                        }
+
+                        if let Some(Token::Identifier(d)) = self.advance() {
+                            diminishing.push(d.clone());
+                        } else {
+                            break;
+                        }
                     }
                 }
                 Token::NoGuaranteedTermination => {
