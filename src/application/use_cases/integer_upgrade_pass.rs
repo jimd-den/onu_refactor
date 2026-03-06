@@ -158,9 +158,15 @@ impl IntegerUpgradePass {
     ///
     /// fib(n) ≈ φⁿ / √5, so log₂(fib(n)) ≈ n · log₂(φ) ≈ n · 0.69424.
     /// We add 4 guard bits and round to the next multiple of 64.
+    ///
+    /// Intermediate arithmetic uses `u64` to prevent `raw + 63` from
+    /// overflowing `u32` when `max_n` is very large.  The result is capped
+    /// at the largest multiple of 64 that fits in `u32`.
     fn required_bits(max_n: i64) -> u32 {
-        let raw = (max_n as f64 * 0.69424 + 4.0).ceil() as u32;
-        ((raw + 63) / 64) * 64
+        const MAX_BITS: u64 = (u32::MAX as u64 / 64) * 64; // largest multiple of 64 in u32
+        let raw = (max_n.max(0) as f64 * 0.69424 + 4.0).ceil() as u64;
+        let rounded = ((raw + 63) / 64) * 64;
+        rounded.min(MAX_BITS) as u32
     }
 
     // -------------------------------------------------------------------------
@@ -816,5 +822,28 @@ mod tests {
         let bits = IntegerUpgradePass::required_bits(1000);
         // 1000 * 0.69424 + 4 = 698.24, ceil = 699, round to 64 multiple → 704
         assert_eq!(bits, 704, "fib(1000) should need 704 bits");
+    }
+
+    #[test]
+    fn test_required_bits_no_overflow_large_input() {
+        // Ensure that very large max_n values (near i64::MAX) do not cause an
+        // arithmetic overflow.  Previously `raw + 63` could overflow u32; now
+        // the calculation uses u64 and caps at the largest u32-safe multiple of 64.
+        let bits = IntegerUpgradePass::required_bits(i64::MAX);
+        // The result must be a multiple of 64 and fit in u32.
+        assert_eq!(bits % 64, 0);
+        assert!(bits as u64 <= (u32::MAX as u64 / 64) * 64);
+    }
+
+    #[test]
+    fn test_required_bits_near_u32_max_raw() {
+        // max_n just large enough that raw (before rounding) would exceed
+        // u32::MAX if widening were not applied.  Verify no panic and that the
+        // result is a valid multiple of 64 within u32 range.
+        // u32::MAX / 0.69424 ≈ 6_185_051_666 fits in i64.
+        let max_n = (u32::MAX as f64 / 0.69424) as i64 + 1;
+        let bits = IntegerUpgradePass::required_bits(max_n);
+        assert_eq!(bits % 64, 0);
+        assert!(bits as u64 <= (u32::MAX as u64 / 64) * 64);
     }
 }
