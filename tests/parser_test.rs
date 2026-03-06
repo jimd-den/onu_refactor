@@ -75,3 +75,155 @@ fn test_parser_fails_on_missing_return_type() {
     let result = parser.parse_with_registry(tokens, &mut registry);
     assert!(result.is_err(), "Parser should fail when return type is missing proper definition (implicit fallback to Nothing/i64)");
 }
+
+// ============================================================================
+// Matrix literal parsing tests
+// ============================================================================
+
+#[test]
+fn test_parse_matrix_literal_2x2() {
+    use onu_refactor::application::ports::compiler_ports::Literal;
+    use onu_refactor::domain::entities::ast::Expression;
+
+    let tokens = vec![
+        Token::Delimiter('['),
+        Token::Literal(Literal::Integer(1)),
+        Token::Delimiter(','),
+        Token::Literal(Literal::Integer(2)),
+        Token::Delimiter(';'),
+        Token::Literal(Literal::Integer(3)),
+        Token::Delimiter(','),
+        Token::Literal(Literal::Integer(4)),
+        Token::Delimiter(']'),
+    ];
+
+    let (expr, consumed) =
+        onu_refactor::adapters::parser::matrix_parser::parse_matrix(&tokens)
+            .expect("Matrix parsing failed");
+
+    assert_eq!(consumed, tokens.len());
+    if let Expression::Matrix { rows, cols, data } = expr {
+        assert_eq!(rows, 2);
+        assert_eq!(cols, 2);
+        assert_eq!(data.len(), 4);
+    } else {
+        panic!("Expected Expression::Matrix");
+    }
+}
+
+#[test]
+fn test_parse_matrix_via_lexer_and_parser() {
+    use onu_refactor::adapters::lexer::OnuLexer;
+    use onu_refactor::application::ports::compiler_ports::LexerPort;
+    use onu_refactor::domain::entities::ast::{Discourse, Expression};
+
+    let source = r#"
+the-module-called Matrices with-concern: testing
+
+the-behavior-called make-matrix
+    with-intent: return a matrix constant
+    takes: nothing
+    delivers: nothing
+    as:
+        [1, 2; 3, 4]
+"#;
+
+    let lexer = OnuLexer::new(LogLevel::Error);
+    let tokens = lexer.lex(source).expect("Lexing failed");
+
+    let parser = OnuParser::new(LogLevel::Error);
+    let mut registry = RegistryService::new();
+    let discourses = parser
+        .parse_with_registry(tokens, &mut registry)
+        .expect("Parsing failed");
+
+    // Walk the AST to find the matrix expression in the behavior body
+    let found_matrix = discourses.iter().any(|d| {
+        if let Discourse::Behavior { body, .. } = d {
+            matches!(body, Expression::Matrix { .. })
+        } else {
+            false
+        }
+    });
+    assert!(found_matrix, "Expected a Matrix expression in behavior body");
+}
+
+// ============================================================================
+// SVO syntax parsing tests
+// ============================================================================
+
+#[test]
+fn test_svo_write_parses_to_emit() {
+    use onu_refactor::adapters::lexer::OnuLexer;
+    use onu_refactor::application::ports::compiler_ports::LexerPort;
+    use onu_refactor::domain::entities::ast::{Discourse, Expression};
+
+    let source = r#"
+the-module-called SvoTest with-concern: testing
+
+the-effect-behavior-called say-hello
+    with-intent: write a greeting to console
+    takes: nothing
+    delivers: nothing
+    as:
+        write "hello" to console
+"#;
+
+    let lexer = OnuLexer::new(LogLevel::Error);
+    let tokens = lexer.lex(source).expect("Lexing failed");
+
+    let parser = OnuParser::new(LogLevel::Error);
+    let mut registry = RegistryService::new();
+    let discourses = parser
+        .parse_with_registry(tokens, &mut registry)
+        .expect("Parsing failed");
+
+    let found_emit = discourses.iter().any(|d| {
+        if let Discourse::Behavior { body, .. } = d {
+            matches!(body, Expression::Emit(_))
+        } else {
+            false
+        }
+    });
+    assert!(found_emit, "Expected an Emit (write) expression in behavior body");
+}
+
+#[test]
+fn test_svo_read_parses_to_receives_line() {
+    use onu_refactor::adapters::lexer::OnuLexer;
+    use onu_refactor::application::ports::compiler_ports::LexerPort;
+    use onu_refactor::domain::entities::ast::{Discourse, Expression};
+
+    let source = r#"
+the-module-called SvoRead with-concern: testing
+
+the-effect-behavior-called get-input
+    with-intent: read a line from console
+    takes: nothing
+    delivers: nothing
+    as:
+        read line from console
+"#;
+
+    let lexer = OnuLexer::new(LogLevel::Error);
+    let tokens = lexer.lex(source).expect("Lexing failed");
+
+    let parser = OnuParser::new(LogLevel::Error);
+    let mut registry = RegistryService::new();
+    let discourses = parser
+        .parse_with_registry(tokens, &mut registry)
+        .expect("Parsing failed");
+
+    let found_read = discourses.iter().any(|d| {
+        if let Discourse::Behavior { body, .. } = d {
+            if let Expression::BehaviorCall { name, .. } = body {
+                name == "receives-line"
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    });
+    assert!(found_read, "Expected a 'receives-line' BehaviorCall expression");
+}

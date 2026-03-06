@@ -108,6 +108,10 @@ impl<'a> LexerInternal<'a> {
         let token = match first_char {
             '(' => { self.input.next(); Token::Delimiter('(') }
             ')' => { self.input.next(); Token::Delimiter(')') }
+            '[' => { self.input.next(); Token::Delimiter('[') }
+            ']' => { self.input.next(); Token::Delimiter(']') }
+            ';' => { self.input.next(); Token::Delimiter(';') }
+            ',' => { self.input.next(); Token::Delimiter(',') }
             ':' => { self.input.next(); Token::Operator(":".to_string()) }
             '"' => self.lex_string(),
             c if c.is_ascii_digit() => self.lex_number(),
@@ -223,6 +227,10 @@ impl<'a> LexerInternal<'a> {
             "nothing" => Token::Nothing,
             "true" => Token::Literal(Literal::Boolean(true)),
             "false" => Token::Literal(Literal::Boolean(false)),
+            "write" => Token::Write,
+            "to" => Token::To,
+            "read" => Token::Read,
+            "from" => Token::From,
             _ => Token::Identifier(s),
         }
     }

@@ -48,6 +48,11 @@ pub enum Token {
     InitOf,
     TailOf,
     DuplicatedAs,
+    // --- SVO I/O Keywords ---
+    Write,
+    To,
+    Read,
+    From,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -3,6 +3,9 @@
 /// This implements the ParserPort by consuming a sequence of Tokens
 /// and building the Domain-level AST (Discourse and Expressions).
 
+pub mod matrix_parser;
+pub mod svo_parser;
+
 use crate::application::ports::compiler_ports::{ParserPort, Token, Literal};
 use crate::application::options::LogLevel;
 use crate::domain::entities::error::{OnuError, Span};
@@ -348,6 +351,22 @@ impl ParserInternal {
         if matches!(self.peek(), Some(Token::Derivation)) {
             return self.parse_derivation(registry);
         }
+        // SVO write: `write <expr> to <dest>`
+        if matches!(self.peek(), Some(Token::Write)) {
+            self.advance();
+            let remaining = &self.tokens[self.pos..];
+            let (expr, consumed) = svo_parser::parse_write(remaining)?;
+            self.pos += consumed;
+            return Ok(expr);
+        }
+        // SVO read: `read <name> from <src>`
+        if matches!(self.peek(), Some(Token::Read)) {
+            self.advance();
+            let remaining = &self.tokens[self.pos..];
+            let (expr, consumed) = svo_parser::parse_read(remaining)?;
+            self.pos += consumed;
+            return Ok(expr);
+        }
         self.parse_infix(0, registry)
     }
 
@@ -547,6 +566,13 @@ impl ParserInternal {
                 self.advance();
                 let inner = self.parse_expression(registry)?;
                 Ok(Expression::Emit(Box::new(inner)))
+            }
+            Token::Delimiter('[') => {
+                // Delegate matrix literal parsing to the matrix_parser facade.
+                let remaining = &self.tokens[self.pos..];
+                let (expr, consumed) = matrix_parser::parse_matrix(remaining)?;
+                self.pos += consumed;
+                Ok(expr)
             }
             _ => Err(OnuError::GrammarViolation { message: format!("Unexpected token in primary: {:?}", token), span: Span::default() }),
         }
