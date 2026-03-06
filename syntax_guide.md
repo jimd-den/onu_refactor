@@ -221,10 +221,7 @@ x added-to y
 
 ### Arrays
 
-```
--- A homogeneous array of integers
-[1, 2, 3, 4, 5]
-```
+> **Not yet supported.** Ọ̀nụ does not have a working array or matrix literal syntax in the current release.  The `[...]` token sequence is reserved for future matrix / row-vector support (see §8), but attempting to write `[1, 2, 3]` will produce a parse-time error in any context.  Use a behavior that builds a collection element-by-element instead.
 
 ### Tuples
 
@@ -238,9 +235,15 @@ Tuples are expressed via parentheses (engine-level, for multi-value returns):
 
 ## 8. Matrix Literals
 
-> **New in this release.**
+> **Parser infrastructure only — not yet supported end-to-end.**  The lexer and `parse_matrix` function understand the `[row ; row]` syntax, but the HIR / MIR / codegen stages do not yet handle matrices.  Attempting to use `[...]` syntax in a real program produces a clear parse-time error:
+>
+> ```
+> GrammarViolation: Matrix literals are not yet implemented; use a behavior that constructs the matrix element-by-element instead
+> ```
+>
+> The grammar below documents the intended syntax for when full support is added.
 
-Matrices are first-class values with a two-dimensional `[row ; row]` syntax.  Each row is a comma-separated list of numeric literals; rows are separated by `;`.
+Matrices use a two-dimensional `[row ; row]` syntax.  Each row is a comma-separated list of numeric literals; rows are separated by `;`.
 
 ### Syntax
 
