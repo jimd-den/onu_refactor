@@ -1,13 +1,23 @@
 use onu_refactor::application::options::{CompilationOptions, CompilerStage, LogLevel};
 use onu_refactor::infrastructure::os::NativeOsEnvironment;
+use onu_refactor::infrastructure::cli::Repl;
 use onu_refactor::adapters::codegen::OnuCodegen;
 use onu_refactor::CompilationPipeline;
 use std::env as std_env;
 
 fn main() {
     let args: Vec<String> = std_env::args().collect();
+
+    // REPL mode: `onu --repl`
+    if args.get(1).map(|s| s.as_str()) == Some("--repl") {
+        let mut repl = Repl::new();
+        repl.run();
+        return;
+    }
+
     if args.len() < 2 {
         eprintln!("Usage: {} <source_file> [--stop-after <stage>] [--verbose]", args[0]);
+        eprintln!("       {} --repl", args[0]);
         std::process::exit(1);
     }
 

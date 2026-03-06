@@ -1,5 +1,6 @@
 pub mod memo_strategies;
 pub mod analysis_service;
+pub mod analyzer;
 pub mod codegen_profile;
 pub mod inline_pass;
 pub mod integer_upgrade_pass;
