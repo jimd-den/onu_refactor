@@ -4,11 +4,12 @@ use crate::domain::entities::mir::{
     MirTerminator,
 };
 use crate::domain::entities::types::OnuType;
+use crate::domain::entities::ARENA_SIZE_BYTES;
 
-/// Maximum cache memory per function (1 MiB).  When the product of per-dimension
-/// bounds would exceed this limit the dimension size is capped so total allocation
-/// stays within the arena.
-const CACHE_MEMORY_LIMIT: usize = 1_048_576;
+/// Maximum cache memory per function.  Mirrors `ARENA_SIZE_BYTES` from the
+/// domain so that MemoPass's allocation budget exactly matches the physical
+/// arena declared by the codegen layer.
+const CACHE_MEMORY_LIMIT: usize = ARENA_SIZE_BYTES;
 
 // --- LAYER 1: INFRASTRUCTURE ---
 struct MirBuilder {
@@ -177,9 +178,14 @@ impl CompoundMemoStrategy {
     /// Compute the largest per-dimension cache size such that the **combined**
     /// allocation (`dim_size ^ n_dims * stride` for the result cache PLUS
     /// `dim_size ^ n_dims * 8` for the padded occupancy-flag array) stays within
-    /// `CACHE_MEMORY_LIMIT`. We use a padded occupancy stride of 8 to ensure
-    /// that both the results and the occupancy flags land on 8-byte boundaries,
-    /// enabling fast, aligned hardware access.
+    /// `CACHE_MEMORY_LIMIT` (= `ARENA_SIZE_BYTES` = 16 MiB).
+    ///
+    /// We use a padded occupancy stride of 8 to ensure that both the results and
+    /// the occupancy flags land on 8-byte boundaries, enabling fast, aligned
+    /// hardware access.
+    ///
+    /// With 16 MiB this yields dim_size = 1024 for 2-dim/I64 functions (vs. the
+    /// previous 256 at 1 MiB), covering 4× more of Ackermann's recursive calls.
     ///
     /// Additionally, we round the dimension size DOWN to the nearest power of 2.
     /// This allows the index-flattening math (Horner's method) to use bit-shifts

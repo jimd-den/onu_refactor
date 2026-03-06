@@ -11,6 +11,7 @@ use crate::application::ports::compiler_ports::CodegenPort;
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 use crate::domain::entities::mir::*;
+use crate::domain::entities::ARENA_SIZE_BYTES;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
@@ -34,8 +35,10 @@ impl CodegenPort for OnuCodegen {
         let module = context.create_module("onu_discourse");
         let builder = context.create_builder();
 
-        // 1. Declare Global Arena (1 MB for now)
-        let arena_size = 1024 * 1024;
+        // 1. Declare Global Arena — size is driven by ARENA_SIZE_BYTES from the domain
+        // so that it stays in sync with CompoundMemoStrategy's CACHE_MEMORY_LIMIT.
+        // At 16 MiB this gives a 1024×1024 cache window for 2-dim/I64 functions.
+        let arena_size = ARENA_SIZE_BYTES;
         let arena_type = context.i8_type().array_type(arena_size as u32);
         let arena = module.add_global(arena_type, None, "onu_arena");
         arena.set_linkage(Linkage::Internal);

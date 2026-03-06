@@ -16,9 +16,8 @@
 /// that causes the allocation to be optimised away as dead code.
 ///
 /// ## Bug 3 — Arena bump allocator has no bounds check
-/// The bump allocator uses a 1MB global arena with no guard.  MemoPass wraps
-/// every memoizable function with an 80KB cache allocation.  12 calls = 960KB,
-/// 13th call overflows the arena and overwrites adjacent globals.
+/// The bump allocator uses a global arena (now 16 MiB) with no guard.  MemoPass
+/// wraps every memoizable function with an 80KB cache allocation.
 use onu_refactor::application::use_cases::memo_pass::MemoPass;
 use onu_refactor::application::use_cases::registry_service::RegistryService;
 use onu_refactor::domain::entities::mir::{
@@ -26,6 +25,7 @@ use onu_refactor::domain::entities::mir::{
     MirTerminator,
 };
 use onu_refactor::domain::entities::types::OnuType;
+use onu_refactor::domain::entities::ARENA_SIZE_BYTES;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -171,23 +171,23 @@ fn memo_cache_pointer_offset_is_scaled_by_8() {
 /// require LLVM; that is out of scope for this pure-MIR test.
 /// Instead, we verify that MemoPass documents the allocation size correctly
 /// so the codegen can guard it — we use the Alloc instruction's size_bytes
-/// operand and confirm it is bounded (< 1MB = 1_048_576 bytes).
+/// operand and confirm it is bounded (< ARENA_SIZE_BYTES = 16 MiB).
 #[test]
 fn memo_cache_allocation_fits_within_arena_limit() {
     let func = make_recursive_pure_fn("fib");
     let (wrapper, _inner) = run_memo_pass(func);
 
-    const ARENA_SIZE_BYTES: i64 = 1_048_576; // 1MB
+    let arena_limit = ARENA_SIZE_BYTES as i64;
 
     for block in &wrapper.blocks {
         for inst in &block.instructions {
             if let MirInstruction::Alloc { size_bytes, .. } = inst {
                 if let MirOperand::Constant(MirLiteral::I64(size)) = size_bytes {
                     assert!(
-                        *size < ARENA_SIZE_BYTES,
-                        "Bug 3: Alloc requests {}B which equals or exceeds the 1MB arena. \
+                        *size < arena_limit,
+                        "Bug 3: Alloc requests {}B which equals or exceeds the {} byte arena. \
                          Reduce DEFAULT_MEMO_CACHE_SIZE or switch to a guarded allocator.",
-                        size
+                        size, arena_limit
                     );
                 }
             }
@@ -339,16 +339,16 @@ fn multi_dim_inner_has_extra_ptr_args() {
 }
 
 /// Memory guard: for a 3-dim function the **combined** allocation
-/// (result cache `dim_size^3 * stride` PLUS occupancy array `dim_size^3 * 1`)
-/// must stay below 1 MiB regardless of the nominal cache_size.
+/// (result cache `dim_size^3 * stride` PLUS occupancy array `dim_size^3 * 8`)
+/// must stay within `ARENA_SIZE_BYTES` regardless of the nominal cache_size.
 ///
 /// The previous implementation only guarded the result-cache allocation, so the
 /// occupancy array would push the total over the arena boundary.  This test
-/// verifies that the sum of all `Alloc` sizes in the wrapper is within 1 MiB.
+/// verifies that the sum of all `Alloc` sizes in the wrapper is within the arena.
 #[test]
 fn multi_dim_memory_guard_caps_allocation() {
     // Build a 3-arg function — if dim_size were 10_000^3 * stride, that would be
-    // enormous. The memory guard must cap it to ≤ 1 MiB combined.
+    // enormous. The memory guard must cap it to ≤ ARENA_SIZE_BYTES combined.
     let func = MirFunction {
         name: "f3".to_string(),
         args: vec![
@@ -370,7 +370,7 @@ fn multi_dim_memory_guard_caps_allocation() {
     let registry = RegistryService::new();
     let result = MemoPass::run(program, &registry);
 
-    const LIMIT: i64 = 1_048_576;
+    let limit = ARENA_SIZE_BYTES as i64;
     let wrapper = &result.functions[0];
 
     // Collect all Alloc sizes in the wrapper (result cache + occupancy array).
@@ -389,9 +389,9 @@ fn multi_dim_memory_guard_caps_allocation() {
         .sum();
 
     assert!(
-        total_alloc <= LIMIT,
-        "3-dim wrapper total allocation {} bytes exceeds 1 MiB arena (result cache + occupancy combined must fit)",
-        total_alloc
+        total_alloc <= limit,
+        "3-dim wrapper total allocation {} bytes exceeds {} byte arena (result cache + occupancy combined must fit)",
+        total_alloc, limit
     );
 }
 
@@ -427,9 +427,12 @@ fn multi_dim_inner_contains_horner_flat_index() {
 
 
 /// Regression test: 2-dim I64 function (like Ackermann) must not overflow the
-/// 1 MiB arena.  Previously `safe_dim_size` only guarded the result-cache bytes
-/// (`dim_size^2 * 8`) and ignored the occupancy array (`dim_size^2 * 1`), so the
-/// combined allocation was 1,179,396 bytes — 130 KiB over the arena boundary.
+/// arena.  Previously `safe_dim_size` only guarded the result-cache bytes
+/// (`dim_size^2 * 8`) and ignored the occupancy array (`dim_size^2 * 8`), so the
+/// combined allocation exceeded the arena boundary.
+///
+/// With `ARENA_SIZE_BYTES = 16 MiB` the safe dim_size is 1024, and the combined
+/// allocation is exactly 16 MiB — well within the declared arena.
 #[test]
 fn two_dim_i64_combined_allocation_within_arena() {
     let func = make_two_dim_fn("ack");
@@ -437,7 +440,7 @@ fn two_dim_i64_combined_allocation_within_arena() {
     let registry = RegistryService::new();
     let result = MemoPass::run(program, &registry);
 
-    const LIMIT: i64 = 1_048_576;
+    let limit = ARENA_SIZE_BYTES as i64;
     let wrapper = &result.functions[0];
 
     let total_alloc: i64 = wrapper
@@ -455,8 +458,8 @@ fn two_dim_i64_combined_allocation_within_arena() {
         .sum();
 
     assert!(
-        total_alloc <= LIMIT,
-        "2-dim/I64 combined allocation {} bytes exceeds 1 MiB arena (result cache + occupancy must both fit)",
-        total_alloc
+        total_alloc <= limit,
+        "2-dim/I64 combined allocation {} bytes exceeds {} byte arena (result cache + occupancy must both fit)",
+        total_alloc, limit
     );
 }
