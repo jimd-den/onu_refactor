@@ -338,12 +338,17 @@ fn multi_dim_inner_has_extra_ptr_args() {
     assert_eq!(inner.args[3].typ, OnuType::Ptr, "4th arg must be occ_ptr");
 }
 
-/// Memory guard: for a 3-dim function the total allocation (dim_size^3 * stride)
+/// Memory guard: for a 3-dim function the **combined** allocation
+/// (result cache `dim_size^3 * stride` PLUS occupancy array `dim_size^3 * 1`)
 /// must stay below 1 MiB regardless of the nominal cache_size.
+///
+/// The previous implementation only guarded the result-cache allocation, so the
+/// occupancy array would push the total over the arena boundary.  This test
+/// verifies that the sum of all `Alloc` sizes in the wrapper is within 1 MiB.
 #[test]
 fn multi_dim_memory_guard_caps_allocation() {
     // Build a 3-arg function — if dim_size were 10_000^3 * stride, that would be
-    // enormous. The memory guard must cap it to ≤ 1 MiB.
+    // enormous. The memory guard must cap it to ≤ 1 MiB combined.
     let func = MirFunction {
         name: "f3".to_string(),
         args: vec![
@@ -367,19 +372,27 @@ fn multi_dim_memory_guard_caps_allocation() {
 
     const LIMIT: i64 = 1_048_576;
     let wrapper = &result.functions[0];
-    for block in &wrapper.blocks {
-        for inst in &block.instructions {
+
+    // Collect all Alloc sizes in the wrapper (result cache + occupancy array).
+    let total_alloc: i64 = wrapper
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .filter_map(|inst| {
             if let MirInstruction::Alloc { size_bytes, .. } = inst {
                 if let MirOperand::Constant(MirLiteral::I64(bytes)) = size_bytes {
-                    assert!(
-                        *bytes <= LIMIT,
-                        "3-dim wrapper allocates {} bytes, exceeding 1 MiB limit",
-                        bytes
-                    );
+                    return Some(*bytes);
                 }
             }
-        }
-    }
+            None
+        })
+        .sum();
+
+    assert!(
+        total_alloc <= LIMIT,
+        "3-dim wrapper total allocation {} bytes exceeds 1 MiB arena (result cache + occupancy combined must fit)",
+        total_alloc
+    );
 }
 
 /// The inner function of a 2-dim ND case must contain a Mul instruction for
@@ -412,3 +425,38 @@ fn multi_dim_inner_contains_horner_flat_index() {
     );
 }
 
+
+/// Regression test: 2-dim I64 function (like Ackermann) must not overflow the
+/// 1 MiB arena.  Previously `safe_dim_size` only guarded the result-cache bytes
+/// (`dim_size^2 * 8`) and ignored the occupancy array (`dim_size^2 * 1`), so the
+/// combined allocation was 1,179,396 bytes — 130 KiB over the arena boundary.
+#[test]
+fn two_dim_i64_combined_allocation_within_arena() {
+    let func = make_two_dim_fn("ack");
+    let program = MirProgram { functions: vec![func] };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+
+    const LIMIT: i64 = 1_048_576;
+    let wrapper = &result.functions[0];
+
+    let total_alloc: i64 = wrapper
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .filter_map(|inst| {
+            if let MirInstruction::Alloc { size_bytes, .. } = inst {
+                if let MirOperand::Constant(MirLiteral::I64(bytes)) = size_bytes {
+                    return Some(*bytes);
+                }
+            }
+            None
+        })
+        .sum();
+
+    assert!(
+        total_alloc <= LIMIT,
+        "2-dim/I64 combined allocation {} bytes exceeds 1 MiB arena (result cache + occupancy must both fit)",
+        total_alloc
+    );
+}

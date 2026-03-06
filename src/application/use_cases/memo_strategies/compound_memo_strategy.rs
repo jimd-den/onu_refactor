@@ -174,12 +174,17 @@ impl MemoStrategy for CompoundMemoStrategy {
 }
 
 impl CompoundMemoStrategy {
-    /// Compute the largest per-dimension cache size such that the total allocation
-    /// (`dim_size ^ n_dims * stride`) stays within `CACHE_MEMORY_LIMIT`.
-    /// This is the "memory guard" that prevents arena overflow for large ND inputs.
+    /// Compute the largest per-dimension cache size such that the **combined**
+    /// allocation (`dim_size ^ n_dims * stride` for the result cache PLUS
+    /// `dim_size ^ n_dims * 1` for the occupancy-flag array) stays within
+    /// `CACHE_MEMORY_LIMIT`.  Both arrays live in the same 1 MiB arena, so we
+    /// must budget for both or the arena pointer will walk into unmapped memory.
     fn safe_dim_size(n_dims: usize, stride: usize, nominal: usize) -> usize {
         let stride = stride.max(1);
-        let limit_entries = CACHE_MEMORY_LIMIT / stride;
+        // Each entry costs `stride` bytes in the result cache PLUS 1 byte in the
+        // occupancy array.  Divide the total budget by the combined per-entry cost.
+        let per_entry = stride + 1;
+        let limit_entries = CACHE_MEMORY_LIMIT / per_entry;
         // Use floating-point for an initial approximation, then validate
         // and adjust downward to correct for any rounding error.
         let mut max_dim = (limit_entries as f64).powf(1.0 / n_dims as f64) as usize;
@@ -212,10 +217,11 @@ impl CompoundMemoStrategy {
 
         let n_dims = func.args.len();
         let stride = registry.size_of(typ) as usize;
-        // Memory guard: cap per-dimension size so total stays within the 1 MiB limit.
+        // Memory guard: cap per-dimension size so the combined allocation
+        // (result cache + occupancy array) stays within the 1 MiB limit.
         let dim_size = Self::safe_dim_size(n_dims, stride, size);
-        // safe_dim_size guarantees dim_size^n_dims * stride <= CACHE_MEMORY_LIMIT,
-        // so these products fit in i64 without overflow.
+        // safe_dim_size guarantees dim_size^n_dims * (stride + 1) <= CACHE_MEMORY_LIMIT,
+        // so total_bytes + occ_bytes always fits in the arena.
         let total_entries = (dim_size as i64).saturating_pow(n_dims as u32);
         let total_bytes = total_entries.saturating_mul(stride as i64);
         let occ_bytes = total_entries;
