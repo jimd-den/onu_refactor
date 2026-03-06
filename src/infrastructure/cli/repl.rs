@@ -77,8 +77,9 @@ impl Repl {
 
     /// Run the interactive loop, reading from `stdin` until EOF or `quit`.
     pub fn run(&mut self) {
-        println!("Ọ̀nụ REPL — type a complete Ọ̀nụ program, or 'quit' to exit.");
-        println!("Each program is JIT-compiled and executed; execution time is reported.");
+        println!("Ọ̀nụ REPL — enter a complete Ọ̀nụ program, then submit with a blank line.");
+        println!("Type ':run' on its own line to submit without a trailing blank line.");
+        println!("Type 'quit' or 'exit' to leave.");
         println!();
 
         let stdin = io::stdin();
@@ -86,43 +87,97 @@ impl Repl {
 
         loop {
             self.state = ReplState::Idle;
-            print!("onu> ");
-            stdout.flush().ok();
 
-            let mut source = String::new();
-            match stdin.lock().read_line(&mut source) {
-                Ok(0) => break,          // EOF
-                Err(_) => break,
-                Ok(_) => {}
-            }
+            match Self::read_program(&stdin, &mut stdout) {
+                // EOF or quit/exit
+                None => break,
+                // Blank submission (user just pressed Enter with no content)
+                Some(src) if src.trim().is_empty() => continue,
+                Some(src) => {
+                    self.state = ReplState::Evaluating;
+                    let start = Instant::now();
 
-            let trimmed = source.trim();
-            if trimmed == "quit" || trimmed == "exit" {
-                break;
-            }
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            self.state = ReplState::Evaluating;
-            let start = Instant::now();
-
-            match self.compile_and_jit(trimmed) {
-                Ok(result_msg) => {
-                    let elapsed = start.elapsed();
-                    println!("{}", result_msg);
-                    println!("[JIT benchmark: {}µs]", elapsed.as_micros());
-                }
-                Err(e) => {
-                    let elapsed = start.elapsed();
-                    println!("Error: {:?}", e);
-                    println!("[failed after {}µs]", elapsed.as_micros());
+                    match self.compile_and_jit(src.trim()) {
+                        Ok(result_msg) => {
+                            let elapsed = start.elapsed();
+                            println!("{}", result_msg);
+                            println!("[JIT benchmark: {}µs]", elapsed.as_micros());
+                        }
+                        Err(e) => {
+                            let elapsed = start.elapsed();
+                            println!("Error: {:?}", e);
+                            println!("[failed after {}µs]", elapsed.as_micros());
+                        }
+                    }
                 }
             }
         }
 
         self.state = ReplState::Idle;
         println!("Farewell.");
+    }
+
+    /// Accumulate lines from `stdin` into a complete program.
+    ///
+    /// The first prompt is `onu> `; continuation lines show `  .. `.
+    /// Input is submitted (returned) when:
+    /// - The user enters a **blank line** after at least one non-blank line, or
+    /// - The user enters `:run` on its own line.
+    ///
+    /// Returns `None` on EOF or when `quit`/`exit` is typed as the very first
+    /// line (so the caller can break the REPL loop).
+    fn read_program(stdin: &io::Stdin, stdout: &mut io::Stdout) -> Option<String> {
+        let mut accumulated = String::new();
+
+        loop {
+            // Choose the prompt: primary on first line, continuation otherwise.
+            if accumulated.is_empty() {
+                print!("onu> ");
+            } else {
+                print!("  .. ");
+            }
+            stdout.flush().ok();
+
+            let mut line = String::new();
+            match stdin.lock().read_line(&mut line) {
+                Ok(0) => {
+                    // EOF: return whatever has been accumulated (may be empty).
+                    return if accumulated.is_empty() { None } else { Some(accumulated) };
+                }
+                Err(_) => return None,
+                Ok(_) => {}
+            }
+
+            // Trim all surrounding whitespace once, handling \r\n, \n, and
+            // any other platform-specific newline sequences uniformly.
+            let trimmed = line.trim();
+
+            // Check quit/exit only when nothing has been entered yet.
+            if accumulated.is_empty() && (trimmed == "quit" || trimmed == "exit") {
+                return None;
+            }
+
+            // `:run` submits immediately regardless of trailing blank.
+            if trimmed == ":run" {
+                return Some(accumulated);
+            }
+
+            // A blank line after content submits; a blank line at the very
+            // start is silently skipped (avoids submitting an empty program).
+            if trimmed.is_empty() {
+                if !accumulated.is_empty() {
+                    return Some(accumulated);
+                }
+                // Still at the start — ignore leading blank line.
+                continue;
+            }
+
+            // Accumulate the line.
+            if !accumulated.is_empty() {
+                accumulated.push('\n');
+            }
+            accumulated.push_str(trimmed);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -287,5 +342,92 @@ the-behavior-called main
         assert!(result.is_ok(), "Compile failed: {:?}", result.err());
         let ir = result.unwrap();
         assert!(ir.contains("define"), "IR should contain function definitions");
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-line input helpers
+    // -----------------------------------------------------------------------
+
+    /// Helper: simulate the multi-line accumulator logic on a sequence of
+    /// pre-supplied text lines without touching stdin.
+    ///
+    /// Mirrors the logic in `Repl::read_program`.
+    fn simulate_accumulate(lines: &[&str]) -> Option<String> {
+        let mut accumulated = String::new();
+
+        for line in lines {
+            let trimmed = line.trim();
+
+            if accumulated.is_empty() && (trimmed == "quit" || trimmed == "exit") {
+                return None;
+            }
+
+            if trimmed == ":run" {
+                return Some(accumulated);
+            }
+
+            if trimmed.is_empty() {
+                if !accumulated.is_empty() {
+                    return Some(accumulated);
+                }
+                continue;
+            }
+
+            if !accumulated.is_empty() {
+                accumulated.push('\n');
+            }
+            accumulated.push_str(trimmed);
+        }
+
+        if accumulated.is_empty() { None } else { Some(accumulated) }
+    }
+
+    #[test]
+    fn test_multiline_blank_line_submits() {
+        let lines = &[
+            "the-module-called Test with-concern: test",
+            "the-behavior-called main",
+            "    takes: nothing",
+            "",  // blank line → submit
+        ];
+        let result = simulate_accumulate(lines);
+        assert!(result.is_some());
+        let src = result.unwrap();
+        assert!(src.contains("the-module-called Test"));
+        assert!(src.contains("the-behavior-called main"));
+    }
+
+    #[test]
+    fn test_multiline_run_command_submits() {
+        let lines = &[
+            "the-module-called Test with-concern: test",
+            ":run",  // explicit submit
+        ];
+        let result = simulate_accumulate(lines);
+        assert!(result.is_some());
+        let src = result.unwrap();
+        assert!(src.contains("the-module-called Test"));
+        // `:run` itself should not appear in the accumulated source
+        assert!(!src.contains(":run"));
+    }
+
+    #[test]
+    fn test_multiline_quit_returns_none() {
+        let lines = &["quit"];
+        assert!(simulate_accumulate(lines).is_none());
+    }
+
+    #[test]
+    fn test_multiline_exit_returns_none() {
+        let lines = &["exit"];
+        assert!(simulate_accumulate(lines).is_none());
+    }
+
+    #[test]
+    fn test_multiline_leading_blank_lines_ignored() {
+        let lines = &["", "", "first-line", ""];
+        let result = simulate_accumulate(lines);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().trim(), "first-line");
     }
 }
