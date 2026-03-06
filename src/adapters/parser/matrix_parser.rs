@@ -43,40 +43,91 @@ pub fn parse_matrix(tokens: &[Token]) -> Result<(Expression, usize), OnuError> {
     let mut rows: Vec<Vec<Expression>> = Vec::new();
     let mut current_row: Vec<Expression> = Vec::new();
 
+    // State machine: alternates between "expecting a value" and "expecting a
+    // separator or closing bracket".  This rejects leading, trailing, and
+    // consecutive separators at the point they occur rather than silently
+    // producing a mis-shaped matrix or a confusing rectangularity error.
+    let mut expect_value = true;
+
     loop {
         match tokens.get(pos) {
-            // Closing bracket: flush current row and finish.
+            // Closing bracket: validate state, flush current row, and finish.
             Some(Token::Delimiter(']')) => {
                 pos += 1;
+                // A trailing separator (e.g. `[1,2,]` or `[1;]`) means we
+                // arrived here still expecting a value.
+                if expect_value && (!current_row.is_empty() || !rows.is_empty()) {
+                    return Err(OnuError::GrammarViolation {
+                        message: "Trailing separator in matrix literal: \
+                                  each separator must be followed by a value"
+                            .to_string(),
+                        span: Span::default(),
+                    });
+                }
                 if !current_row.is_empty() {
                     rows.push(current_row);
                 }
                 break;
             }
-            // Row separator: flush current row and start a new one.
+            // Row separator `;`: only valid when a value was just parsed.
             Some(Token::Delimiter(';')) => {
+                if expect_value {
+                    return Err(OnuError::GrammarViolation {
+                        message: "Unexpected ';' in matrix literal: \
+                                  expected a value before ';'"
+                            .to_string(),
+                        span: Span::default(),
+                    });
+                }
                 pos += 1;
-                rows.push(current_row);
-                current_row = Vec::new();
+                rows.push(std::mem::replace(&mut current_row, Vec::new()));
+                expect_value = true;
             }
-            // Column separator: just advance.
+            // Column separator `,`: only valid when a value was just parsed.
             Some(Token::Delimiter(',')) => {
+                if expect_value {
+                    return Err(OnuError::GrammarViolation {
+                        message: "Unexpected ',' in matrix literal: \
+                                  expected a value before ','"
+                            .to_string(),
+                        span: Span::default(),
+                    });
+                }
                 pos += 1;
+                expect_value = true;
             }
-            // Integer element.
+            // Integer element: only valid when a value is expected.
             Some(Token::Literal(Literal::Integer(n))) => {
+                if !expect_value {
+                    return Err(OnuError::GrammarViolation {
+                        message: "Unexpected integer in matrix literal: \
+                                  expected ',' or ';' or ']' after value"
+                            .to_string(),
+                        span: Span::default(),
+                    });
+                }
                 let n = *n;
                 let expr = i64::try_from(n)
                     .map(Expression::I64)
                     .unwrap_or_else(|_| Expression::I128(n));
                 current_row.push(expr);
                 pos += 1;
+                expect_value = false;
             }
-            // Float element.
+            // Float element: only valid when a value is expected.
             Some(Token::Literal(Literal::FloatBits(bits))) => {
+                if !expect_value {
+                    return Err(OnuError::GrammarViolation {
+                        message: "Unexpected float in matrix literal: \
+                                  expected ',' or ';' or ']' after value"
+                            .to_string(),
+                        span: Span::default(),
+                    });
+                }
                 let bits = *bits;
                 current_row.push(Expression::F64(bits));
                 pos += 1;
+                expect_value = false;
             }
             None => {
                 return Err(OnuError::GrammarViolation {
@@ -179,5 +230,83 @@ mod tests {
             Token::Delimiter(']'),
         ];
         assert!(parse_matrix(&tokens).is_err());
+    }
+
+    #[test]
+    fn test_double_comma_rejected() {
+        // [1,,2] must be a deterministic error, not accepted silently.
+        let tokens = vec![
+            Token::Delimiter('['),
+            int(1), Token::Delimiter(','), Token::Delimiter(','), int(2),
+            Token::Delimiter(']'),
+        ];
+        match parse_matrix(&tokens) {
+            Err(OnuError::GrammarViolation { message, .. }) => {
+                assert!(message.contains("','"), "error message should mention ',': {}", message);
+            }
+            other => panic!("Expected GrammarViolation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_comma_then_semicolon_rejected() {
+        // [1,;2] — a comma immediately followed by a semicolon is invalid.
+        let tokens = vec![
+            Token::Delimiter('['),
+            int(1), Token::Delimiter(','), Token::Delimiter(';'), int(2),
+            Token::Delimiter(']'),
+        ];
+        assert!(parse_matrix(&tokens).is_err());
+    }
+
+    #[test]
+    fn test_leading_semicolon_rejected() {
+        // [;] — leading semicolon is invalid.
+        let tokens = vec![
+            Token::Delimiter('['),
+            Token::Delimiter(';'),
+            Token::Delimiter(']'),
+        ];
+        assert!(parse_matrix(&tokens).is_err());
+    }
+
+    #[test]
+    fn test_trailing_comma_rejected() {
+        // [1,2,] — trailing comma is invalid.
+        let tokens = vec![
+            Token::Delimiter('['),
+            int(1), Token::Delimiter(','), int(2), Token::Delimiter(','),
+            Token::Delimiter(']'),
+        ];
+        assert!(parse_matrix(&tokens).is_err());
+    }
+
+    #[test]
+    fn test_trailing_semicolon_rejected() {
+        // [1,2;] — trailing semicolon is invalid.
+        let tokens = vec![
+            Token::Delimiter('['),
+            int(1), Token::Delimiter(','), int(2), Token::Delimiter(';'),
+            Token::Delimiter(']'),
+        ];
+        assert!(parse_matrix(&tokens).is_err());
+    }
+
+    #[test]
+    fn test_empty_matrix_accepted() {
+        // [] — empty matrix is valid.
+        let tokens = vec![
+            Token::Delimiter('['),
+            Token::Delimiter(']'),
+        ];
+        let (expr, consumed) = parse_matrix(&tokens).unwrap();
+        assert_eq!(consumed, 2);
+        if let Expression::Matrix { rows, cols, data } = expr {
+            assert_eq!(rows, 0);
+            assert_eq!(cols, 0);
+            assert!(data.is_empty());
+        } else {
+            panic!("Expected Matrix expression");
+        }
     }
 }
