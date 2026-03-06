@@ -2,13 +2,22 @@
 ///
 /// This implements the ParserPort by consuming a sequence of Tokens
 /// and building the Domain-level AST (Discourse and Expressions).
+///
+/// The parser exposes two modes:
+/// - **Fail-fast** (`parse_with_registry`): returns `Err(OnuError)` on the
+///   first syntax error — used by the full compilation pipeline.
+/// - **Fault-tolerant** (`parse_tolerant`): returns all successfully parsed
+///   discourses *and* a `Vec<Diagnostic>` for every error encountered, without
+///   crashing on the first bad token — used by the LSP / IDE layer.
 
+pub mod helpers;
 pub mod matrix_parser;
 pub mod svo_parser;
 
+use crate::adapters::parser::helpers::error_recovery;
 use crate::application::ports::compiler_ports::{ParserPort, Token, Literal};
 use crate::application::options::LogLevel;
-use crate::domain::entities::error::{OnuError, Span};
+use crate::domain::entities::error::{Diagnostic, OnuError, Span};
 use crate::domain::entities::ast::{Discourse, Expression, BehaviorHeader, ReturnType, Argument, TypeInfo, BinOp};
 use crate::domain::entities::types::OnuType;
 use crate::domain::entities::registry::BehaviorSignature;
@@ -108,6 +117,60 @@ impl OnuParser {
 
         self.log(LogLevel::Info, &format!("Parsing successful: {} discourse units", discourses.len()));
         Ok(discourses)
+    }
+
+    /// Fault-tolerant parse: returns `(partial_discourses, diagnostics)`.
+    ///
+    /// Unlike `parse_with_registry`, this method does **not** abort on the
+    /// first syntax error.  Instead it:
+    /// 1. Records an `Error`-severity `Diagnostic` for each bad token
+    ///    sequence.
+    /// 2. Calls `error_recovery::synchronize()` to skip tokens until the
+    ///    next top-level discourse declaration.
+    /// 3. Continues parsing from the new safe position.
+    ///
+    /// This makes it possible for an LSP server to report all errors in a
+    /// file in a single pass.
+    pub fn parse_tolerant(
+        &self,
+        tokens: Vec<Token>,
+        registry: &mut RegistryService,
+    ) -> (Vec<Discourse>, Vec<Diagnostic>) {
+        self.log(LogLevel::Info, "Starting fault-tolerant parsing");
+        let mut parser = ParserInternal::new(tokens, self.log_level);
+        let mut discourses = Vec::new();
+        let mut diagnostics: Vec<Diagnostic> = Vec::new();
+
+        while !parser.is_at_end() {
+            match parser.parse_discourse(registry) {
+                Ok(Some(d)) => {
+                    self.log(LogLevel::Trace, &format!("[tolerant] Parsed: {:?}", d));
+                    discourses.push(d);
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    // Convert the fail-fast error to a diagnostic and synchronize.
+                    let diag = error_recovery::error_to_diagnostic(&err);
+                    self.log(LogLevel::Debug, &format!("[tolerant] Error: {}", diag.message));
+                    diagnostics.push(diag);
+
+                    // Skip tokens until the next known-good restart point.
+                    let remaining = &parser.tokens[parser.pos..];
+                    let skip = error_recovery::synchronize(remaining, 0);
+                    parser.pos += skip;
+                }
+            }
+        }
+
+        self.log(
+            LogLevel::Info,
+            &format!(
+                "[tolerant] Done: {} discourses, {} diagnostics",
+                discourses.len(),
+                diagnostics.len()
+            ),
+        );
+        (discourses, diagnostics)
     }
 }
 
