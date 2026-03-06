@@ -17,7 +17,7 @@ pub struct MirFunction {
     pub return_type: OnuType,
     pub blocks: Vec<BasicBlock>,
     pub is_pure_data_leaf: bool,
-    pub diminishing: Option<String>,
+    pub diminishing: Vec<String>,
     /// Override the memoization cache entry count.  When `None` the MemoPass
     /// uses its internal default (10 000).  IntegerUpgradePass sets this to
     /// `max_call_arg + 1` so that the per-entry WideInt allocation stays well

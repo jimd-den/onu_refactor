@@ -40,7 +40,7 @@ fn test_mir_call_has_tco_metadata() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -99,7 +99,7 @@ fn test_if_tail_call_propagation() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -158,7 +158,7 @@ fn test_nested_if_tail_call_propagation() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };

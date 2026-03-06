@@ -40,7 +40,7 @@ fn make_self_tail_call_function() -> MirFunction {
         ],
         return_type: OnuType::I64,
         is_pure_data_leaf: true,
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         blocks: vec![
             // Block 0: condition check
@@ -241,7 +241,7 @@ fn tco_pass_is_identity_for_non_recursive_functions() {
         ],
         return_type: OnuType::I64,
         is_pure_data_leaf: true,
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,

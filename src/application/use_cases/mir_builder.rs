@@ -19,7 +19,7 @@ pub struct MirBuilder {
     ssa_types: HashMap<usize, OnuType>,
     ssa_is_dynamic: HashMap<usize, bool>,
     is_pure_data_leaf: bool,
-    diminishing: Option<String>,
+    diminishing: Vec<String>,
 }
 
 impl MirBuilder {
@@ -42,7 +42,7 @@ impl MirBuilder {
             ssa_types: HashMap::new(),
             ssa_is_dynamic: HashMap::new(),
             is_pure_data_leaf: false,
-            diminishing,
+            diminishing: diminishing.map(|s| vec![s]).unwrap_or_default(),
         }
     }
 

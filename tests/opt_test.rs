@@ -29,7 +29,7 @@ fn test_multiple_returns_phi_detection() {
         intent: "Test".to_string(),
         takes: vec![], 
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -84,7 +84,7 @@ fn test_multiple_returns_direct_ret() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -131,7 +131,7 @@ fn test_ackermann_specialization() {
             Argument { name: "b".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
         ],
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -180,7 +180,7 @@ fn test_comparison_specialization() {
             Argument { name: "b".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
         ],
         delivers: ReturnType(OnuType::Boolean),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -227,7 +227,7 @@ fn test_pure_data_leaf_attributes() {
             Argument { name: "n".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
         ],
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };

@@ -5,6 +5,11 @@ use crate::domain::entities::mir::{
 };
 use crate::domain::entities::types::OnuType;
 
+/// Maximum cache memory per function (1 MiB).  When the product of per-dimension
+/// bounds would exceed this limit the dimension size is capped so total allocation
+/// stays within the arena.
+const CACHE_MEMORY_LIMIT: usize = 1_048_576;
+
 // --- LAYER 1: INFRASTRUCTURE ---
 struct MirBuilder {
     next_ssa: usize,
@@ -38,7 +43,10 @@ struct CacheProvider<'a> {
     cache_ptr_ssa: usize,
     occ_ptr_ssa: usize,
     ret_type: OnuType,
-    cache_size: usize,
+    /// Number of cache entries along each dimension (capped by memory guard).
+    dim_size: usize,
+    /// Number of dimensions (= original function arg count).
+    n_dims: usize,
     registry: &'a crate::application::use_cases::registry_service::RegistryService,
 }
 
@@ -47,20 +55,67 @@ impl<'a> CacheProvider<'a> {
         self.registry.size_of(&self.ret_type) as i64
     }
 
-    fn compute_offset(
+    /// Total number of cache entries: `dim_size ^ n_dims`.
+    fn total_entries(&self) -> i64 {
+        (self.dim_size as i64)
+            .checked_pow(self.n_dims as u32)
+            .expect("Cache entry count overflow")
+    }
+
+    /// Compute the byte offset into the cache for a given logical (flat) index SSA.
+    fn compute_byte_offset(
         &mut self,
         insts: &mut Vec<MirInstruction>,
-        logical_idx: MirOperand,
+        flat_idx_ssa: usize,
     ) -> usize {
         let offset_ssa = self.builder.alloc_ssa();
         insts.push(MirInstruction::BinaryOperation {
             dest: offset_ssa,
             op: MirBinOp::Mul,
-            lhs: logical_idx,
+            lhs: MirOperand::Variable(flat_idx_ssa, false),
             rhs: MirOperand::Constant(MirLiteral::I64(self.get_stride())),
             dest_type: OnuType::I64,
         });
         offset_ssa
+    }
+
+    /// Emit Horner's-method flat-index computation: `(...((a0*S + a1)*S + a2)...+ a_{N-1})`.
+    /// For N=1 this is just an Assign of `args[0]`.
+    fn compute_flat_index(
+        &mut self,
+        insts: &mut Vec<MirInstruction>,
+        args: &[MirOperand],
+    ) -> usize {
+        let first_ssa = self.builder.alloc_ssa();
+        insts.push(MirInstruction::Assign {
+            dest: first_ssa,
+            src: args[0].clone(),
+        });
+        if args.len() == 1 {
+            return first_ssa;
+        }
+        let dim_size_lit = MirOperand::Constant(MirLiteral::I64(self.dim_size as i64));
+        let mut acc = first_ssa;
+        for arg in &args[1..] {
+            let scaled = self.builder.alloc_ssa();
+            insts.push(MirInstruction::BinaryOperation {
+                dest: scaled,
+                op: MirBinOp::Mul,
+                lhs: MirOperand::Variable(acc, false),
+                rhs: dim_size_lit.clone(),
+                dest_type: OnuType::I64,
+            });
+            let summed = self.builder.alloc_ssa();
+            insts.push(MirInstruction::BinaryOperation {
+                dest: summed,
+                op: MirBinOp::Add,
+                lhs: MirOperand::Variable(scaled, false),
+                rhs: arg.clone(),
+                dest_type: OnuType::I64,
+            });
+            acc = summed;
+        }
+        acc
     }
 }
 
@@ -77,6 +132,7 @@ impl MemoStrategy for CompoundMemoStrategy {
         let mut builder = MirBuilder::new(&func);
         let orig_name = func.name.clone();
         let ret_type = func.return_type.clone();
+        let n_dims = func.args.len();
 
         let (wrapper, _, _) =
             self.build_wrapper(&func, &mut builder, cache_size, &ret_type, registry);
@@ -98,6 +154,10 @@ impl MemoStrategy for CompoundMemoStrategy {
             ssa_var: occ_arg_ssa,
         });
 
+        // Compute the same safe dim_size used by build_wrapper.
+        let stride = registry.size_of(&ret_type) as usize;
+        let dim_size = Self::safe_dim_size(n_dims, stride, cache_size);
+
         inner.blocks = self.rewrite_calls(
             inner.blocks,
             &mut builder,
@@ -105,7 +165,8 @@ impl MemoStrategy for CompoundMemoStrategy {
             occ_arg_ssa,
             &orig_name,
             ret_type,
-            cache_size,
+            dim_size,
+            n_dims,
             registry,
         );
 
@@ -114,6 +175,17 @@ impl MemoStrategy for CompoundMemoStrategy {
 }
 
 impl CompoundMemoStrategy {
+    /// Compute the largest per-dimension cache size such that the total allocation
+    /// (`dim_size ^ n_dims * stride`) stays within `CACHE_MEMORY_LIMIT`.
+    /// This is the "memory guard" that prevents arena overflow for large ND inputs.
+    fn safe_dim_size(n_dims: usize, stride: usize, nominal: usize) -> usize {
+        let stride = stride.max(1);
+        let limit_entries = CACHE_MEMORY_LIMIT / stride;
+        // Maximum dim_size satisfying dim_size^n_dims <= limit_entries.
+        let max_dim = (limit_entries as f64).powf(1.0 / n_dims as f64) as usize;
+        max_dim.min(nominal).max(1)
+    }
+
     fn build_wrapper(
         &self,
         func: &MirFunction,
@@ -129,11 +201,17 @@ impl CompoundMemoStrategy {
 
         let call_id = builder.alloc_block();
 
-        let stride = registry.size_of(typ) as i64;
-        let total_bytes = (size as i64)
-            .checked_mul(stride)
+        let n_dims = func.args.len();
+        let stride = registry.size_of(typ) as usize;
+        // Memory guard: cap per-dimension size so total stays within the 1 MiB limit.
+        let dim_size = Self::safe_dim_size(n_dims, stride, size);
+        let total_entries = (dim_size as i64)
+            .checked_pow(n_dims as u32)
             .expect("Cache allocation overflow");
-        let occ_bytes = size as i64;
+        let total_bytes = total_entries
+            .checked_mul(stride as i64)
+            .expect("Cache allocation overflow");
+        let occ_bytes = total_entries;
 
         // 1. Entry Block
         let entry_insts = vec![
@@ -208,6 +286,7 @@ impl CompoundMemoStrategy {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn rewrite_calls(
         &self,
         blocks: Vec<BasicBlock>,
@@ -216,7 +295,8 @@ impl CompoundMemoStrategy {
         _occ_ptr: usize,
         orig_name: &str,
         ret_type: OnuType,
-        _cache_size: usize,
+        dim_size: usize,
+        n_dims: usize,
         registry: &crate::application::use_cases::registry_service::RegistryService,
     ) -> Vec<BasicBlock> {
         let mut rewritten = vec![];
@@ -225,7 +305,8 @@ impl CompoundMemoStrategy {
             cache_ptr_ssa: _cache_ptr,
             occ_ptr_ssa: _occ_ptr,
             ret_type,
-            cache_size: _cache_size,
+            dim_size,
+            n_dims,
             registry,
         };
 
@@ -239,74 +320,144 @@ impl CompoundMemoStrategy {
                         ref name,
                         dest,
                         ref args,
-                        is_tail_call: _, // Hardcoded to false below
+                        is_tail_call: _,
                         ref return_type,
                         ref arg_types,
-                    } if name == orig_name && args.len() == 1 => {
-                        let upper_check_id = provider.builder.alloc_block();
+                    } if name == orig_name && args.len() == n_dims => {
                         let fetch_id = provider.builder.alloc_block();
                         let miss_id = provider.builder.alloc_block();
                         let hit_id = provider.builder.alloc_block();
                         let store_id = provider.builder.alloc_block();
                         let cont_id = provider.builder.alloc_block();
 
-                        // 1. Lower Bound Check (arg >= 0)
-                        let l_check = provider.builder.alloc_ssa();
+                        // --- Compute flat index (Horner's) in current block ---
+                        // This SSA is dominated by curr_id and reachable from all
+                        // successor blocks (fetch_id, store_id, miss_id, hit_id).
+                        let flat_ssa =
+                            provider.compute_flat_index(&mut insts, args);
+
+                        // --- Build per-dimension bound-check chain ---
+                        // For each arg i we need: lower (arg_i >= 0) and upper (arg_i < dim_size).
+                        // The chain terminates at fetch_id on success or miss_id on failure.
+                        //
+                        // Block layout (written into `rewritten` below):
+                        //   curr_id      → lower_check_0 inline → upper_check_0
+                        //   upper_check_0 → lower_check_1 | miss_id
+                        //   lower_check_1 → upper_check_1 | miss_id
+                        //   ...
+                        //   upper_check_{N-1} → fetch_id | miss_id
+
+                        // Allocate block IDs for upper checks (lower checks share blocks).
+                        let upper_check_0 = provider.builder.alloc_block();
+                        // For dims 1..N-1 we need a (lower, upper) block pair each.
+                        let extra_check_blocks: Vec<(usize, usize)> = (1..n_dims)
+                            .map(|_| {
+                                (
+                                    provider.builder.alloc_block(),
+                                    provider.builder.alloc_block(),
+                                )
+                            })
+                            .collect();
+
+                        // --- curr_id: lower bound check for dim 0 ---
+                        let l_check_0 = provider.builder.alloc_ssa();
                         insts.push(MirInstruction::BinaryOperation {
-                            dest: l_check,
+                            dest: l_check_0,
                             op: MirBinOp::Lt,
                             lhs: args[0].clone(),
                             rhs: MirOperand::Constant(MirLiteral::I64(0)),
                             dest_type: OnuType::Boolean,
                         });
-
                         rewritten.push(BasicBlock {
                             id: curr_id,
                             instructions: insts.drain(..).collect(),
                             terminator: MirTerminator::CondBranch {
-                                condition: MirOperand::Variable(l_check, false),
+                                condition: MirOperand::Variable(l_check_0, false),
                                 then_block: miss_id,
-                                else_block: upper_check_id,
+                                else_block: upper_check_0,
                             },
                         });
 
-                        // 2. Upper Bound Check (arg < cache_size)
-                        let u_check = provider.builder.alloc_ssa();
+                        // --- upper_check_0: upper bound check for dim 0 ---
+                        let next_after_0 = if extra_check_blocks.is_empty() {
+                            fetch_id
+                        } else {
+                            extra_check_blocks[0].0
+                        };
+                        let u_check_0 = provider.builder.alloc_ssa();
                         rewritten.push(BasicBlock {
-                            id: upper_check_id,
+                            id: upper_check_0,
                             instructions: vec![MirInstruction::BinaryOperation {
-                                dest: u_check,
+                                dest: u_check_0,
                                 op: MirBinOp::Lt,
                                 lhs: args[0].clone(),
-                                rhs: MirOperand::Constant(MirLiteral::I64(
-                                    provider.cache_size as i64,
-                                )),
+                                rhs: MirOperand::Constant(MirLiteral::I64(dim_size as i64)),
                                 dest_type: OnuType::Boolean,
                             }],
                             terminator: MirTerminator::CondBranch {
-                                condition: MirOperand::Variable(u_check, false),
-                                then_block: fetch_id,
+                                condition: MirOperand::Variable(u_check_0, false),
+                                then_block: next_after_0,
                                 else_block: miss_id,
                             },
                         });
 
-                        // 3. FETCH BLOCK
+                        // --- Remaining dimension checks (dims 1..N-1) ---
+                        for (i, (lower_id, upper_id)) in extra_check_blocks.iter().enumerate() {
+                            let actual_dim = i + 1;
+                            let next_pass = if i + 1 < extra_check_blocks.len() {
+                                extra_check_blocks[i + 1].0
+                            } else {
+                                fetch_id
+                            };
+
+                            let l_check = provider.builder.alloc_ssa();
+                            rewritten.push(BasicBlock {
+                                id: *lower_id,
+                                instructions: vec![MirInstruction::BinaryOperation {
+                                    dest: l_check,
+                                    op: MirBinOp::Lt,
+                                    lhs: args[actual_dim].clone(),
+                                    rhs: MirOperand::Constant(MirLiteral::I64(0)),
+                                    dest_type: OnuType::Boolean,
+                                }],
+                                terminator: MirTerminator::CondBranch {
+                                    condition: MirOperand::Variable(l_check, false),
+                                    then_block: miss_id,
+                                    else_block: *upper_id,
+                                },
+                            });
+
+                            let u_check = provider.builder.alloc_ssa();
+                            rewritten.push(BasicBlock {
+                                id: *upper_id,
+                                instructions: vec![MirInstruction::BinaryOperation {
+                                    dest: u_check,
+                                    op: MirBinOp::Lt,
+                                    lhs: args[actual_dim].clone(),
+                                    rhs: MirOperand::Constant(MirLiteral::I64(dim_size as i64)),
+                                    dest_type: OnuType::Boolean,
+                                }],
+                                terminator: MirTerminator::CondBranch {
+                                    condition: MirOperand::Variable(u_check, false),
+                                    then_block: next_pass,
+                                    else_block: miss_id,
+                                },
+                            });
+                        }
+
+                        // --- 3. FETCH BLOCK ---
                         let mut fetch_insts = vec![];
-                        let offset = provider.compute_offset(&mut fetch_insts, args[0].clone());
-                        let ptr_ssa = provider.builder.alloc_ssa();
-                        let val_ssa = provider.builder.alloc_ssa();
-                        let occ_ptr_ssa = provider.builder.alloc_ssa();
+                        let occ_ptr_slot = provider.builder.alloc_ssa();
                         let occ_flag_ssa = provider.builder.alloc_ssa();
 
-                        // Load occupancy flag first
                         fetch_insts.push(MirInstruction::PointerOffset {
-                            dest: occ_ptr_ssa,
+                            dest: occ_ptr_slot,
                             ptr: MirOperand::Variable(provider.occ_ptr_ssa, false),
-                            offset: args[0].clone(), // 1 byte per slot, so logical index = byte offset
+                            offset: MirOperand::Variable(flat_ssa, false),
                         });
                         fetch_insts.push(MirInstruction::Load {
                             dest: occ_flag_ssa,
-                            ptr: MirOperand::Variable(occ_ptr_ssa, false),
+                            ptr: MirOperand::Variable(occ_ptr_slot, false),
                             typ: OnuType::I8,
                         });
 
@@ -319,11 +470,13 @@ impl CompoundMemoStrategy {
                             dest_type: OnuType::Boolean,
                         });
 
-                        // Load actual value (only used in hit_id)
+                        let byte_offset = provider.compute_byte_offset(&mut fetch_insts, flat_ssa);
+                        let ptr_ssa = provider.builder.alloc_ssa();
+                        let val_ssa = provider.builder.alloc_ssa();
                         fetch_insts.push(MirInstruction::PointerOffset {
                             dest: ptr_ssa,
                             ptr: MirOperand::Variable(provider.cache_ptr_ssa, false),
-                            offset: MirOperand::Variable(offset, false),
+                            offset: MirOperand::Variable(byte_offset, false),
                         });
                         fetch_insts.push(MirInstruction::Load {
                             dest: val_ssa,
@@ -341,7 +494,7 @@ impl CompoundMemoStrategy {
                             },
                         });
 
-                        // 4. HIT BLOCK
+                        // --- 4. HIT BLOCK ---
                         rewritten.push(BasicBlock {
                             id: hit_id,
                             instructions: vec![MirInstruction::Assign {
@@ -351,7 +504,7 @@ impl CompoundMemoStrategy {
                             terminator: MirTerminator::Branch(cont_id),
                         });
 
-                        // 5. MISS BLOCK (Fix Recursive Target & Signature)
+                        // --- 5. MISS BLOCK ---
                         let mut new_arg_types = arg_types.clone();
                         new_arg_types.push(OnuType::Ptr);
                         new_arg_types.push(OnuType::Ptr);
@@ -365,22 +518,22 @@ impl CompoundMemoStrategy {
                                 name: format!("{}.inner", orig_name),
                                 dest,
                                 args: new_args,
-                                is_tail_call: false, // Followed by store
+                                is_tail_call: false,
                                 return_type: return_type.clone(),
                                 arg_types: new_arg_types,
                             }],
                             terminator: MirTerminator::Branch(store_id),
                         });
 
-                        // 6. STORE BLOCK
+                        // --- 6. STORE BLOCK ---
                         let mut store_insts = vec![];
+                        let store_byte_offset =
+                            provider.compute_byte_offset(&mut store_insts, flat_ssa);
                         let store_ptr = provider.builder.alloc_ssa();
-                        let store_offset =
-                            provider.compute_offset(&mut store_insts, args[0].clone());
                         store_insts.push(MirInstruction::PointerOffset {
                             dest: store_ptr,
                             ptr: MirOperand::Variable(provider.cache_ptr_ssa, false),
-                            offset: MirOperand::Variable(store_offset, false),
+                            offset: MirOperand::Variable(store_byte_offset, false),
                         });
                         store_insts.push(MirInstruction::TypedStore {
                             ptr: MirOperand::Variable(store_ptr, false),
@@ -388,12 +541,11 @@ impl CompoundMemoStrategy {
                             typ: provider.ret_type.clone(),
                         });
 
-                        // Store occupancy flag
                         let occ_store_ptr = provider.builder.alloc_ssa();
                         store_insts.push(MirInstruction::PointerOffset {
                             dest: occ_store_ptr,
                             ptr: MirOperand::Variable(provider.occ_ptr_ssa, false),
-                            offset: args[0].clone(),
+                            offset: MirOperand::Variable(flat_ssa, false),
                         });
                         store_insts.push(MirInstruction::TypedStore {
                             ptr: MirOperand::Variable(occ_store_ptr, false),

@@ -31,7 +31,7 @@ fn memo_occupancy_buffer_test() {
             terminator: MirTerminator::Return(MirOperand::Variable(1, false)),
         }],
         is_pure_data_leaf: true,
-        diminishing: Some("n".to_string()),
+        diminishing: vec!["n".to_string()],
         memo_cache_size: None,
     };
 
@@ -154,7 +154,7 @@ fn memo_multi_arg_guard_test() {
             terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
         }],
         is_pure_data_leaf: true,
-        diminishing: Some("a".to_string()),
+        diminishing: vec!["a".to_string()],
         memo_cache_size: None,
     };
 
@@ -232,7 +232,7 @@ fn memo_compound_occupancy_test() {
             terminator: MirTerminator::Return(MirOperand::Variable(1, false)),
         }],
         is_pure_data_leaf: true,
-        diminishing: Some("id".to_string()),
+        diminishing: vec!["id".to_string()],
         memo_cache_size: None,
     };
 
