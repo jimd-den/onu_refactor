@@ -153,6 +153,7 @@ mod tests {
                 args,
                 return_type: OnuType::I64,
                 diminishing: None,
+                memo_cache_size: None,
             },
             body,
         }

@@ -175,9 +175,17 @@ impl OnuParser {
 }
 
 impl ParserPort for OnuParser {
+    fn scan_headers(&self, tokens: &[Token], registry: &mut RegistryService) -> Result<(), OnuError> {
+        OnuParser::scan_headers(self, tokens, registry)
+    }
+
     fn parse(&self, tokens: Vec<Token>) -> Result<Vec<Discourse>, OnuError> {
         let mut registry = RegistryService::new();
         self.parse_with_registry(tokens, &mut registry)
+    }
+
+    fn parse_with_registry(&self, tokens: Vec<Token>, registry: &mut RegistryService) -> Result<Vec<Discourse>, OnuError> {
+        OnuParser::parse_with_registry(self, tokens, registry)
     }
 }
 
@@ -383,7 +391,7 @@ impl ParserInternal {
             }
         }
 
-        Ok(BehaviorHeader { name, is_effect, intent, takes, delivers, diminishing, skip_termination_check })
+        Ok(BehaviorHeader { name, is_effect, intent, takes, delivers, diminishing, memo_cache_size: None, skip_termination_check })
     }
 
     fn parse_block(&mut self, registry: &mut RegistryService) -> Result<Expression, OnuError> {

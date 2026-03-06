@@ -96,5 +96,6 @@ pub struct BehaviorHeader {
     pub takes: Vec<Argument>,
     pub delivers: ReturnType,
     pub diminishing: Option<String>,
+    pub memo_cache_size: Option<usize>,
     pub skip_termination_check: bool,
 }

@@ -68,7 +68,9 @@ pub trait LexerPort {
 }
 
 pub trait ParserPort {
+    fn scan_headers(&self, tokens: &[Token], registry: &mut crate::application::use_cases::registry_service::RegistryService) -> Result<(), OnuError>;
     fn parse(&self, tokens: Vec<Token>) -> Result<Vec<Discourse>, OnuError>;
+    fn parse_with_registry(&self, tokens: Vec<Token>, registry: &mut crate::application::use_cases::registry_service::RegistryService) -> Result<Vec<Discourse>, OnuError>;
 }
 
 pub trait CodegenPort {
