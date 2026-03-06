@@ -451,6 +451,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             src: remap_operand(src, ssa_offset),
             to_type: to_type.clone(),
         },
+        MirInstruction::BitCast { dest, src, to_type } => MirInstruction::BitCast {
+            dest: dest + ssa_offset,
+            src: remap_operand(src, ssa_offset),
+            to_type: to_type.clone(),
+        },
     }
 }
 
@@ -477,6 +482,8 @@ fn max_ssa_in_function(func: &MirFunction) -> usize {
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
                 MirInstruction::Load { dest, .. } => Some(*dest),
+                MirInstruction::Promote { dest, .. } => Some(*dest),
+                MirInstruction::BitCast { dest, .. } => Some(*dest),
                 _ => None,
             };
             if let Some(d) = dest {

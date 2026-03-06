@@ -32,6 +32,7 @@ fn memo_occupancy_buffer_test() {
         }],
         is_pure_data_leaf: true,
         diminishing: Some("n".to_string()),
+        memo_cache_size: None,
     };
 
     let program = MirProgram {
@@ -154,6 +155,7 @@ fn memo_multi_arg_guard_test() {
         }],
         is_pure_data_leaf: true,
         diminishing: Some("a".to_string()),
+        memo_cache_size: None,
     };
 
     let program = MirProgram {
@@ -231,6 +233,7 @@ fn memo_compound_occupancy_test() {
         }],
         is_pure_data_leaf: true,
         diminishing: Some("id".to_string()),
+        memo_cache_size: None,
     };
 
     let registry = RegistryService::new();

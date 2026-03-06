@@ -1,0 +1,6 @@
+# Cargo configuration for onu_refactor
+#
+# Points llvm-sys to the LLVM 14 installation so that `cargo build` works
+# without needing to set LLVM_SYS_140_PREFIX manually.
+[env]
+LLVM_SYS_140_PREFIX = "/usr/lib/llvm-14"

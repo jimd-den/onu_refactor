@@ -14,10 +14,9 @@ clang cbench_collatz.c -O3 -o c_collatz_bin
 clang cbench_ackermann.c -O3 -o c_ackermann_bin
 
 echo "Compiling Onu benchmarks..."
-# The --run flag realizes the bin to the same directory
-cargo run --quiet -- samples/fib_naive_only.onu --run > /dev/null 2>&1
-cargo run --quiet -- samples/collatz_benchmark.onu --run > /dev/null 2>&1
-cargo run --quiet -- samples/ackermann_bench.onu --run > /dev/null 2>&1
+cargo run --quiet -- samples/fib_naive_only.onu > /dev/null 2>&1
+cargo run --quiet -- samples/collatz_bench.onu > /dev/null 2>&1
+cargo run --quiet -- samples/ackermann_bench.onu > /dev/null 2>&1
 
 echo "========================================" >> "$OUTPUT_FILE"
 echo " Naive Fibonacci (fib(40))" >> "$OUTPUT_FILE"

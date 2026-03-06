@@ -16,14 +16,22 @@ impl MemoPass {
         let mut new_functions = vec![];
         for func in program.functions {
             if Self::is_memoizable(&func) {
+                // WideInt values can be cached with PrimitiveMemoStrategy because
+                // LLVM supports arbitrary-width integer load/store natively.
+                // Nothing (void) is excluded from PrimitiveMemoStrategy: size_of(Nothing) == 0,
+                // which would produce a 0-byte cache allocation and invalid load/store accesses.
                 let strategy: Box<dyn MemoStrategy> = match func.return_type {
-                    OnuType::I64 | OnuType::Boolean | OnuType::Nothing | OnuType::Ptr => {
+                    OnuType::I64 | OnuType::Boolean | OnuType::Ptr | OnuType::WideInt(_) => {
                         Box::new(PrimitiveMemoStrategy)
                     }
                     _ => Box::new(CompoundMemoStrategy),
                 };
+                // Use function-specific cache size when set (e.g. by IntegerUpgradePass
+                // to cap arena usage for large WideInt entries), else fall back to the
+                // global default.
+                let cache_size = func.memo_cache_size.unwrap_or(DEFAULT_MEMO_CACHE_SIZE);
                 let (wrapper, inner) =
-                    strategy.create_wrapper_and_inner(func, DEFAULT_MEMO_CACHE_SIZE, registry);
+                    strategy.create_wrapper_and_inner(func, cache_size, registry);
                 new_functions.push(wrapper);
                 new_functions.push(inner);
             } else {
@@ -36,17 +44,21 @@ impl MemoPass {
     }
 
     fn is_memoizable(func: &MirFunction) -> bool {
-        let r = func.is_pure_data_leaf
+        // Nothing (void) functions have no return value to cache and size_of(Nothing) == 0,
+        // which would produce a zero-byte arena and invalid memory accesses in the cache.
+        let r = func.return_type != OnuType::Nothing
+            && func.is_pure_data_leaf
             && func.diminishing.is_some()
             && func.args.len() == 1
             && func.args[0].typ == OnuType::I64;
         eprintln!(
-            "[MemoPass] fn='{}' pure={} dim={:?} args={} arg0={:?} => {}",
+            "[MemoPass] fn='{}' pure={} dim={:?} args={} arg0={:?} ret={:?} => {}",
             func.name,
             func.is_pure_data_leaf,
             func.diminishing,
             func.args.len(),
             func.args.first().map(|a| &a.typ),
+            func.return_type,
             r
         );
         r
@@ -75,6 +87,7 @@ mod tests {
             }],
             is_pure_data_leaf: true,
             diminishing: Some("x".to_string()),
+            memo_cache_size: None,
         };
 
         let program = MirProgram {
@@ -84,5 +97,39 @@ mod tests {
         let registry = RegistryService::new();
         let program = MemoPass::run(program, &registry);
         assert_eq!(program.functions.len(), 2);
+    }
+
+    #[test]
+    fn test_nothing_return_type_is_not_memoized() {
+        // Functions returning Nothing (void) must not be memoized:
+        // size_of(Nothing) == 0 would allocate a zero-byte cache and trigger
+        // invalid memory accesses in the load/store codegen paths.
+        let func = MirFunction {
+            name: "void_fn".to_string(),
+            args: vec![MirArgument {
+                name: "x".to_string(),
+                typ: OnuType::I64,
+                ssa_var: 0,
+            }],
+            return_type: OnuType::Nothing,
+            blocks: vec![BasicBlock {
+                id: 0,
+                instructions: vec![],
+                terminator: MirTerminator::Return(MirOperand::Variable(0, false)),
+            }],
+            is_pure_data_leaf: true,
+            diminishing: Some("x".to_string()),
+            memo_cache_size: None,
+        };
+
+        let program = MirProgram {
+            functions: vec![func],
+        };
+
+        let registry = RegistryService::new();
+        let program = MemoPass::run(program, &registry);
+        // The function must pass through unchanged (no wrapper/inner split).
+        assert_eq!(program.functions.len(), 1);
+        assert_eq!(program.functions[0].name, "void_fn");
     }
 }

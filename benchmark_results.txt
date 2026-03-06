@@ -9,16 +9,16 @@
 --- C ---
 fib(40) = 102334155
 
-real	0m0.355s
-user	0m0.355s
-sys	0m0.000s
+real	0m0.316s
+user	0m0.315s
+sys	0m0.001s
 
 --- Onu ---
-fib(1000) = 817770325994397771 (integer_overflow)
+fib(1000) = 43466557686937456435688527675040625802564660517371780402481729089536555417949051890403879840079255169295922593080322634775209689623239873322471161642996440906533187938298969649928516003704476137795166849228875
 
-real	0m0.001s
-user	0m0.001s
-sys	0m0.000s
+real	0m0.007s
+user	0m0.006s
+sys	0m0.001s
 
 ========================================
  Collatz Conjecture Loop (1 to 1,000,000)
@@ -27,16 +27,16 @@ sys	0m0.000s
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.302s
-user	0m0.302s
+real	0m0.129s
+user	0m0.129s
 sys	0m0.000s
 
 --- Onu ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.265s
-user	0m0.265s
-sys	0m0.000s
+real	0m0.211s
+user	0m0.210s
+sys	0m0.001s
 
 ========================================
  Ackermann Function (3, 11)
@@ -45,16 +45,16 @@ sys	0m0.000s
 --- C ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.671s
-user	0m0.671s
+real	0m0.146s
+user	0m0.146s
 sys	0m0.000s
 
 --- Onu ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.671s
-user	0m0.665s
-sys	0m0.004s
+real	0m0.146s
+user	0m0.146s
+sys	0m0.000s
 
 ========================================
  Benchmarks Complete

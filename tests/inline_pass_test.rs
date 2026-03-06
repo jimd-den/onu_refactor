@@ -26,6 +26,7 @@ fn make_pure_callee() -> MirFunction {
         return_type: OnuType::I64,
         is_pure_data_leaf: true,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![
@@ -57,6 +58,7 @@ fn make_caller() -> MirFunction {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![
@@ -205,6 +207,7 @@ fn inline_pass_is_identity_for_external_calls() {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::Call {
@@ -250,6 +253,7 @@ fn inline_pass_is_identity_for_non_pure_callees() {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None, // NOT pure
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::Emit(MirOperand::Constant(MirLiteral::I64(
@@ -269,6 +273,7 @@ fn inline_pass_is_identity_for_non_pure_callees() {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::Call {

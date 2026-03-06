@@ -212,6 +212,7 @@ mod tests {
             }],
             is_pure_data_leaf,
             diminishing: None,
+            memo_cache_size: None,
         }
     }
 

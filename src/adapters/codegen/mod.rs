@@ -111,6 +111,13 @@ struct LlvmGenerator<'ctx, 'a> {
 
 impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     fn generate(&mut self, program: &MirProgram) -> Result<(), OnuError> {
+        // Before generating MIR functions, emit any wide-integer division helpers
+        // that are referenced by the program.  These helpers implement the
+        // binary long-division algorithm using operations (shifts, comparisons,
+        // add/sub) that LLVM can always lower, bypassing the missing compiler-rt
+        // entries for sdiv on types wider than i128.
+        self.emit_wide_div_helpers(program);
+
         for func in &program.functions {
             self.declare_function(func);
         }
@@ -118,6 +125,222 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             self.generate_function(func)?;
         }
         Ok(())
+    }
+
+    /// Scan the program for calls to `__onu_wide_div_N` helpers and emit their
+    /// LLVM IR implementations if they have not yet been emitted.
+    ///
+    /// Each helper implements unsigned binary long-division (bit-by-bit restoring
+    /// division) using only shift, OR, comparison and subtraction — all of which
+    /// LLVM can lower at any bit-width without an external runtime library.
+    ///
+    /// Note: WideInt values used in Ọ̀nụ represent non-negative mathematical
+    /// quantities (e.g. Fibonacci numbers), so unsigned division is correct here.
+    fn emit_wide_div_helpers(&self, program: &MirProgram) {
+        use std::collections::HashSet;
+        let mut emitted: HashSet<u32> = HashSet::new();
+
+        for func in &program.functions {
+            for block in &func.blocks {
+                for inst in &block.instructions {
+                    if let crate::domain::entities::mir::MirInstruction::Call { name, .. } = inst {
+                        if let Some(bits_str) = name.strip_prefix("__onu_wide_div_") {
+                            if let Ok(bits) = bits_str.parse::<u32>() {
+                                if emitted.insert(bits) {
+                                    self.emit_wide_div_helper(bits);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Emit the LLVM IR for `__onu_wide_div_<bits>(dividend, divisor) -> quotient`.
+    ///
+    /// Algorithm: restoring binary long-division.
+    ///
+    ///   quotient  = 0
+    ///   remainder = 0
+    ///   for i = (bits-1) downto 0:
+    ///     remainder = (remainder << 1) | ((dividend >> i) & 1)
+    ///     if remainder >= divisor:
+    ///       remainder -= divisor
+    ///       quotient |= (1 << i)
+    ///   return quotient
+    ///
+    /// All constituent operations (shl, lshr, or, icmp uge, sub, zext) are
+    /// fully supported by LLVM for any integer width.
+    fn emit_wide_div_helper(&self, bits: u32) {
+        use inkwell::attributes::{Attribute, AttributeLoc};
+        use inkwell::module::Linkage;
+        use inkwell::IntPredicate;
+
+        let helper_name = format!("__onu_wide_div_{}", bits);
+
+        // Only emit once.
+        if self.module.get_function(&helper_name).is_some() {
+            return;
+        }
+
+        let wide_type = self.context.custom_width_int_type(bits);
+        let i64_type = self.context.i64_type();
+
+        // declare internal fastcc iN @__onu_wide_div_N(iN %dividend, iN %divisor)
+        let fn_type = wide_type.fn_type(&[wide_type.into(), wide_type.into()], false);
+        let fn_val = self
+            .module
+            .add_function(&helper_name, fn_type, Some(Linkage::Internal));
+        fn_val.set_call_conventions(8); // fastcc
+
+        // nounwind + readnone + nofree attributes — the function has no side effects.
+        for attr_name in &["nounwind", "readnone", "nofree", "nosync"] {
+            let kind_id = Attribute::get_named_enum_kind_id(attr_name);
+            fn_val.add_attribute(
+                AttributeLoc::Function,
+                self.context.create_enum_attribute(kind_id, 0),
+            );
+        }
+
+        let dividend = fn_val.get_nth_param(0).unwrap().into_int_value();
+        let divisor = fn_val.get_nth_param(1).unwrap().into_int_value();
+
+        let zero_wide = wide_type.const_zero();
+        let one_wide = wide_type.const_int(1, false);
+        let bits_minus_1 = i64_type.const_int((bits - 1) as u64, false);
+
+        // Basic blocks
+        let entry_bb = self.context.append_basic_block(fn_val, "entry");
+        let div_zero_bb = self.context.append_basic_block(fn_val, "div_zero");
+        let loop_init_bb = self.context.append_basic_block(fn_val, "loop_init");
+        let loop_check_bb = self.context.append_basic_block(fn_val, "loop_check");
+        let loop_body_bb = self.context.append_basic_block(fn_val, "loop_body");
+        let do_subtract_bb = self.context.append_basic_block(fn_val, "do_subtract");
+        let loop_merge_bb = self.context.append_basic_block(fn_val, "loop_merge");
+        let exit_bb = self.context.append_basic_block(fn_val, "exit");
+
+        let b = &self.builder;
+
+        // ── entry: handle divide-by-zero (return 0) ──────────────────────────
+        b.position_at_end(entry_bb);
+        let is_zero = b
+            .build_int_compare(IntPredicate::EQ, divisor, zero_wide, "is_zero")
+            .unwrap();
+        b.build_conditional_branch(is_zero, div_zero_bb, loop_init_bb)
+            .unwrap();
+
+        // ── div_zero: return 0 ────────────────────────────────────────────────
+        b.position_at_end(div_zero_bb);
+        b.build_return(Some(&zero_wide)).unwrap();
+
+        // ── loop_init: branch into loop header ───────────────────────────────
+        b.position_at_end(loop_init_bb);
+        b.build_unconditional_branch(loop_check_bb).unwrap();
+
+        // ── loop_check: phi nodes + termination test ─────────────────────────
+        b.position_at_end(loop_check_bb);
+        let i_phi = b.build_phi(i64_type, "i").unwrap();
+        let quotient_phi = b.build_phi(wide_type, "quotient").unwrap();
+        let remainder_phi = b.build_phi(wide_type, "remainder").unwrap();
+
+        // Initialize phis from loop_init
+        i_phi.add_incoming(&[(&bits_minus_1, loop_init_bb)]);
+        quotient_phi.add_incoming(&[(&zero_wide, loop_init_bb)]);
+        remainder_phi.add_incoming(&[(&zero_wide, loop_init_bb)]);
+
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let quotient_val = quotient_phi.as_basic_value().into_int_value();
+        let remainder_val = remainder_phi.as_basic_value().into_int_value();
+
+        // Loop continuation condition: keep looping while i <= bits-1.
+        // i is stored as an unsigned i64 counter.  After the final iteration
+        // (i == 0), we compute i_next = 0 - 1, which wraps to u64::MAX.
+        // Because u64::MAX > bits-1, the ULE check fails and the loop exits.
+        let loop_cond = b
+            .build_int_compare(IntPredicate::ULE, i_val, bits_minus_1, "loop_cond")
+            .unwrap();
+        b.build_conditional_branch(loop_cond, loop_body_bb, exit_bb)
+            .unwrap();
+
+        // ── loop_body: shift remainder and conditionally subtract ─────────────
+        b.position_at_end(loop_body_bb);
+
+        // i_wide = zext i64 %i to iN
+        let i_wide = b
+            .build_int_z_extend(i_val, wide_type, "i_wide")
+            .unwrap();
+
+        // remainder_shifted = remainder << 1
+        let remainder_shifted = b
+            .build_left_shift(remainder_val, one_wide, "rem_shifted")
+            .unwrap();
+
+        // bit = (dividend >> i_wide) & 1
+        let bit_shifted = b
+            .build_right_shift(dividend, i_wide, false, "bit_shifted")
+            .unwrap();
+        let bit = b
+            .build_and(bit_shifted, one_wide, "bit")
+            .unwrap();
+
+        // remainder_new = remainder_shifted | bit
+        let remainder_new = b
+            .build_or(remainder_shifted, bit, "rem_new")
+            .unwrap();
+
+        // if remainder_new >= divisor → do_subtract, else → loop_merge
+        let cmp_uge = b
+            .build_int_compare(IntPredicate::UGE, remainder_new, divisor, "uge")
+            .unwrap();
+        b.build_conditional_branch(cmp_uge, do_subtract_bb, loop_merge_bb)
+            .unwrap();
+
+        // ── do_subtract: remainder -= divisor; quotient |= (1 << i) ──────────
+        b.position_at_end(do_subtract_bb);
+        let rem_after_sub = b
+            .build_int_sub(remainder_new, divisor, "rem_sub")
+            .unwrap();
+        let one_shifted = b
+            .build_left_shift(one_wide, i_wide, "one_shifted")
+            .unwrap();
+        let quotient_updated = b
+            .build_or(quotient_val, one_shifted, "quot_updated")
+            .unwrap();
+        b.build_unconditional_branch(loop_merge_bb).unwrap();
+
+        // ── loop_merge: update phis, decrement i ──────────────────────────────
+        b.position_at_end(loop_merge_bb);
+        let quotient_next_phi = b.build_phi(wide_type, "quotient_next").unwrap();
+        quotient_next_phi.add_incoming(&[
+            (&quotient_updated, do_subtract_bb),
+            (&quotient_val, loop_body_bb),
+        ]);
+        let remainder_next_phi = b.build_phi(wide_type, "remainder_next").unwrap();
+        remainder_next_phi.add_incoming(&[
+            (&rem_after_sub, do_subtract_bb),
+            (&remainder_new, loop_body_bb),
+        ]);
+
+        let quotient_next = quotient_next_phi.as_basic_value().into_int_value();
+        let remainder_next = remainder_next_phi.as_basic_value().into_int_value();
+
+        // i_next = i - 1  (wraps to u64::MAX when i == 0, which terminates loop)
+        let one_i64 = i64_type.const_int(1, false);
+        let i_next = b
+            .build_int_sub(i_val, one_i64, "i_next")
+            .unwrap();
+
+        // Back-edge phis
+        i_phi.add_incoming(&[(&i_next, loop_merge_bb)]);
+        quotient_phi.add_incoming(&[(&quotient_next, loop_merge_bb)]);
+        remainder_phi.add_incoming(&[(&remainder_next, loop_merge_bb)]);
+
+        b.build_unconditional_branch(loop_check_bb).unwrap();
+
+        // ── exit: return quotient ─────────────────────────────────────────────
+        b.position_at_end(exit_bb);
+        b.build_return(Some(&quotient_val)).unwrap();
     }
 
     fn declare_function(&self, func: &MirFunction) {
@@ -360,6 +583,14 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 inst,
             ),
             MirInstruction::Promote { .. } => PromoteStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::BitCast { .. } => BitCastStrategy.generate(
                 self.context,
                 &self.module,
                 &self.builder,

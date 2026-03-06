@@ -139,6 +139,7 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         hir_discourses: Vec<HirDiscourse>,
     ) -> Result<crate::domain::entities::mir::MirProgram, OnuError> {
         use crate::application::use_cases::inline_pass::InlinePass;
+        use crate::application::use_cases::integer_upgrade_pass::IntegerUpgradePass;
         use crate::application::use_cases::memo_pass::MemoPass;
         use crate::application::use_cases::tco_pass::TcoPass;
 
@@ -157,10 +158,25 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         // Stage 4: Second TcoPass — catches tail calls exposed by inlining.
         let mir = TcoPass::run(mir);
 
+        // Stage 4.5: Automatically promote doubly-recursive pure functions from
+        // I64 to WideInt(bits) when call-site literals imply overflow.
+        // The correct full-precision answer uses native LLVM wide integers —
+        // no external BigInt library required.  MemoPass (Stage 5) then
+        // memoizes the widened function for O(n) time.
+        let mir = IntegerUpgradePass::run(mir);
+
         // Stage 5: Memoize doubly-recursive pure functions annotated with
         // `with diminishing:`. Converts O(2^n) call trees to O(n) via a
         // stack-allocated lookup table.
         let mir = MemoPass::run(mir, &self.registry);
+
+        // Stage 6: Operation Legalization — replace any WideInt (> 128-bit)
+        // division or modulo with a call to a compiler-internal helper
+        // (__onu_wide_div_N / __onu_wide_mod_N) so the LLVM backend never sees
+        // an sdiv/srem on a type wider than i128 (for which no runtime library
+        // helper exists).
+        use crate::application::use_cases::wide_div_legalization_pass::WideDivLegalizationPass;
+        let mir = WideDivLegalizationPass::run(mir);
 
         Ok(mir)
     }
