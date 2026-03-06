@@ -332,31 +332,18 @@ impl CompoundMemoStrategy {
                         ref arg_types,
                     } if name == orig_name && args.len() == n_dims => {
                         let fetch_id = provider.builder.alloc_block();
-                        let miss_id = provider.builder.alloc_block();
+                        let miss_in_bounds_id = provider.builder.alloc_block();
+                        let miss_out_of_bounds_id = provider.builder.alloc_block();
                         let hit_id = provider.builder.alloc_block();
                         let store_id = provider.builder.alloc_block();
                         let cont_id = provider.builder.alloc_block();
 
                         // --- Compute flat index (Horner's) in current block ---
-                        // This SSA is dominated by curr_id and reachable from all
-                        // successor blocks (fetch_id, store_id, miss_id, hit_id).
                         let flat_ssa =
                             provider.compute_flat_index(&mut insts, args);
 
                         // --- Build per-dimension bound-check chain ---
-                        // For each arg i we need: lower (arg_i >= 0) and upper (arg_i < dim_size).
-                        // The chain terminates at fetch_id on success or miss_id on failure.
-                        //
-                        // Block layout (written into `rewritten` below):
-                        //   curr_id      → lower_check_0 inline → upper_check_0
-                        //   upper_check_0 → lower_check_1 | miss_id
-                        //   lower_check_1 → upper_check_1 | miss_id
-                        //   ...
-                        //   upper_check_{N-1} → fetch_id | miss_id
-
-                        // Allocate block IDs for upper checks (lower checks share blocks).
                         let upper_check_0 = provider.builder.alloc_block();
-                        // For dims 1..N-1 we need a (lower, upper) block pair each.
                         let extra_check_blocks: Vec<(usize, usize)> = (1..n_dims)
                             .map(|_| {
                                 (
@@ -380,7 +367,7 @@ impl CompoundMemoStrategy {
                             instructions: insts.drain(..).collect(),
                             terminator: MirTerminator::CondBranch {
                                 condition: MirOperand::Variable(l_check_0, false),
-                                then_block: miss_id,
+                                then_block: miss_out_of_bounds_id,
                                 else_block: upper_check_0,
                             },
                         });
@@ -404,7 +391,7 @@ impl CompoundMemoStrategy {
                             terminator: MirTerminator::CondBranch {
                                 condition: MirOperand::Variable(u_check_0, false),
                                 then_block: next_after_0,
-                                else_block: miss_id,
+                                else_block: miss_out_of_bounds_id,
                             },
                         });
 
@@ -429,7 +416,7 @@ impl CompoundMemoStrategy {
                                 }],
                                 terminator: MirTerminator::CondBranch {
                                     condition: MirOperand::Variable(l_check, false),
-                                    then_block: miss_id,
+                                    then_block: miss_out_of_bounds_id,
                                     else_block: *upper_id,
                                 },
                             });
@@ -447,7 +434,7 @@ impl CompoundMemoStrategy {
                                 terminator: MirTerminator::CondBranch {
                                     condition: MirOperand::Variable(u_check, false),
                                     then_block: next_pass,
-                                    else_block: miss_id,
+                                    else_block: miss_out_of_bounds_id,
                                 },
                             });
                         }
@@ -497,7 +484,7 @@ impl CompoundMemoStrategy {
                             terminator: MirTerminator::CondBranch {
                                 condition: MirOperand::Variable(hit_cond, false),
                                 then_block: hit_id,
-                                else_block: miss_id,
+                                else_block: miss_in_bounds_id,
                             },
                         });
 
@@ -511,7 +498,7 @@ impl CompoundMemoStrategy {
                             terminator: MirTerminator::Branch(cont_id),
                         });
 
-                        // --- 5. MISS BLOCK ---
+                        // --- 5. MISS BLOCKS (In-Bounds vs Out-of-Bounds) ---
                         let mut new_arg_types = arg_types.clone();
                         new_arg_types.push(OnuType::Ptr);
                         new_arg_types.push(OnuType::Ptr);
@@ -519,8 +506,23 @@ impl CompoundMemoStrategy {
                         new_args.push(MirOperand::Variable(provider.cache_ptr_ssa, false));
                         new_args.push(MirOperand::Variable(provider.occ_ptr_ssa, false));
 
+                        // Path A: In-Bounds. Call and then store the result.
                         rewritten.push(BasicBlock {
-                            id: miss_id,
+                            id: miss_in_bounds_id,
+                            instructions: vec![MirInstruction::Call {
+                                name: format!("{}.inner", orig_name),
+                                dest,
+                                args: new_args.clone(),
+                                is_tail_call: false,
+                                return_type: return_type.clone(),
+                                arg_types: new_arg_types.clone(),
+                            }],
+                            terminator: MirTerminator::Branch(store_id),
+                        });
+
+                        // Path B: Out-of-Bounds. Call and then skip the store.
+                        rewritten.push(BasicBlock {
+                            id: miss_out_of_bounds_id,
                             instructions: vec![MirInstruction::Call {
                                 name: format!("{}.inner", orig_name),
                                 dest,
@@ -529,7 +531,7 @@ impl CompoundMemoStrategy {
                                 return_type: return_type.clone(),
                                 arg_types: new_arg_types,
                             }],
-                            terminator: MirTerminator::Branch(store_id),
+                            terminator: MirTerminator::Branch(cont_id),
                         });
 
                         // --- 6. STORE BLOCK ---

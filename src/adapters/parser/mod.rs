@@ -391,7 +391,7 @@ impl ParserInternal {
                         }
                         
                         // Consume optional comma
-                        if matches!(t, Token::Operator(op) if op == ",") {
+                        if matches!(t, Token::Delimiter(',')) {
                             self.advance();
                         }
 
