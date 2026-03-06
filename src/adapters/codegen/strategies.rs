@@ -809,6 +809,14 @@ impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
                 .unwrap();
 
             let loaded_val = builder.build_load(typed_ptr, "loaded_val").unwrap();
+            if let inkwell::values::BasicValueEnum::IntValue(iv) = loaded_val {
+                if iv.get_type().get_bit_width() == 64 {
+                    unsafe {
+                        let load_inst = loaded_val.as_value_ref();
+                        llvm_sys::core::LLVMSetAlignment(load_inst, 8);
+                    }
+                }
+            }
             let ssa_ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, dest_llvm_type);
             builder.build_store(ssa_ptr, loaded_val).unwrap();
         }
@@ -913,7 +921,12 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
             } else {
                 val
             };
-            builder.build_store(typed_ptr, val_to_store).unwrap();
+            let store_inst = builder.build_store(typed_ptr, val_to_store).unwrap();
+            if val_to_store.is_int_value() && val_to_store.into_int_value().get_type().get_bit_width() == 64 {
+                unsafe {
+                    llvm_sys::core::LLVMSetAlignment(store_inst.as_value_ref(), 8);
+                }
+            }
         }
         Ok(())
     }

@@ -176,20 +176,24 @@ impl MemoStrategy for CompoundMemoStrategy {
 impl CompoundMemoStrategy {
     /// Compute the largest per-dimension cache size such that the **combined**
     /// allocation (`dim_size ^ n_dims * stride` for the result cache PLUS
-    /// `dim_size ^ n_dims * 1` for the occupancy-flag array) stays within
-    /// `CACHE_MEMORY_LIMIT`.  Both arrays live in the same 1 MiB arena, so we
-    /// must budget for both or the arena pointer will walk into unmapped memory.
+    /// `dim_size ^ n_dims * 8` for the padded occupancy-flag array) stays within
+    /// `CACHE_MEMORY_LIMIT`. We use a padded occupancy stride of 8 to ensure
+    /// that both the results and the occupancy flags land on 8-byte boundaries,
+    /// enabling fast, aligned hardware access.
+    ///
+    /// Additionally, we round the dimension size DOWN to the nearest power of 2.
+    /// This allows the index-flattening math (Horner's method) to use bit-shifts
+    /// instead of expensive integer multiplications.
     fn safe_dim_size(n_dims: usize, stride: usize, nominal: usize) -> usize {
         let stride = stride.max(1);
-        // Each entry costs `stride` bytes in the result cache PLUS 1 byte in the
-        // occupancy array.  Divide the total budget by the combined per-entry cost.
-        let per_entry = stride + 1;
+        // Each entry costs `stride` bytes in the result cache PLUS 8 bytes in the
+        // padded occupancy array.
+        let per_entry = stride + 8;
         let limit_entries = CACHE_MEMORY_LIMIT / per_entry;
-        // Use floating-point for an initial approximation, then validate
-        // and adjust downward to correct for any rounding error.
+        
         let mut max_dim = (limit_entries as f64).powf(1.0 / n_dims as f64) as usize;
         max_dim = max_dim.max(1);
-        // Ensure dim_size^n_dims doesn't overflow usize and stays within the limit.
+        
         while max_dim > 1 {
             let product = (max_dim as u128).pow(n_dims as u32);
             if product <= limit_entries as u128 {
@@ -197,7 +201,18 @@ impl CompoundMemoStrategy {
             }
             max_dim -= 1;
         }
-        max_dim.min(nominal).max(1)
+        
+        let mut dim = max_dim.min(nominal).max(1);
+        
+        // Round down to the nearest power of two for bit-shift optimization.
+        if dim > 0 {
+            let mut p = 1;
+            while p * 2 <= dim {
+                p *= 2;
+            }
+            dim = p;
+        }
+        dim
     }
 
     fn build_wrapper(
@@ -217,14 +232,12 @@ impl CompoundMemoStrategy {
 
         let n_dims = func.args.len();
         let stride = registry.size_of(typ) as usize;
-        // Memory guard: cap per-dimension size so the combined allocation
-        // (result cache + occupancy array) stays within the 1 MiB limit.
         let dim_size = Self::safe_dim_size(n_dims, stride, size);
-        // safe_dim_size guarantees dim_size^n_dims * (stride + 1) <= CACHE_MEMORY_LIMIT,
-        // so total_bytes + occ_bytes always fits in the arena.
+        
         let total_entries = (dim_size as i64).saturating_pow(n_dims as u32);
         let total_bytes = total_entries.saturating_mul(stride as i64);
-        let occ_bytes = total_entries;
+        // Use an 8-byte stride for occupancy flags to maintain alignment.
+        let occ_bytes = total_entries.saturating_mul(8);
 
         // 1. Entry Block
         let entry_insts = vec![
@@ -450,10 +463,20 @@ impl CompoundMemoStrategy {
                         let occ_ptr_slot = provider.builder.alloc_ssa();
                         let occ_flag_ssa = provider.builder.alloc_ssa();
 
+                        // Use 8-byte stride for occupancy flag to maintain alignment.
+                        let occ_byte_offset = provider.builder.alloc_ssa();
+                        fetch_insts.push(MirInstruction::BinaryOperation {
+                            dest: occ_byte_offset,
+                            op: MirBinOp::Mul,
+                            lhs: MirOperand::Variable(flat_ssa, false),
+                            rhs: MirOperand::Constant(MirLiteral::I64(8)),
+                            dest_type: OnuType::I64,
+                        });
+
                         fetch_insts.push(MirInstruction::PointerOffset {
                             dest: occ_ptr_slot,
                             ptr: MirOperand::Variable(provider.occ_ptr_ssa, false),
-                            offset: MirOperand::Variable(flat_ssa, false),
+                            offset: MirOperand::Variable(occ_byte_offset, false),
                         });
                         fetch_insts.push(MirInstruction::Load {
                             dest: occ_flag_ssa,
@@ -557,10 +580,20 @@ impl CompoundMemoStrategy {
                         });
 
                         let occ_store_ptr = provider.builder.alloc_ssa();
+                        // Use 8-byte stride for occupancy flag here too.
+                        let occ_store_byte_offset = provider.builder.alloc_ssa();
+                        store_insts.push(MirInstruction::BinaryOperation {
+                            dest: occ_store_byte_offset,
+                            op: MirBinOp::Mul,
+                            lhs: MirOperand::Variable(flat_ssa, false),
+                            rhs: MirOperand::Constant(MirLiteral::I64(8)),
+                            dest_type: OnuType::I64,
+                        });
+
                         store_insts.push(MirInstruction::PointerOffset {
                             dest: occ_store_ptr,
                             ptr: MirOperand::Variable(provider.occ_ptr_ssa, false),
-                            offset: MirOperand::Variable(flat_ssa, false),
+                            offset: MirOperand::Variable(occ_store_byte_offset, false),
                         });
                         store_insts.push(MirInstruction::TypedStore {
                             ptr: MirOperand::Variable(occ_store_ptr, false),
