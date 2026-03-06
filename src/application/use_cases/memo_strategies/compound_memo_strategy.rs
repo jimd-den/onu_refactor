@@ -56,10 +56,9 @@ impl<'a> CacheProvider<'a> {
     }
 
     /// Total number of cache entries: `dim_size ^ n_dims`.
+    /// Uses saturating arithmetic since `safe_dim_size` already guarantees this fits.
     fn total_entries(&self) -> i64 {
-        (self.dim_size as i64)
-            .checked_pow(self.n_dims as u32)
-            .expect("Cache entry count overflow")
+        (self.dim_size as i64).saturating_pow(self.n_dims as u32)
     }
 
     /// Compute the byte offset into the cache for a given logical (flat) index SSA.
@@ -181,8 +180,18 @@ impl CompoundMemoStrategy {
     fn safe_dim_size(n_dims: usize, stride: usize, nominal: usize) -> usize {
         let stride = stride.max(1);
         let limit_entries = CACHE_MEMORY_LIMIT / stride;
-        // Maximum dim_size satisfying dim_size^n_dims <= limit_entries.
-        let max_dim = (limit_entries as f64).powf(1.0 / n_dims as f64) as usize;
+        // Use floating-point for an initial approximation, then validate
+        // and adjust downward to correct for any rounding error.
+        let mut max_dim = (limit_entries as f64).powf(1.0 / n_dims as f64) as usize;
+        max_dim = max_dim.max(1);
+        // Ensure dim_size^n_dims doesn't overflow usize and stays within the limit.
+        while max_dim > 1 {
+            let product = (max_dim as u128).pow(n_dims as u32);
+            if product <= limit_entries as u128 {
+                break;
+            }
+            max_dim -= 1;
+        }
         max_dim.min(nominal).max(1)
     }
 
@@ -205,12 +214,10 @@ impl CompoundMemoStrategy {
         let stride = registry.size_of(typ) as usize;
         // Memory guard: cap per-dimension size so total stays within the 1 MiB limit.
         let dim_size = Self::safe_dim_size(n_dims, stride, size);
-        let total_entries = (dim_size as i64)
-            .checked_pow(n_dims as u32)
-            .expect("Cache allocation overflow");
-        let total_bytes = total_entries
-            .checked_mul(stride as i64)
-            .expect("Cache allocation overflow");
+        // safe_dim_size guarantees dim_size^n_dims * stride <= CACHE_MEMORY_LIMIT,
+        // so these products fit in i64 without overflow.
+        let total_entries = (dim_size as i64).saturating_pow(n_dims as u32);
+        let total_bytes = total_entries.saturating_mul(stride as i64);
         let occ_bytes = total_entries;
 
         // 1. Entry Block

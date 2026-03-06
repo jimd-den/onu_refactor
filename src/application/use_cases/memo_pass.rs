@@ -4,6 +4,7 @@ use crate::application::use_cases::memo_strategies::{
 };
 use crate::domain::entities::mir::{MirFunction, MirProgram};
 use crate::domain::entities::types::OnuType;
+use std::collections::HashSet;
 
 use crate::application::use_cases::registry_service::RegistryService;
 
@@ -49,13 +50,15 @@ impl MemoPass {
         // Nothing (void) functions have no return value to cache and size_of(Nothing) == 0,
         // which would produce a zero-byte arena and invalid memory accesses in the cache.
         let dim = &func.diminishing;
+        // Build a set for O(1) per-arg lookup, avoiding O(n²) in the all() call below.
+        let dim_set: HashSet<&str> = dim.iter().map(String::as_str).collect();
         let r = func.return_type != OnuType::Nothing
             && func.is_pure_data_leaf
             && !dim.is_empty()
             && !func.args.is_empty()
             && func.args.len() == dim.len()
             && func.args.iter().all(|a| a.typ == OnuType::I64)
-            && func.args.iter().all(|a| dim.contains(&a.name));
+            && func.args.iter().all(|a| dim_set.contains(a.name.as_str()));
         eprintln!(
             "[MemoPass] fn='{}' pure={} dim={:?} args={} ret={:?} => {}",
             func.name,

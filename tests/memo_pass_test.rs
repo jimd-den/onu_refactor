@@ -201,6 +201,9 @@ fn memo_cache_allocation_fits_within_arena_limit() {
 
 /// Build a 2-arg function (like Ackermann) where both args are I64 and both
 /// appear in the `diminishing` list.
+/// The return type is `Tuple` (not `I64`) so that `MemoPass` routes it through
+/// `CompoundMemoStrategy` rather than `PrimitiveMemoStrategy`, letting us
+/// exercise the N-dim flattening logic directly.
 fn make_two_dim_fn(name: &str) -> MirFunction {
     let self_call = MirInstruction::Call {
         dest: 10,
