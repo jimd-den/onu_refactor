@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use crate::application::use_cases::analyzer::visitor::AnalyzerVisitor;
 use crate::domain::entities::error::{Diagnostic, Span};
 use crate::domain::entities::hir::{
-    HirBehaviorHeader, HirDiscourse, HirExpression, HirLiteral,
+    HirBehaviorHeader, HirDiscourse, HirExpression,
 };
 use crate::domain::entities::types::OnuType;
 
@@ -85,84 +85,6 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn collect_used_names(expr: &HirExpression, used: &mut HashSet<String>) {
-        match expr {
-            HirExpression::Variable(name, _) => {
-                used.insert(name.clone());
-            }
-            HirExpression::Call { args, .. } => {
-                for arg in args {
-                    Self::collect_used_names(arg, used);
-                }
-            }
-            HirExpression::BinaryOp { left, right, .. } => {
-                Self::collect_used_names(left, used);
-                Self::collect_used_names(right, used);
-            }
-            HirExpression::Derivation { name: _, value, body, .. } => {
-                // The value may reference outer variables.
-                Self::collect_used_names(value, used);
-                // The bound name is a *definition* not a use; whether it is
-                // referenced is detected by scanning `body`.
-                Self::collect_used_names(body, used);
-            }
-            HirExpression::If { condition, then_branch, else_branch } => {
-                Self::collect_used_names(condition, used);
-                Self::collect_used_names(then_branch, used);
-                Self::collect_used_names(else_branch, used);
-            }
-            HirExpression::ActsAs { subject, .. } => {
-                Self::collect_used_names(subject, used);
-            }
-            HirExpression::Tuple(elements) => {
-                for e in elements {
-                    Self::collect_used_names(e, used);
-                }
-            }
-            HirExpression::Index { subject, .. } => {
-                Self::collect_used_names(subject, used);
-            }
-            HirExpression::Block(stmts) => {
-                for s in stmts {
-                    Self::collect_used_names(s, used);
-                }
-            }
-            HirExpression::Emit(inner) | HirExpression::Drop(inner) => {
-                Self::collect_used_names(inner, used);
-            }
-            HirExpression::Literal(_) => {}
-        }
-    }
-
-    fn collect_defined_names(expr: &HirExpression, defined: &mut HashMap<String, Span>) {
-        if let HirExpression::Derivation { name, value, body, .. } = expr {
-            defined.insert(name.clone(), Span::default());
-            Self::collect_defined_names(value, defined);
-            Self::collect_defined_names(body, defined);
-        } else {
-            // Recurse into sub-expressions
-            match expr {
-                HirExpression::Block(stmts) => {
-                    for s in stmts {
-                        Self::collect_defined_names(s, defined);
-                    }
-                }
-                HirExpression::If { condition, then_branch, else_branch } => {
-                    Self::collect_defined_names(condition, defined);
-                    Self::collect_defined_names(then_branch, defined);
-                    Self::collect_defined_names(else_branch, defined);
-                }
-                HirExpression::BinaryOp { left, right, .. } => {
-                    Self::collect_defined_names(left, defined);
-                    Self::collect_defined_names(right, defined);
-                }
-                HirExpression::Emit(inner) | HirExpression::Drop(inner) => {
-                    Self::collect_defined_names(inner, defined);
-                }
-                _ => {}
-            }
-        }
-    }
 }
 
 impl Default for SemanticAnalyzer {
@@ -178,21 +100,16 @@ impl Default for SemanticAnalyzer {
 impl AnalyzerVisitor for SemanticAnalyzer {
     fn visit_discourse(&mut self, discourse: &HirDiscourse) {
         if let HirDiscourse::Behavior { header, body } = discourse {
+            // Reset per-behavior state and register header arguments.
             self.begin_behavior(header);
-
-            // Collect all defined names (derivation bindings).
-            Self::collect_defined_names(body, &mut self.defined);
-
-            // Collect all used names (variable references in expressions).
-            Self::collect_used_names(body, &mut self.used);
-
-            // Emit warnings for defined-but-never-used.
+            // Walk the body through the visitor, which will call
+            // `visit_variable` and `visit_derivation` as the tree is traversed.
+            self.visit_expression(body);
+            // Emit warnings for everything that was defined but never used.
             self.flush_behavior_diagnostics();
         }
-        // Modules and Shapes don't introduce local bindings.
+        // Modules and Shapes don't introduce local variable bindings.
     }
-
-    fn visit_literal(&mut self, _lit: &HirLiteral) {}
 
     fn visit_variable(&mut self, name: &str, _is_consuming: bool) {
         self.used.insert(name.to_string());
@@ -220,7 +137,7 @@ impl AnalyzerVisitor for SemanticAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::entities::hir::{HirBehaviorHeader, HirArgument};
+    use crate::domain::entities::hir::{HirBehaviorHeader, HirArgument, HirLiteral};
     use crate::domain::entities::types::OnuType;
     use crate::domain::entities::error::Severity;
 

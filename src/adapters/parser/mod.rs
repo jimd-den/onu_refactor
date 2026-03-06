@@ -631,11 +631,15 @@ impl ParserInternal {
                 Ok(Expression::Emit(Box::new(inner)))
             }
             Token::Delimiter('[') => {
-                // Delegate matrix literal parsing to the matrix_parser facade.
-                let remaining = &self.tokens[self.pos..];
-                let (expr, consumed) = matrix_parser::parse_matrix(remaining)?;
-                self.pos += consumed;
-                Ok(expr)
+                // Matrix literals are not yet implemented in the HIR / MIR /
+                // codegen stages.  Reject them here with a clear error instead
+                // of silently producing `nothing` during lowering.
+                Err(OnuError::GrammarViolation {
+                    message: "Matrix literals are not yet implemented; \
+                              use a behavior that constructs the matrix element-by-element instead"
+                        .to_string(),
+                    span: Span::default(),
+                })
             }
             _ => Err(OnuError::GrammarViolation { message: format!("Unexpected token in primary: {:?}", token), span: Span::default() }),
         }
