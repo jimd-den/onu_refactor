@@ -297,21 +297,6 @@ impl PrimitiveMemoStrategy {
                         let store_id = accessor.builder.alloc_block();
                         let cont_id = accessor.builder.alloc_block();
 
-                        // --- DOMINATING CALCULATIONS ---
-                        // We compute offsets in the current block so they are available
-                        // to both fetch_id and store_id blocks.
-                        let occ_offset = accessor.builder.alloc_ssa();
-                        current_insts.push(MirInstruction::BinaryOperation {
-                            dest: occ_offset,
-                            op: MirBinOp::Mul,
-                            lhs: args[0].clone(),
-                            rhs: MirOperand::Constant(MirLiteral::I64(1)),
-                            dest_type: OnuType::I64,
-                        });
-
-                        let val_offset =
-                            accessor.compute_byte_offset(&mut current_insts, args[0].clone());
-
                         // 1. Lower Bound Check (arg >= 0)
                         let l_check = accessor.builder.alloc_ssa();
                         current_insts.push(MirInstruction::BinaryOperation {
@@ -351,7 +336,19 @@ impl PrimitiveMemoStrategy {
                         });
 
                         // 3. FETCH BLOCK
+                        // Offsets are computed here, after both bounds checks, so `arg` is
+                        // guaranteed to be in [0, cache_size) and the multiplies cannot overflow.
                         let mut fetch_insts = vec![];
+                        let occ_offset = accessor.builder.alloc_ssa();
+                        fetch_insts.push(MirInstruction::BinaryOperation {
+                            dest: occ_offset,
+                            op: MirBinOp::Mul,
+                            lhs: args[0].clone(),
+                            rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                            dest_type: OnuType::I64,
+                        });
+                        let val_offset =
+                            accessor.compute_byte_offset(&mut fetch_insts, args[0].clone());
                         let fetch_occ_ptr = accessor.builder.alloc_ssa();
                         let occ_flag = accessor.builder.alloc_ssa();
                         fetch_insts.push(MirInstruction::PointerOffset {
