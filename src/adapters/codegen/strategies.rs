@@ -119,6 +119,10 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                     .build_int_signed_div(l_val.into_int_value(), r_val.into_int_value(), "divtmp")
                     .unwrap()
                     .into(),
+                MirBinOp::And => builder
+                    .build_and(l_val.into_int_value(), r_val.into_int_value(), "andtmp")
+                    .unwrap()
+                    .into(),
                 MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt => {
                     let pred = match op {
                         MirBinOp::Eq => inkwell::IntPredicate::EQ,

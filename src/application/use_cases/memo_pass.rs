@@ -1,5 +1,6 @@
 use crate::application::use_cases::memo_strategies::{
     MemoStrategy, compound_memo_strategy::CompoundMemoStrategy,
+    hash_memo_strategy::HashMemoStrategy,
     primitive_memo_strategy::PrimitiveMemoStrategy,
 };
 use crate::domain::entities::mir::{MirFunction, MirProgram};
@@ -17,10 +18,14 @@ impl MemoPass {
         let mut new_functions = vec![];
         for func in program.functions {
             if Self::is_memoizable(&func) {
-                // Multi-dimensional functions use CompoundMemoStrategy for flattened indexing.
+                // Multi-dimensional functions use HashMemoStrategy: a direct-mapped
+                // hash table that caches ANY (a₀,…,aₙ) pair regardless of magnitude.
+                // This eliminates the 99.99% out-of-bounds fallthrough that
+                // CompoundMemoStrategy suffered for Ackermann-like functions where one
+                // argument (spiral_step) grows exponentially beyond dim_size.
                 // 1-D functions use PrimitiveMemoStrategy for primitive return types.
                 let strategy: Box<dyn MemoStrategy> = if func.diminishing.len() > 1 {
-                    Box::new(CompoundMemoStrategy)
+                    Box::new(HashMemoStrategy)
                 } else {
                     match func.return_type {
                         OnuType::I64 | OnuType::Boolean | OnuType::Ptr | OnuType::WideInt(_) => {

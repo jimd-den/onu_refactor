@@ -139,6 +139,11 @@ impl MemoStrategy for CompoundMemoStrategy {
 
         let mut inner = func.clone();
         inner.name = format!("{}.inner", orig_name);
+        // The inner function reads from and writes to the cache/occ pointers, so
+        // it must NOT inherit is_pure_data_leaf=true from the original function.
+        // Marking it pure would give it the `readnone` LLVM attribute, which
+        // contradicts the cache stores and can cause DSE to eliminate them.
+        inner.is_pure_data_leaf = false;
         let cache_arg_ssa = builder.alloc_ssa();
         let occ_arg_ssa = builder.alloc_ssa();
 
