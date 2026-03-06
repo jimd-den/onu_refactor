@@ -21,7 +21,9 @@ fn test_pipeline_stages() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = MockCodegen;
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     let source = "the module called Test with concern: nothing
 the behavior called run with intent: nothing as: nothing";

@@ -29,7 +29,9 @@ fn test_fibonacci_benchmark() {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
     pipeline.compile("samples/fibonacci.onu").unwrap_or_else(|e| eprintln!("Warning: Compile failed {:?}", e));
 
     let mut total_duration = std::time::Duration::new(0, 0);
@@ -61,7 +63,9 @@ fn test_string_type_struct_is_consistent() {
     options.stop_after = Some(onu_refactor::application::options::CompilerStage::Codegen);
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     pipeline.compile("samples/test_ownership.onu").unwrap();
     // The test framework runs from the workspace root, so 'samples/test_ownership.onu' resolves,
@@ -81,7 +85,9 @@ fn test_passmanager_reduces_alloca_count() {
     options.stop_after = Some(onu_refactor::application::options::CompilerStage::Codegen);
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     // Generate IR without passes explicitly for baseline (since it's baked into CodegenPort right now, we just measure after passes exist in the binary,
     // wait, we can just compile to IR and assert the count is below a baseline number from before passes were added).
@@ -106,7 +112,9 @@ fn test_internal_functions_use_fastcc() {
     options.stop_after = Some(onu_refactor::application::options::CompilerStage::Codegen);
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     pipeline.compile("samples/fibonacci.onu").unwrap();
     let ir = std::fs::read_to_string("samples/fibonacci.ll").unwrap_or_else(|_| std::fs::read_to_string("fibonacci.ll").unwrap_or_default());
@@ -127,7 +135,9 @@ fn test_pure_llvm_has_no_libc() {
     options.stop_after = Some(onu_refactor::application::options::CompilerStage::Codegen);
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     pipeline.compile("samples/hello_world.onu").unwrap();
     let ir = std::fs::read_to_string("samples/hello_world.ll").unwrap_or_else(|_| std::fs::read_to_string("hello_world.ll").unwrap_or_default());
@@ -182,7 +192,9 @@ fn recursive_functions_have_no_cold_or_noinline() {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     pipeline.compile("samples/fibonacci.onu").unwrap();
     let ir = std::fs::read_to_string("samples/fibonacci.ll").unwrap_or_else(|_| std::fs::read_to_string("fibonacci.ll").unwrap_or_default());
@@ -227,7 +239,9 @@ fn internal_functions_use_internal_linkage_not_plt() {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     pipeline.compile("samples/fibonacci.onu").unwrap();
     let ir = std::fs::read_to_string("samples/fibonacci.ll").unwrap_or_else(|_| std::fs::read_to_string("fibonacci.ll").unwrap_or_default());

@@ -6,7 +6,9 @@ fn compile_and_run(sample_path: &str, args: &[&str]) -> String {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     // Compile
     pipeline.compile(sample_path).unwrap();

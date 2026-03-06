@@ -3,10 +3,8 @@ pub mod application;
 pub mod domain;
 pub mod infrastructure;
 
-use crate::adapters::lexer::OnuLexer;
-use crate::adapters::parser::OnuParser;
 use crate::application::options::{CompilationOptions, CompilerStage, LogLevel};
-use crate::application::ports::compiler_ports::{CodegenPort, LexerPort};
+use crate::application::ports::compiler_ports::{CodegenPort, LexerPort, ParserPort};
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::use_cases::analysis_service::AnalysisService;
 use crate::application::use_cases::lowering_service::LoweringService;
@@ -24,12 +22,18 @@ pub struct CompilationPipeline<E: EnvironmentPort, C: CodegenPort> {
     pub codegen: C,
     pub options: CompilationOptions,
     pub registry: RegistryService,
-    pub lexer: OnuLexer,
-    pub parser: OnuParser,
+    pub lexer: Box<dyn LexerPort>,
+    pub parser: Box<dyn ParserPort>,
 }
 
 impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
-    pub fn new(env: E, codegen: C, options: CompilationOptions) -> Self {
+    pub fn new(
+        env: E,
+        codegen: C,
+        lexer: Box<dyn LexerPort>,
+        parser: Box<dyn ParserPort>,
+        options: CompilationOptions,
+    ) -> Self {
         let mut registry = RegistryService::new();
         registry.log_level = options.log_level;
         let module_service = ModuleService::new(&env, options.log_level);
@@ -44,8 +48,8 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
             codegen,
             options: options.clone(),
             registry,
-            lexer: OnuLexer::new(options.log_level),
-            parser: OnuParser::new(options.log_level),
+            lexer,
+            parser,
         }
     }
 
