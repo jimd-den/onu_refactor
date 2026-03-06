@@ -890,7 +890,30 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
                     "typed_store_ptr",
                 )
                 .unwrap();
-            builder.build_store(typed_ptr, val).unwrap();
+
+            // Guard: if the source value is wider than the destination type, truncate
+            // before storing.  This is the key case for the occupancy flag: the MIR
+            // emits MirLiteral::I64(1) (i64) but the destination is typed as I8 (i8*).
+            // LLVM requires the stored value width to match the pointer element type.
+            let val_to_store = if val.is_int_value() && dest_llvm_type.is_int_type() {
+                let src_bits = val.into_int_value().get_type().get_bit_width();
+                let dst_bits = dest_llvm_type.into_int_type().get_bit_width();
+                if src_bits > dst_bits {
+                    builder
+                        .build_int_truncate(
+                            val.into_int_value(),
+                            dest_llvm_type.into_int_type(),
+                            "typed_store_trunc",
+                        )
+                        .unwrap()
+                        .into()
+                } else {
+                    val
+                }
+            } else {
+                val
+            };
+            builder.build_store(typed_ptr, val_to_store).unwrap();
         }
         Ok(())
     }

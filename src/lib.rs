@@ -151,30 +151,33 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         let mir_lowering_service = MirLoweringService::new(&self.env, &self.registry);
         let mir = mir_lowering_service.lower_program(&hir_discourses)?;
 
-        // Stage 2: Loop-lower self-tail-calls.
+        // Stage 2: Automatically promote doubly-recursive pure functions from
+        // I64 to WideInt(bits) when call-site literals imply overflow.
+        // Must run before MemoPass so that the wrapper caches WideInt values,
+        // and before TcoPass so the doubly-recursive call structure is still
+        // visible for candidate detection.
+        let mir = IntegerUpgradePass::run(mir);
+
+        // Stage 3: Memoize recursive pure functions annotated with
+        // `with diminishing:`. Must run BEFORE TcoPass: TcoPass erases
+        // tail-recursive Call instructions into Branch loops, so any
+        // memoizable call that is also tail-recursive would be missed.
+        let mir = MemoPass::run(mir, &self.registry);
+
+        // Stage 4: Loop-lower self-tail-calls.
         // Recursion → loop so the body becomes finite and inlineable.
+        // Acts on .inner functions (produced by MemoPass) as well as
+        // non-memoized tail-recursive helpers (e.g. collatz-steps).
         let mir = TcoPass::run(mir);
 
-        // Stage 3: Inline pure loop-shaped callees into their callers.
+        // Stage 5: Inline pure loop-shaped callees into their callers.
         // Now that single-recursive functions are loops, InlinePass can fuse them.
         let mir = InlinePass::run(mir);
 
-        // Stage 4: Second TcoPass — catches tail calls exposed by inlining.
+        // Stage 6: Second TcoPass — catches tail calls exposed by inlining.
         let mir = TcoPass::run(mir);
 
-        // Stage 4.5: Automatically promote doubly-recursive pure functions from
-        // I64 to WideInt(bits) when call-site literals imply overflow.
-        // The correct full-precision answer uses native LLVM wide integers —
-        // no external BigInt library required.  MemoPass (Stage 5) then
-        // memoizes the widened function for O(n) time.
-        let mir = IntegerUpgradePass::run(mir);
-
-        // Stage 5: Memoize doubly-recursive pure functions annotated with
-        // `with diminishing:`. Converts O(2^n) call trees to O(n) via a
-        // stack-allocated lookup table.
-        let mir = MemoPass::run(mir, &self.registry);
-
-        // Stage 6: Operation Legalization — replace any WideInt (> 128-bit)
+        // Stage 7: Operation Legalization — replace any WideInt (> 128-bit)
         // division or modulo with a call to a compiler-internal helper
         // (__onu_wide_div_N / __onu_wide_mod_N) so the LLVM backend never sees
         // an sdiv/srem on a type wider than i128 (for which no runtime library
