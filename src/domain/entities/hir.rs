@@ -23,6 +23,7 @@ pub struct HirBehaviorHeader {
     pub args: Vec<HirArgument>,
     pub return_type: OnuType,
     pub diminishing: Option<String>,
+    pub memo_cache_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

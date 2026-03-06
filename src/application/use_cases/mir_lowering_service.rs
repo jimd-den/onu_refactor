@@ -97,6 +97,11 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
 
         let mut func = builder.build();
 
+        // Propagate memo_cache_size from the header if set at the source level.
+        if let Some(cache_size) = header.memo_cache_size {
+            func.memo_cache_size = Some(cache_size);
+        }
+
         // Audit MIR for side effects
         if is_pure_candidate {
             for block in &func.blocks {

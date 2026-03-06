@@ -44,6 +44,7 @@ impl LoweringService {
             args: header.takes.iter().map(Self::lower_argument).collect(),
             return_type: header.delivers.0.clone(),
             diminishing: header.diminishing.clone(),
+            memo_cache_size: header.memo_cache_size,
         }
     }
 
