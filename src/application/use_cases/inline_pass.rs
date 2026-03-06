@@ -363,11 +363,12 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             dest: dest + ssa_offset,
             src: remap_operand(src, ssa_offset),
         },
-        MirInstruction::BinaryOperation { dest, op, lhs, rhs } => MirInstruction::BinaryOperation {
+        MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type } => MirInstruction::BinaryOperation {
             dest: dest + ssa_offset,
             op: op.clone(),
             lhs: remap_operand(lhs, ssa_offset),
             rhs: remap_operand(rhs, ssa_offset),
+            dest_type: dest_type.clone(),
         },
         MirInstruction::Call {
             dest,
@@ -428,6 +429,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             value: remap_operand(value, ssa_offset),
             typ: typ.clone(),
         },
+        MirInstruction::MemSet { ptr, value, size } => MirInstruction::MemSet {
+            ptr: remap_operand(ptr, ssa_offset),
+            value: remap_operand(value, ssa_offset),
+            size: remap_operand(size, ssa_offset),
+        },
         MirInstruction::Emit(op) => MirInstruction::Emit(remap_operand(op, ssa_offset)),
         MirInstruction::Drop {
             ssa_var,
@@ -439,6 +445,16 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             typ: typ.clone(),
             name: name.clone(),
             is_dynamic: *is_dynamic,
+        },
+        MirInstruction::Promote { dest, src, to_type } => MirInstruction::Promote {
+            dest: dest + ssa_offset,
+            src: remap_operand(src, ssa_offset),
+            to_type: to_type.clone(),
+        },
+        MirInstruction::BitCast { dest, src, to_type } => MirInstruction::BitCast {
+            dest: dest + ssa_offset,
+            src: remap_operand(src, ssa_offset),
+            to_type: to_type.clone(),
         },
     }
 }
@@ -466,6 +482,8 @@ fn max_ssa_in_function(func: &MirFunction) -> usize {
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
                 MirInstruction::Load { dest, .. } => Some(*dest),
+                MirInstruction::Promote { dest, .. } => Some(*dest),
+                MirInstruction::BitCast { dest, .. } => Some(*dest),
                 _ => None,
             };
             if let Some(d) = dest {

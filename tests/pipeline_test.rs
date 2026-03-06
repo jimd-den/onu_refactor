@@ -75,6 +75,7 @@ fn test_synthetic_argument_injection() {
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     let body = Expression::Nothing;
@@ -101,6 +102,7 @@ fn test_broadcasts_lowering() {
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     let body = Expression::Emit(Box::new(Expression::Text("Hello".to_string())));
@@ -134,6 +136,7 @@ fn test_drop_lowering() {
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     let body = Expression::Drop(Box::new(Expression::Identifier("x".to_string())));

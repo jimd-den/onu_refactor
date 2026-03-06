@@ -1,5 +1,5 @@
 use crate::domain::entities::types::OnuType;
-use crate::domain::entities::mir::{MirOperand, MirLiteral};
+use crate::domain::entities::mir::MirOperand;
 use crate::application::use_cases::mir_builder::MirBuilder;
 use super::StdlibOpLowerer;
 

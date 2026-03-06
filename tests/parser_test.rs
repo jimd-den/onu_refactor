@@ -1,8 +1,7 @@
 use onu_refactor::adapters::parser::OnuParser;
-use onu_refactor::application::ports::compiler_ports::{ParserPort, LexerPort, Token};
+use onu_refactor::application::ports::compiler_ports::{LexerPort, Token};
 use onu_refactor::application::options::LogLevel;
 use onu_refactor::application::use_cases::registry_service::RegistryService;
-use onu_refactor::domain::entities::ast::Expression;
 
 #[test]
 fn test_parser_scan_headers() {
@@ -56,9 +55,9 @@ fn test_arity_bounded_utilizes() {
 #[test]
 fn test_parser_fails_on_missing_argument_type() {
     let source = "the behavior called test with intent: nothing takes: my_arg called my_arg delivers: nothing as: nothing";
-    let mut lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
+    let lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
     let tokens = lexer.lex(source).unwrap();
-    let mut parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
+    let parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
     let mut registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
 
     let result = parser.parse_with_registry(tokens, &mut registry);
@@ -68,9 +67,9 @@ fn test_parser_fails_on_missing_argument_type() {
 #[test]
 fn test_parser_fails_on_missing_return_type() {
     let source = "the behavior called test with intent: nothing takes: nothing delivers: some_implicit_thing as: nothing";
-    let mut lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
+    let lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
     let tokens = lexer.lex(source).unwrap();
-    let mut parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
+    let parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
     let mut registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
 
     let result = parser.parse_with_registry(tokens, &mut registry);

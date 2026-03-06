@@ -24,40 +24,8 @@
 /// No shared mutable state, no side effects. This is deliberately simple — a
 /// stateful pass would be a maze; this is a bridge.
 use crate::domain::entities::mir::{
-    BasicBlock, MirArgument, MirFunction, MirInstruction, MirOperand, MirProgram, MirTerminator,
+    BasicBlock, MirFunction, MirInstruction, MirProgram, MirTerminator,
 };
-
-/// The maximum SSA variable ID found in a function, used to allocate fresh
-/// shadow slots above the existing range.
-fn max_ssa_var(func: &MirFunction) -> usize {
-    let mut max = func.args.iter().map(|a| a.ssa_var).max().unwrap_or(0);
-    for block in &func.blocks {
-        for inst in &block.instructions {
-            // Walk every destination SSA variable
-            let dest_opt: Option<usize> = match inst {
-                MirInstruction::Assign { dest, .. } => Some(*dest),
-                MirInstruction::BinaryOperation { dest, .. } => Some(*dest),
-                MirInstruction::Call { dest, .. } => Some(*dest),
-                MirInstruction::Tuple { dest, .. } => Some(*dest),
-                MirInstruction::Index { dest, .. } => Some(*dest),
-                MirInstruction::Alloc { dest, .. } => Some(*dest),
-                MirInstruction::PointerOffset { dest, .. } => Some(*dest),
-                MirInstruction::Load { dest, .. } => Some(*dest),
-                MirInstruction::Emit(_)
-                | MirInstruction::Drop { .. }
-                | MirInstruction::MemCopy { .. }
-                | MirInstruction::Store { .. }
-                | MirInstruction::TypedStore { .. } => None,
-            };
-            if let Some(d) = dest_opt {
-                if d > max {
-                    max = d;
-                }
-            }
-        }
-    }
-    max
-}
 
 /// Returns true if the given block terminates with a self-tail-call —
 /// that is, its last instruction is a `Call` to the function itself

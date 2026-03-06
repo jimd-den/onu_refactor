@@ -1,16 +1,61 @@
-==26247== Memcheck, a memory error detector
-==26247== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==26247== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==26247== Command: ./collatz_benchmark_bin
-==26247==
-Total Collatz steps for 1 to 1000000 is:
-131434424
-==26247==
-==26247== HEAP SUMMARY:
-==26247==     in use at exit: 0 bytes in 0 blocks
-==26247==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==26247==
-==26247== All heap blocks were freed -- no leaks are possible
-==26247==
-==26247== For lists of detected and suppressed errors, rerun with: -s
-==26247== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+========================================
+        Onu vs C Benchmark Tests        
+========================================
+
+========================================
+ Naive Fibonacci (fib(40))
+========================================
+
+--- C ---
+fib(40) = 102334155
+
+real	0m0.316s
+user	0m0.315s
+sys	0m0.001s
+
+--- Onu ---
+fib(1000) = 43466557686937456435688527675040625802564660517371780402481729089536555417949051890403879840079255169295922593080322634775209689623239873322471161642996440906533187938298969649928516003704476137795166849228875
+
+real	0m0.007s
+user	0m0.006s
+sys	0m0.001s
+
+========================================
+ Collatz Conjecture Loop (1 to 1,000,000)
+========================================
+
+--- C ---
+Total Collatz steps for 1 to 1000000 is: 131434424
+
+real	0m0.129s
+user	0m0.129s
+sys	0m0.000s
+
+--- Onu ---
+Total Collatz steps for 1 to 1000000 is: 131434424
+
+real	0m0.211s
+user	0m0.210s
+sys	0m0.001s
+
+========================================
+ Ackermann Function (3, 11)
+========================================
+
+--- C ---
+Ackermann(3, 11) Result: 16381
+
+real	0m0.146s
+user	0m0.146s
+sys	0m0.000s
+
+--- Onu ---
+Ackermann(3, 11) Result: 16381
+
+real	0m0.146s
+user	0m0.146s
+sys	0m0.000s
+
+========================================
+ Benchmarks Complete
+========================================

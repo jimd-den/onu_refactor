@@ -91,6 +91,7 @@ fn test_mir_lowering_binop_mapping() {
             args: vec![],
             return_type: onu_refactor::domain::entities::types::OnuType::I64,
             diminishing: None,
+            memo_cache_size: None,
         };
         let hir_body = HirExpression::BinaryOp {
             op: hir_op,
@@ -122,10 +123,10 @@ fn test_ownership_visitor_inserts_explicit_drops() {
     s"; // simple string usage
 
     // Set up parsing
-    let mut lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
+    let lexer = onu_refactor::adapters::lexer::OnuLexer::new(onu_refactor::application::options::LogLevel::Error);
     use onu_refactor::application::ports::compiler_ports::LexerPort;
     let tokens = lexer.lex(source).unwrap();
-    let mut parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
+    let parser = onu_refactor::adapters::parser::OnuParser::new(onu_refactor::application::options::LogLevel::Error);
     let mut registry = onu_refactor::application::use_cases::registry_service::RegistryService::new();
     parser.scan_headers(&tokens, &mut registry).unwrap();
     let discourses = parser.parse_with_registry(tokens, &mut registry).unwrap();

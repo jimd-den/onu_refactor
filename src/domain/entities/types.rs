@@ -16,6 +16,7 @@ pub enum OnuType {
     U32,
     U64,
     U128,
+    WideInt(u32),
 
     // --- Floats ---
     F32,

@@ -28,6 +28,7 @@ fn test_multiple_returns_phi_detection() {
         takes: vec![], 
         delivers: ReturnType(OnuType::I64),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -80,6 +81,7 @@ fn test_multiple_returns_direct_ret() {
         takes: vec![],
         delivers: ReturnType(OnuType::I64),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -124,6 +126,7 @@ fn test_ackermann_specialization() {
         ],
         delivers: ReturnType(OnuType::I64),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -170,6 +173,7 @@ fn test_comparison_specialization() {
         ],
         delivers: ReturnType(OnuType::Boolean),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -214,6 +218,7 @@ fn test_pure_data_leaf_attributes() {
         ],
         delivers: ReturnType(OnuType::I64),
         diminishing: None,
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     

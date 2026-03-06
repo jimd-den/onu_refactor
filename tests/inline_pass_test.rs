@@ -26,6 +26,7 @@ fn make_pure_callee() -> MirFunction {
         return_type: OnuType::I64,
         is_pure_data_leaf: true,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![
@@ -35,6 +36,7 @@ fn make_pure_callee() -> MirFunction {
                     op: MirBinOp::Mul,
                     lhs: MirOperand::Variable(0, false),
                     rhs: MirOperand::Constant(MirLiteral::I64(2)),
+                    dest_type: OnuType::I64,
                 },
             ],
             terminator: MirTerminator::Return(MirOperand::Variable(1, false)),
@@ -56,6 +58,7 @@ fn make_caller() -> MirFunction {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![
@@ -74,6 +77,7 @@ fn make_caller() -> MirFunction {
                     op: MirBinOp::Add,
                     lhs: MirOperand::Variable(20, false),
                     rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                    dest_type: OnuType::I64,
                 },
             ],
             terminator: MirTerminator::Return(MirOperand::Variable(21, false)),
@@ -203,6 +207,7 @@ fn inline_pass_is_identity_for_external_calls() {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::Call {
@@ -248,6 +253,7 @@ fn inline_pass_is_identity_for_non_pure_callees() {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None, // NOT pure
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::Emit(MirOperand::Constant(MirLiteral::I64(
@@ -267,6 +273,7 @@ fn inline_pass_is_identity_for_non_pure_callees() {
         return_type: OnuType::I64,
         is_pure_data_leaf: false,
         diminishing: None,
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::Call {

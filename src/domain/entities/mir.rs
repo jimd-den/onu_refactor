@@ -18,6 +18,11 @@ pub struct MirFunction {
     pub blocks: Vec<BasicBlock>,
     pub is_pure_data_leaf: bool,
     pub diminishing: Option<String>,
+    /// Override the memoization cache entry count.  When `None` the MemoPass
+    /// uses its internal default (10 000).  IntegerUpgradePass sets this to
+    /// `max_call_arg + 1` so that the per-entry WideInt allocation stays well
+    /// within the 1 MB arena.
+    pub memo_cache_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +50,7 @@ pub enum MirInstruction {
         op: MirBinOp,
         lhs: MirOperand,
         rhs: MirOperand,
+        dest_type: OnuType,
     },
     Call {
         dest: usize,
@@ -104,6 +110,26 @@ pub enum MirInstruction {
         value: MirOperand,
         typ: OnuType,
     },
+    MemSet {
+        ptr: MirOperand,
+        value: MirOperand,
+        size: MirOperand,
+    },
+    Promote {
+        dest: usize,
+        src: MirOperand,
+        to_type: OnuType,
+    },
+    /// Reinterpret the bit-pattern of `src` as `to_type` (equivalent to LLVM `bitcast`).
+    /// Used by the wide-int legalization layer to transition between a "Mathematical Integer"
+    /// (e.g. WideInt(1024)) and a lower-level representation such as a byte array,
+    /// satisfying the Clean Architecture boundary between the domain model and the
+    /// memory-detail (limb) layer.
+    BitCast {
+        dest: usize,
+        src: MirOperand,
+        to_type: OnuType,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +157,7 @@ pub enum MirLiteral {
     Boolean(bool),
     Text(String),
     Nothing,
+    WideInt(String, u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]

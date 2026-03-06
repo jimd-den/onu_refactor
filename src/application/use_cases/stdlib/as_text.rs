@@ -1,7 +1,7 @@
 use super::StdlibOpLowerer;
 use crate::application::use_cases::mir_builder::MirBuilder;
 use crate::domain::entities::mir::{
-    MirBinOp, MirInstruction, MirLiteral, MirOperand, MirTerminator,
+    MirBinOp, MirLiteral, MirOperand, MirTerminator,
 };
 use crate::domain::entities::types::OnuType;
 

@@ -1,4 +1,4 @@
-use crate::domain::entities::mir::{MirInstruction, MirOperand, MirLiteral, MirBinOp};
+use crate::domain::entities::mir::MirOperand;
 use crate::domain::entities::types::OnuType;
 use crate::application::use_cases::mir_builder::MirBuilder;
 use super::StdlibOpLowerer;

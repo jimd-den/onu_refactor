@@ -207,7 +207,7 @@ impl ParserInternal {
         };
         
         let mut fields = Vec::new();
-        let mut behaviors = Vec::new();
+        let behaviors = Vec::new();
 
         while let Some(t) = self.peek() {
             if matches!(t, Token::TheModuleCalled | Token::TheShapeCalled | Token::TheBehaviorCalled | Token::TheEffectBehaviorCalled) { break; }
