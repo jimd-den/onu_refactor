@@ -31,7 +31,9 @@ fn test_valgrind(sample_name: &str, args: &[&str]) {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
     let _ = pipeline.compile(&sample_path);
 
     let binary_path = format!("./{}_bin", sample_name);

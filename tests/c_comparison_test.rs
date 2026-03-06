@@ -17,7 +17,9 @@ fn compile_and_capture_onu(sample_path: &str) -> String {
 
     let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
     let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     pipeline
         .compile(sample_path)
@@ -95,7 +97,7 @@ fn collatz_matches_c_reference() {
         "./cbench_collatz",
     ))
     .expect("C output had no number");
-    let onu_val = first_number(&compile_and_capture_onu("collatz_benchmark.onu"))
+    let onu_val = first_number(&compile_and_capture_onu("samples/collatz_bench.onu"))
         .expect("Onu output had no number");
 
     assert_eq!(
@@ -192,7 +194,9 @@ fn runtime_benchmark_fib40() {
         options.log_level = onu_refactor::application::options::LogLevel::Error;
         let env = onu_refactor::infrastructure::os::NativeOsEnvironment::new(options.log_level);
         let codegen = onu_refactor::adapters::codegen::OnuCodegen::new();
-        let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, options);
+        let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+        let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+        let mut pipeline = onu_refactor::CompilationPipeline::new(env, codegen, lexer, parser, options);
         pipeline
             .compile("samples/fibonacci.onu")
             .expect("Onu compile must succeed");

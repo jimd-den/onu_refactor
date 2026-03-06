@@ -10,7 +10,9 @@ fn repro_factorial_compilation() {
     
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     let sample_path = "samples/factorial.onu";
     

@@ -8,8 +8,10 @@ fn test_module_registration() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
     
-    let pipeline = CompilationPipeline::new(env, codegen, options);
+    let pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     // Check for a core behavior
     assert!(pipeline.registry.get_signature("len").is_some());
