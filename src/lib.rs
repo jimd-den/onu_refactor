@@ -44,6 +44,10 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         module_service.register_module(&mut registry, &StandardMathModule);
         module_service.register_module(&mut registry, &OnuIoModule);
 
+        // Pre-register multi-arg stdlib op signatures so the parser knows
+        // their arity before scan_headers / parse_with_registry runs.
+        crate::application::use_cases::stdlib::StdlibOpRegistry::register_signatures(&mut registry);
+
         Self {
             env,
             codegen,

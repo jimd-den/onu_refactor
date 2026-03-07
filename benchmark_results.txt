@@ -10,8 +10,8 @@
 fib(40) = 102334155
 
 real	0m0.313s
-user	0m0.312s
-sys	0m0.001s
+user	0m0.313s
+sys	0m0.000s
 
 --- Onu (fib_naive_only) ---
 On peanut festival day 2000, the elephant demands exactly: 4224696333392304878706725602341482782579852840250681098010280137314308584370130707224123599639141511088446087538909603607640194711643596029271983312598737326253555802606991585915229492453904998722256795316982874482472992263901833716778060607011615497886719879858311468870876264597369086722884023654422295243347964480139515349562972087652656069529806499841977448720155612802665404554171717881930324025204312082516817125
@@ -31,8 +31,8 @@ fib-tco(10000) mod 1000000 =
 sum(fib(0..92)) = 1293530146158671550
 
 real	0m0.001s
-user	0m0.001s
-sys	0m0.000s
+user	0m0.000s
+sys	0m0.001s
 
 ========================================
  Collatz Conjecture Loop (1 to 1,000,000)
@@ -41,16 +41,16 @@ sys	0m0.000s
 --- C ---
 Total Collatz steps for 1 to 1000000 is: 131434424
 
-real	0m0.131s
+real	0m0.130s
 user	0m0.130s
-sys	0m0.001s
+sys	0m0.000s
 
 --- Onu ---
 Total Peanut Steps for 1 to 1000000 is: 131434424
 
-real	0m0.125s
-user	0m0.124s
-sys	0m0.000s
+real	0m0.124s
+user	0m0.123s
+sys	0m0.001s
 
 ========================================
  Ackermann Function (3, 11)
@@ -59,7 +59,7 @@ sys	0m0.000s
 --- C ---
 Ackermann(3, 11) Result: 16381
 
-real	0m0.147s
+real	0m0.146s
 user	0m0.145s
 sys	0m0.001s
 
@@ -67,26 +67,34 @@ sys	0m0.001s
 Ackermann(3, 11) for the great peanut leader is: 16381
 
 real	0m0.003s
-user	0m0.002s
-sys	0m0.001s
+user	0m0.000s
+sys	0m0.003s
 
 ========================================
- SHA-256 (1 000 hashes, pure LLVM/native bitwise ops)
+ SHA-256 (1 000 hashes, pure LLVM, no libc)
+ Optimizations applied:
+   • K-table: internal constant [64 x i64] + GEP+load (was 64-BB branch tree)
+   • Hex output: single 64-byte arena alloc + 64 inline byte stores (was 8 calls + 5 memcpy)
 ========================================
 
---- C (10 runs × 1 000 hashes = 10 000 total) ---
+--- C (10 × 1 000 hashes = 10 000 total) ---
 
-real	0m0.024s
-user	0m0.010s
-sys	0m0.008s
+real	0m0.017s
+user	0m0.012s
+sys	0m0.005s
 
---- Onu (10 runs × 1 000 hashes = 10 000 total) ---
+--- Onu (10 × 1 000 hashes = 10 000 total) ---
 
-real	0m0.033s
-user	0m0.020s
-sys	0m0.014s
+real	0m0.028s
+user	0m0.016s
+sys	0m0.013s
 
---- Correctness check (Onu == C for first 1 000 hashes) ---
+--- C vs Onu comparison ---
+  C   user time : 0.012s
+  Onu user time : 0.016s
+  Onu / C ratio : 1.33×  (pure LLVM, no libc; arena allocator; x86_64 syscalls)
+
+--- Correctness check (Onu == C for all 1 000 hashes) ---
 PASS: all 1 000 digests are identical
 
 ========================================

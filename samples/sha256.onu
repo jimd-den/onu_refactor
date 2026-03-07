@@ -157,97 +157,19 @@ the behavior called maj
         (ab bit-xor-with ac) bit-xor-with bc
 
 -- ─────────────────────────────────────────────────────────────────────────
--- SHA-256 round constants K[0..63] (first 32 bits of cube-root fractionals)
+-- SHA-256 round constants K[0..63]
+-- Returns the round constant for round t via a read-only
+-- `@sha256_K = internal constant [64 x i64]` LLVM global: O(1) indexed
+-- load that fits in 1-2 L1 cache lines.  Memory-safe: global is read-only
+-- by LLVM construction.
 -- ─────────────────────────────────────────────────────────────────────────
 the behavior called sha256-k
-    with intent: return the SHA-256 round constant for round t
+    with intent: return the SHA-256 round constant for round t via constant table load
     takes:
         an integer called t
     delivers: an integer
     as:
-        if t falls-short-of 16
-        then
-            if t falls-short-of 8
-            then
-                if t matches 0 then 1116352408
-                else if t matches 1 then 1899447441
-                else if t matches 2 then 3049323471
-                else if t matches 3 then 3921009573
-                else if t matches 4 then 961987163
-                else if t matches 5 then 1508970993
-                else if t matches 6 then 2453635748
-                else 2870763221
-            else
-                if t matches 8  then 3624381080
-                else if t matches 9  then 310598401
-                else if t matches 10 then 607225278
-                else if t matches 11 then 1426881987
-                else if t matches 12 then 1925078388
-                else if t matches 13 then 2162078206
-                else if t matches 14 then 2614888103
-                else 3248222580
-        else if t falls-short-of 32
-        then
-            if t falls-short-of 24
-            then
-                if t matches 16 then 3835390401
-                else if t matches 17 then 4022224774
-                else if t matches 18 then 264347078
-                else if t matches 19 then 604807628
-                else if t matches 20 then 770255983
-                else if t matches 21 then 1249150122
-                else if t matches 22 then 1555081692
-                else 1996064986
-            else
-                if t matches 24 then 2554220882
-                else if t matches 25 then 2821834349
-                else if t matches 26 then 2952996808
-                else if t matches 27 then 3210313671
-                else if t matches 28 then 3336571891
-                else if t matches 29 then 3584528711
-                else if t matches 30 then 113926993
-                else 338241895
-        else if t falls-short-of 48
-        then
-            if t falls-short-of 40
-            then
-                if t matches 32 then 666307205
-                else if t matches 33 then 773529912
-                else if t matches 34 then 1294757372
-                else if t matches 35 then 1396182291
-                else if t matches 36 then 1695183700
-                else if t matches 37 then 1986661051
-                else if t matches 38 then 2177026350
-                else 2456956037
-            else
-                if t matches 40 then 2730485921
-                else if t matches 41 then 2820302411
-                else if t matches 42 then 3259730800
-                else if t matches 43 then 3345764771
-                else if t matches 44 then 3516065817
-                else if t matches 45 then 3600352804
-                else if t matches 46 then 4094571909
-                else 275423344
-        else
-            if t falls-short-of 56
-            then
-                if t matches 48 then 430227734
-                else if t matches 49 then 506948616
-                else if t matches 50 then 659060556
-                else if t matches 51 then 883997877
-                else if t matches 52 then 958139571
-                else if t matches 53 then 1322822218
-                else if t matches 54 then 1537002063
-                else 1747873779
-            else
-                if t matches 56 then 1955562222
-                else if t matches 57 then 2024104815
-                else if t matches 58 then 2227730452
-                else if t matches 59 then 2361852424
-                else if t matches 60 then 2428436474
-                else if t matches 61 then 2756734187
-                else if t matches 62 then 3204031479
-                else 3329325298
+        t utilizes sha256-k-table
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Advance the 16-word schedule window by one step.
@@ -367,55 +289,35 @@ the behavior called sha256-block
         ra utilizes HashState rb rc rd re rf rg rh
 
 -- ─────────────────────────────────────────────────────────────────────────
--- Hex output helpers (pure LLVM via char-from-code; no libc printf)
+-- Hex output — optimized single-buffer path
+--
+-- OPTIMIZATION: replaced:
+--   • `nibble-hex` + `char-from-code` (allocates 1-char arena string each)
+--   • `word-hex8` (separate function call + 39-byte arena segment per word)
+--   • `hash-hex` (8 word-hex8 calls + 5 memcpy to concatenate)
+-- With:
+--   • One 64-byte arena allocation (`joined-with ""` on a 64-char literal)
+--   • 8 `write-hex-word` stdlib calls that write nibbles in-place (no alloc)
+--   • Zero memcpy calls
 -- ─────────────────────────────────────────────────────────────────────────
-the behavior called nibble-hex
-    with intent: convert a nibble value 0-15 to its lower-case hex ASCII code
-    takes:
-        an integer called n
-    delivers: an integer
-    as:
-        if n falls-short-of 10
-        then n added-to 48
-        else n added-to 87
-
-the behavior called word-hex8
-    with intent: encode a 32-bit word as an 8-character lower-case hex string
-    takes:
-        an integer called w
-    delivers: a string
-    as:
-        derivation: b3 derives-from w shifted-right-by 24
-        derivation: b2 derives-from (w shifted-right-by 16) bit-and-with 255
-        derivation: b1 derives-from (w shifted-right-by 8)  bit-and-with 255
-        derivation: b0 derives-from w bit-and-with 255
-        derivation: c7 derives-from (b3 shifted-right-by 4) utilizes nibble-hex utilizes char-from-code
-        derivation: c6 derives-from (b3 bit-and-with 15)    utilizes nibble-hex utilizes char-from-code
-        derivation: c5 derives-from (b2 shifted-right-by 4) utilizes nibble-hex utilizes char-from-code
-        derivation: c4 derives-from (b2 bit-and-with 15)    utilizes nibble-hex utilizes char-from-code
-        derivation: c3 derives-from (b1 shifted-right-by 4) utilizes nibble-hex utilizes char-from-code
-        derivation: c2 derives-from (b1 bit-and-with 15)    utilizes nibble-hex utilizes char-from-code
-        derivation: c1 derives-from (b0 shifted-right-by 4) utilizes nibble-hex utilizes char-from-code
-        derivation: c0 derives-from (b0 bit-and-with 15)    utilizes nibble-hex utilizes char-from-code
-        ((c7 joined-with c6) joined-with (c5 joined-with c4)) joined-with
-            ((c3 joined-with c2) joined-with (c1 joined-with c0))
-
 the behavior called hash-hex
-    with intent: encode a HashState as a 64-character lower-case hex digest string
+    with intent: encode a HashState as a 64-character hex digest via single-buffer in-place writes
     takes:
         a HashState called hs via observation
     delivers: a string
     as:
-        derivation: h0 derives-from (hs utilizes sa) utilizes word-hex8
-        derivation: h1 derives-from (hs utilizes sb) utilizes word-hex8
-        derivation: h2 derives-from (hs utilizes sc) utilizes word-hex8
-        derivation: h3 derives-from (hs utilizes sd) utilizes word-hex8
-        derivation: h4 derives-from (hs utilizes se) utilizes word-hex8
-        derivation: h5 derives-from (hs utilizes sf) utilizes word-hex8
-        derivation: h6 derives-from (hs utilizes sg) utilizes word-hex8
-        derivation: h7 derives-from (hs utilizes sh) utilizes word-hex8
-        ((h0 joined-with h1) joined-with (h2 joined-with h3)) joined-with
-            ((h4 joined-with h5) joined-with (h6 joined-with h7))
+        -- One arena allocation for the entire 64-char output buffer.
+        derivation: buf derives-from "0000000000000000000000000000000000000000000000000000000000000000" joined-with ""
+        -- write-hex-word(buf, word, byte_offset) — pure in-place stores, no new allocation.
+        derivation: b0 derives-from buf utilizes write-hex-word (hs utilizes sa) 0
+        derivation: b1 derives-from b0  utilizes write-hex-word (hs utilizes sb) 8
+        derivation: b2 derives-from b1  utilizes write-hex-word (hs utilizes sc) 16
+        derivation: b3 derives-from b2  utilizes write-hex-word (hs utilizes sd) 24
+        derivation: b4 derives-from b3  utilizes write-hex-word (hs utilizes se) 32
+        derivation: b5 derives-from b4  utilizes write-hex-word (hs utilizes sf) 40
+        derivation: b6 derives-from b5  utilizes write-hex-word (hs utilizes sg) 48
+        derivation: b7 derives-from b6  utilizes write-hex-word (hs utilizes sh) 56
+        b7
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- LCG-next: 32-bit linear congruential generator

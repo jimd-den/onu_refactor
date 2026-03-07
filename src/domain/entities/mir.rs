@@ -142,6 +142,25 @@ pub enum MirInstruction {
         src: MirOperand,
         to_type: OnuType,
     },
+    /// Load one i64 element from a compile-time constant array.
+    ///
+    /// Emits:
+    ///   `@name = internal constant [N x i64] [i64 v0, i64 v1, …]`  (once per module)
+    ///   `%gep  = getelementptr inbounds [N x i64], [N x i64]* @name, i64 0, i64 <index>`
+    ///   `%dest = load i64, i64* %gep`
+    ///
+    /// The global is read-only, so this is pure LLVM with no arena allocation and full
+    /// memory safety.  Used to replace deeply nested if-else constant-table lookups (e.g.
+    /// sha256-k) with a single indexed load that LLVM places in L1 cache.
+    ConstantTableLoad {
+        dest: usize,
+        /// Name of the LLVM global (must be unique per table).
+        name: String,
+        /// The compile-time constant values that populate the table.
+        values: Vec<i64>,
+        /// Runtime index into the table.
+        index: MirOperand,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

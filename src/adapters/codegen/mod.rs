@@ -671,6 +671,14 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 &mut self.ssa_storage,
                 inst,
             ),
+            MirInstruction::ConstantTableLoad { .. } => ConstantTableLoadStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
         }
     }
 

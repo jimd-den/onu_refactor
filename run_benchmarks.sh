@@ -81,26 +81,56 @@ echo "" >> "$OUTPUT_FILE"
 
 # ── SHA-256 ───────────────────────────────────────────────────────────────────
 echo "========================================" >> "$OUTPUT_FILE"
-echo " SHA-256 (1 000 hashes, pure LLVM/native bitwise ops)" >> "$OUTPUT_FILE"
+echo " SHA-256 (1 000 hashes, pure LLVM, no libc)" >> "$OUTPUT_FILE"
+echo " Optimizations applied:" >> "$OUTPUT_FILE"
+echo "   • K-table: internal constant [64 x i64] + GEP+load (was 64-BB branch tree)" >> "$OUTPUT_FILE"
+echo "   • Hex output: single 64-byte arena alloc + 64 inline byte stores (was 8 calls + 5 memcpy)" >> "$OUTPUT_FILE"
 echo "========================================" >> "$OUTPUT_FILE"
-# Run 10 back-to-back trials of each so the OS timer resolution is not a
-# factor, then report total wall time for 10 000 hashes each.
+
+# ── Collect user-time for C and Onu over 10 × 1000 hashes each ──────────────
 echo "" >> "$OUTPUT_FILE"
-echo "--- C (10 runs × 1 000 hashes = 10 000 total) ---" >> "$OUTPUT_FILE"
+C_USER=0
+ONU_USER=0
+
+echo "--- C (10 × 1 000 hashes = 10 000 total) ---" >> "$OUTPUT_FILE"
 if [ -x "./c_sha256_bin" ]; then
-    { time for _ in $(seq 1 10); do ./c_sha256_bin > /dev/null; done; } 2>> "$OUTPUT_FILE"
+    C_TIME=$( { time for _ in $(seq 1 10); do ./c_sha256_bin > /dev/null; done; } 2>&1 )
+    echo "$C_TIME" >> "$OUTPUT_FILE"
+    # Parse "Xm Y.ZZZs" robustly: strip 'm'/'s', then minutes*60 + seconds
+    C_USER=$(echo "$C_TIME" | awk '/user/ {
+        t = $2; gsub(/m/, " ", t); gsub(/s/, "", t); split(t, a, " "); print a[1]*60 + a[2]
+    }')
+    C_USER=${C_USER:-0}
 else
     echo "(skipped — compile failed)" >> "$OUTPUT_FILE"
 fi
+
 echo "" >> "$OUTPUT_FILE"
-echo "--- Onu (10 runs × 1 000 hashes = 10 000 total) ---" >> "$OUTPUT_FILE"
+echo "--- Onu (10 × 1 000 hashes = 10 000 total) ---" >> "$OUTPUT_FILE"
 if [ -x "./sha256_bin" ]; then
-    { time for _ in $(seq 1 10); do ./sha256_bin > /dev/null; done; } 2>> "$OUTPUT_FILE"
+    ONU_TIME=$( { time for _ in $(seq 1 10); do ./sha256_bin > /dev/null; done; } 2>&1 )
+    echo "$ONU_TIME" >> "$OUTPUT_FILE"
+    ONU_USER=$(echo "$ONU_TIME" | awk '/user/ {
+        t = $2; gsub(/m/, " ", t); gsub(/s/, "", t); split(t, a, " "); print a[1]*60 + a[2]
+    }')
+    ONU_USER=${ONU_USER:-0}
 else
     echo "(skipped — compile failed)" >> "$OUTPUT_FILE"
 fi
+
+# ── Side-by-side ratio ────────────────────────────────────────────────────────
 echo "" >> "$OUTPUT_FILE"
-echo "--- Correctness check (Onu == C for first 1 000 hashes) ---" >> "$OUTPUT_FILE"
+echo "--- C vs Onu comparison ---" >> "$OUTPUT_FILE"
+if awk "BEGIN { exit !($C_USER > 0 && $ONU_USER > 0) }"; then
+    RATIO=$(awk "BEGIN { printf \"%.2f\", $ONU_USER / $C_USER }")
+    echo "  C   user time : ${C_USER}s" >> "$OUTPUT_FILE"
+    echo "  Onu user time : ${ONU_USER}s" >> "$OUTPUT_FILE"
+    echo "  Onu / C ratio : ${RATIO}×  (pure LLVM, no libc; arena allocator; x86_64 syscalls)" >> "$OUTPUT_FILE"
+fi
+
+# ── Correctness gate ──────────────────────────────────────────────────────────
+echo "" >> "$OUTPUT_FILE"
+echo "--- Correctness check (Onu == C for all 1 000 hashes) ---" >> "$OUTPUT_FILE"
 ./sha256_bin 2>/dev/null | tail -n +2 > /tmp/onu_sha256.txt 2>/dev/null
 ./c_sha256_bin 2>/dev/null | tail -n +2 > /tmp/c_sha256.txt 2>/dev/null
 if diff -q /tmp/onu_sha256.txt /tmp/c_sha256.txt > /dev/null 2>&1; then

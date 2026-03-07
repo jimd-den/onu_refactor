@@ -911,6 +911,78 @@ impl<'ctx> InstructionStrategy<'ctx> for GlobalAllocStrategy {
     }
 }
 
+/// Strategy for `MirInstruction::ConstantTableLoad`.
+///
+/// Emits a single read-only LLVM global (`internal constant [N x i64]`) the
+/// first time it is encountered, then generates a GEP + load to retrieve the
+/// element at the runtime `index`.  This replaces deeply-nested if-else
+/// constant-table lookups (e.g. SHA-256 round constants) with one indexed
+/// memory load that lives in L1 cache after the first access.
+pub struct ConstantTableLoadStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for ConstantTableLoadStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::ConstantTableLoad { dest, name, values, index } = inst {
+            let i64_type = context.i64_type();
+            let n = values.len() as u32;
+            let array_type = i64_type.array_type(n);
+
+            // Declare the constant global only once per module.
+            let global = if let Some(g) = module.get_global(name) {
+                g
+            } else {
+                let consts: Vec<_> = values
+                    .iter()
+                    .map(|&v| i64_type.const_int(v as u64, false))
+                    .collect();
+                let const_array = i64_type.const_array(&consts);
+                let g = module.add_global(array_type, None, name);
+                g.set_constant(true);
+                g.set_linkage(inkwell::module::Linkage::Internal);
+                g.set_initializer(&const_array);
+                g
+            };
+
+            // Index value (already i64 in our IR).
+            let idx_val = operand_to_llvm(context, builder, ssa_storage, index)
+                .into_int_value();
+
+            // GEP: &table[index]
+            let zero = i64_type.const_zero();
+            let gep = unsafe {
+                builder
+                    .build_in_bounds_gep(
+                        global.as_pointer_value(),
+                        &[zero, idx_val],
+                        &format!("{}_gep", name),
+                    )
+                    .unwrap()
+            };
+
+            // Load the i64 element.
+            let loaded = builder.build_load(gep, &format!("{}_load", name)).unwrap();
+
+            // Store into SSA slot.
+            let slot = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                i64_type.as_basic_type_enum(),
+            );
+            builder.build_store(slot, loaded).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct MemCopyStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
     fn generate(

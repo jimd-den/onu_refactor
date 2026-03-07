@@ -461,6 +461,12 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             src: remap_operand(src, ssa_offset),
             to_type: to_type.clone(),
         },
+        MirInstruction::ConstantTableLoad { dest, name, values, index } => MirInstruction::ConstantTableLoad {
+            dest: dest + ssa_offset,
+            name: name.clone(),
+            values: values.clone(),
+            index: remap_operand(index, ssa_offset),
+        },
     }
 }
 
@@ -490,6 +496,7 @@ fn max_ssa_in_function(func: &MirFunction) -> usize {
                 MirInstruction::Load { dest, .. } => Some(*dest),
                 MirInstruction::Promote { dest, .. } => Some(*dest),
                 MirInstruction::BitCast { dest, .. } => Some(*dest),
+                MirInstruction::ConstantTableLoad { dest, .. } => Some(*dest),
                 _ => None,
             };
             if let Some(d) = dest {
