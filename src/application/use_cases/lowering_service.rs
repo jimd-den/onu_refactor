@@ -115,6 +115,11 @@ impl LoweringService {
                     "opposes" => Some(HirBinOp::NotEqual),
                     "falls-short-of" => Some(HirBinOp::LessThan),
                     "exceeds" => Some(HirBinOp::GreaterThan),
+                    "bit-and-with" => Some(HirBinOp::BitAnd),
+                    "bit-or-with" => Some(HirBinOp::BitOr),
+                    "bit-xor-with" => Some(HirBinOp::BitXor),
+                    "shifted-right-by" => Some(HirBinOp::Shr),
+                    "shifted-left-by" => Some(HirBinOp::Shl),
                     _ => None,
                 };
 

@@ -38,6 +38,7 @@ echo "Compiling C benchmarks with Clang (-O3)..."
 clang cbench_fib_naive.c -O3 -o c_fib_naive_bin
 clang cbench_collatz.c -O3 -o c_collatz_bin
 clang cbench_ackermann.c -O3 -o c_ackermann_bin
+clang cbench_sha256.c -O3 -o c_sha256_bin
 
 # 2. Compile all Onu benchmarks
 echo "Compiling Onu benchmarks..."
@@ -45,6 +46,7 @@ compile_onu samples/fib_naive_only.onu
 compile_onu samples/fib_bench.onu
 compile_onu samples/collatz_bench.onu
 compile_onu samples/ackermann_bench.onu
+compile_onu samples/sha256.onu
 
 # ── Naive Fibonacci ──────────────────────────────────────────────────────────
 echo "========================================" >> "$OUTPUT_FILE"
@@ -75,6 +77,38 @@ echo " Ackermann Function (3, 11)" >> "$OUTPUT_FILE"
 echo "========================================" >> "$OUTPUT_FILE"
 run_bin "c_ackermann_bin"      "C"
 run_bin "ackermann_bench_bin"  "Onu"
+echo "" >> "$OUTPUT_FILE"
+
+# ── SHA-256 ───────────────────────────────────────────────────────────────────
+echo "========================================" >> "$OUTPUT_FILE"
+echo " SHA-256 (1 000 hashes, pure LLVM/native bitwise ops)" >> "$OUTPUT_FILE"
+echo "========================================" >> "$OUTPUT_FILE"
+# Run 10 back-to-back trials of each so the OS timer resolution is not a
+# factor, then report total wall time for 10 000 hashes each.
+echo "" >> "$OUTPUT_FILE"
+echo "--- C (10 runs × 1 000 hashes = 10 000 total) ---" >> "$OUTPUT_FILE"
+if [ -x "./c_sha256_bin" ]; then
+    { time for _ in $(seq 1 10); do ./c_sha256_bin > /dev/null; done; } 2>> "$OUTPUT_FILE"
+else
+    echo "(skipped — compile failed)" >> "$OUTPUT_FILE"
+fi
+echo "" >> "$OUTPUT_FILE"
+echo "--- Onu (10 runs × 1 000 hashes = 10 000 total) ---" >> "$OUTPUT_FILE"
+if [ -x "./sha256_bin" ]; then
+    { time for _ in $(seq 1 10); do ./sha256_bin > /dev/null; done; } 2>> "$OUTPUT_FILE"
+else
+    echo "(skipped — compile failed)" >> "$OUTPUT_FILE"
+fi
+echo "" >> "$OUTPUT_FILE"
+echo "--- Correctness check (Onu == C for first 1 000 hashes) ---" >> "$OUTPUT_FILE"
+./sha256_bin 2>/dev/null | tail -n +2 > /tmp/onu_sha256.txt 2>/dev/null
+./c_sha256_bin 2>/dev/null | tail -n +2 > /tmp/c_sha256.txt 2>/dev/null
+if diff -q /tmp/onu_sha256.txt /tmp/c_sha256.txt > /dev/null 2>&1; then
+    echo "PASS: all 1 000 digests are identical" >> "$OUTPUT_FILE"
+else
+    echo "FAIL: digest mismatch detected" >> "$OUTPUT_FILE"
+    diff /tmp/onu_sha256.txt /tmp/c_sha256.txt | head -5 >> "$OUTPUT_FILE"
+fi
 echo "" >> "$OUTPUT_FILE"
 
 echo "========================================" >> "$OUTPUT_FILE"

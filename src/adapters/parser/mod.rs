@@ -630,6 +630,11 @@ impl ParserInternal {
                 Token::InitOf => ("init-of".to_string(), 4),
                 Token::TailOf => ("tail-of".to_string(), 4),
                 Token::DuplicatedAs => ("duplicated-as".to_string(), 4),
+                Token::BitAndWith => ("bit-and-with".to_string(), 4),
+                Token::BitOrWith => ("bit-or-with".to_string(), 4),
+                Token::BitXorWith => ("bit-xor-with".to_string(), 4),
+                Token::ShiftedRightBy => ("shifted-right-by".to_string(), 4),
+                Token::ShiftedLeftBy => ("shifted-left-by".to_string(), 4),
                 Token::Utilizes => ("utilizes".to_string(), 5),
                 Token::Identifier(s) => {
                     let p = match s.as_str() {
@@ -639,6 +644,8 @@ impl ParserInternal {
                         "joined-with" | "joins-with" | "unites-with" | "opposes" => 4,
                         "init-of" | "tail-of" | "duplicated-as" => 4,
                         "char-at" | "charat" => 4,
+                        "bit-and-with" | "bit-or-with" | "bit-xor-with" => 4,
+                        "shifted-right-by" | "shifted-left-by" => 4,
                         "utilizes" => 5,
                         _ => break,
                     };
@@ -675,7 +682,9 @@ impl ParserInternal {
                 lhs = Expression::BehaviorCall { name: op, args: vec![lhs] };
             } else if op == "matches" || op == "exceeds" || op == "falls-short-of" || 
                       op == "added-to" || op == "decreased-by" || op == "scales-by" || op == "partitions-by" ||
-                      op == "joined-with" || op == "char-at" {
+                      op == "joined-with" || op == "char-at" ||
+                      op == "bit-and-with" || op == "bit-or-with" || op == "bit-xor-with" ||
+                      op == "shifted-right-by" || op == "shifted-left-by" {
                 let rhs = self.parse_infix(precedence + 1, registry)?;
                 lhs = Expression::BehaviorCall { name: op, args: vec![lhs, rhs] };
             } else {
@@ -707,6 +716,11 @@ impl ParserInternal {
             Token::InitOf => "init-of".to_string(),
             Token::TailOf => "tail-of".to_string(),
             Token::DuplicatedAs => "duplicated-as".to_string(),
+            Token::BitAndWith => "bit-and-with".to_string(),
+            Token::BitOrWith => "bit-or-with".to_string(),
+            Token::BitXorWith => "bit-xor-with".to_string(),
+            Token::ShiftedRightBy => "shifted-right-by".to_string(),
+            Token::ShiftedLeftBy => "shifted-left-by".to_string(),
             Token::Broadcasts => "broadcasts".to_string(),
             _ => return Err(OnuError::GrammarViolation { 
                 message: format!("Expected behavior name, found {:?}", token), 

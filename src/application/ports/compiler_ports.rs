@@ -48,6 +48,12 @@ pub enum Token {
     InitOf,
     TailOf,
     DuplicatedAs,
+    // --- Bitwise Operators ---
+    BitAndWith,
+    BitOrWith,
+    BitXorWith,
+    ShiftedRightBy,
+    ShiftedLeftBy,
     // --- SVO I/O Keywords ---
     Write,
     To,

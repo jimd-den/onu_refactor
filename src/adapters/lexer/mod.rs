@@ -183,6 +183,11 @@ impl<'a> LexerInternal<'a> {
             ("opposes", Token::Opposes),
             ("init-of", Token::InitOf),
             ("tail-of", Token::TailOf),
+            ("bit-and-with", Token::BitAndWith),
+            ("bit-or-with", Token::BitOrWith),
+            ("bit-xor-with", Token::BitXorWith),
+            ("shifted-right-by", Token::ShiftedRightBy),
+            ("shifted-left-by", Token::ShiftedLeftBy),
             ("duplicated-as", Token::DuplicatedAs),
         ];
 

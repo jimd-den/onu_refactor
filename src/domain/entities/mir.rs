@@ -157,6 +157,14 @@ pub enum MirBinOp {
     /// Bitwise AND.  Used by HashMemoStrategy to reduce a hash value to a
     /// power-of-2 table slot with a single instruction (`and rX, mask`).
     And,
+    /// Bitwise OR.
+    Or,
+    /// Bitwise XOR.
+    Xor,
+    /// Logical (unsigned) right shift – fills high bits with 0.
+    Shr,
+    /// Left shift.
+    Shl,
 }
 
 #[derive(Debug, Clone, PartialEq)]

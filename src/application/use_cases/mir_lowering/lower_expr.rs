@@ -117,6 +117,11 @@ impl ExprLowerer for BinaryOpLowerer {
                 HirBinOp::NotEqual => MirBinOp::Ne,
                 HirBinOp::LessThan => MirBinOp::Lt,
                 HirBinOp::GreaterThan => MirBinOp::Gt,
+                HirBinOp::BitAnd => MirBinOp::And,
+                HirBinOp::BitOr => MirBinOp::Or,
+                HirBinOp::BitXor => MirBinOp::Xor,
+                HirBinOp::Shr => MirBinOp::Shr,
+                HirBinOp::Shl => MirBinOp::Shl,
             };
             
             // Register type for the result

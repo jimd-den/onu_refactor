@@ -126,6 +126,25 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                     .build_and(l_val.into_int_value(), r_val.into_int_value(), "andtmp")
                     .unwrap()
                     .into(),
+                MirBinOp::Or => builder
+                    .build_or(l_val.into_int_value(), r_val.into_int_value(), "ortmp")
+                    .unwrap()
+                    .into(),
+                MirBinOp::Xor => builder
+                    .build_xor(l_val.into_int_value(), r_val.into_int_value(), "xortmp")
+                    .unwrap()
+                    .into(),
+                // Logical (unsigned) right shift: fills high bits with 0.
+                // Safe for SHA-256 since all 32-bit values live in the positive
+                // i64 range [0, 2^32-1] – LSHR and ASHR are identical there.
+                MirBinOp::Shr => builder
+                    .build_right_shift(l_val.into_int_value(), r_val.into_int_value(), false, "lshrtmp")
+                    .unwrap()
+                    .into(),
+                MirBinOp::Shl => builder
+                    .build_left_shift(l_val.into_int_value(), r_val.into_int_value(), "lshltmp")
+                    .unwrap()
+                    .into(),
                 MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt => {
                     let pred = match op {
                         MirBinOp::Eq => inkwell::IntPredicate::EQ,

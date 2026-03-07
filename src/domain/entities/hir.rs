@@ -43,6 +43,11 @@ pub enum HirBinOp {
     NotEqual,
     LessThan,
     GreaterThan,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shr,
+    Shl,
 }
 
 #[derive(Debug, Clone, PartialEq)]
