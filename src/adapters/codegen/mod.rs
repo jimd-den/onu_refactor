@@ -2,10 +2,13 @@
 ///
 /// This implements the CodegenPort using the Inkwell library
 /// to translate MIR into LLVM Bitcode.
+pub mod compat;
+pub mod platform;
 pub mod strategies;
 pub mod typemapper;
 
 use crate::adapters::codegen::strategies::*;
+use crate::adapters::codegen::compat::{arena_ptr_initializer, onu_i8ptr};
 use crate::adapters::codegen::typemapper::LlvmTypeMapper;
 use crate::application::ports::compiler_ports::CodegenPort;
 use crate::application::use_cases::registry_service::RegistryService;
@@ -45,10 +48,10 @@ impl CodegenPort for OnuCodegen {
         arena.set_initializer(&arena_type.const_zero());
 
         // 2. Declare Global Arena Pointer
-        let i8ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+        let i8ptr_type = onu_i8ptr(&context);
         let arena_ptr = module.add_global(i8ptr_type, None, "onu_arena_ptr");
         arena_ptr.set_linkage(Linkage::Internal);
-        arena_ptr.set_initializer(&arena.as_pointer_value().const_cast(i8ptr_type));
+        arena_ptr.set_initializer(&arena_ptr_initializer(&context, arena.as_pointer_value()));
 
         let mut generator = LlvmGenerator {
             context: &context,
@@ -457,6 +460,14 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 self.builder.build_store(ptr, arg).unwrap();
                 self.ssa_storage.insert(mir_arg.ssa_var, ptr);
             }
+
+            // For the entry function, store __argc and __argv into globals
+            // so that IO intrinsics (argument-count, receives-argument) can
+            // access them without threading parameters through every call.
+            let is_main = func.name == "run" || func.name == "main";
+            if is_main {
+                self.store_entry_point_globals(func);
+            }
         }
 
         for block in &func.blocks {
@@ -468,6 +479,57 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
             self.generate_terminator(&block.terminator)?;
         }
         Ok(())
+    }
+
+    /// Store the entry-point `__argc` (i32→i64) and `__argv` (i64→ptr)
+    /// parameters into internal globals so that IO intrinsics can access
+    /// them from any call depth.
+    fn store_entry_point_globals(&self, func: &MirFunction) {
+        use inkwell::types::BasicType;
+        use crate::adapters::codegen::compat::{onu_i8ptr, build_typed_load};
+
+        let i64_type = self.context.i64_type();
+        let i8_ptr_type = onu_i8ptr(self.context);
+        let i8_ptr_ptr_type = onu_i8ptr(self.context); // opaque: same ptr type
+
+        // __argc → __onu_argc (i64)
+        if let Some(argc_mir) = func.args.iter().find(|a| a.name == "__argc") {
+            if let Some(argc_alloca) = self.ssa_storage.get(&argc_mir.ssa_var) {
+                let argc_i32 = build_typed_load(self.context, &self.builder, i64_type, *argc_alloca, "argc_i32").into_int_value();
+                let argc_i64 = self.builder.build_int_z_extend(argc_i32, i64_type, "argc_i64").unwrap();
+
+                let g = self.get_or_declare_global("__onu_argc", i64_type.as_basic_type_enum());
+                self.builder.build_store(g, argc_i64).unwrap();
+            }
+        }
+
+        // __argv → __onu_argv (ptr)
+        if let Some(argv_mir) = func.args.iter().find(|a| a.name == "__argv") {
+            if let Some(argv_alloca) = self.ssa_storage.get(&argv_mir.ssa_var) {
+                let argv_i64 = build_typed_load(self.context, &self.builder, i64_type, *argv_alloca, "argv_i64").into_int_value();
+                let argv_ptr = self.builder.build_int_to_ptr(argv_i64, i8_ptr_ptr_type, "argv_ptr").unwrap();
+
+                let g = self.get_or_declare_global("__onu_argv", i8_ptr_ptr_type.as_basic_type_enum());
+                self.builder.build_store(g, argv_ptr).unwrap();
+            }
+        }
+        let _ = i8_ptr_type; // suppress unused warning on opaque-pointer builds
+    }
+
+    /// Get or declare an internal global variable with the given name and type.
+    fn get_or_declare_global(&self, name: &str, typ: inkwell::types::BasicTypeEnum<'ctx>) -> PointerValue<'ctx> {
+        if let Some(g) = self.module.get_global(name) {
+            g.as_pointer_value()
+        } else {
+            let g = self.module.add_global(typ, None, name);
+            g.set_linkage(Linkage::Internal);
+            match typ {
+                inkwell::types::BasicTypeEnum::IntType(t) => g.set_initializer(&t.const_zero()),
+                inkwell::types::BasicTypeEnum::PointerType(t) => g.set_initializer(&t.const_null()),
+                _ => {}
+            }
+            g.as_pointer_value()
+        }
     }
 
     fn generate_instruction(&mut self, inst: &MirInstruction) -> Result<(), OnuError> {

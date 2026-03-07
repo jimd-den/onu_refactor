@@ -1,0 +1,139 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Pépin Test (Fermat Primality)
+-- Concern: Determining if ancient "Fermat numbers" are prime.
+--
+-- Imagine a sequence of sacred numbers built by squaring and adding one:
+--   F(0) = 3           (2^1 + 1)
+--   F(1) = 5           (2^2 + 1)
+--   F(2) = 17          (2^4 + 1)
+--   F(3) = 257         (2^8 + 1)   <- 8 = 2^3
+--   F(4) = 65537       (2^16 + 1)  <- 16 = 2^4
+--
+-- The Pépin Ritual (1877): a Fermat number F(n) is prime if and only if
+-- raising 3 to the power of (F(n)-1)/2 and dividing by F(n) leaves
+-- a remainder of exactly F(n)-1.
+--
+-- This ritual requires computing enormous powers while keeping values
+-- manageable through modular arithmetic (always dividing by F(n) to
+-- keep the remainder small). This tests the wide-integer arithmetic
+-- of the compiler, as intermediate products can be very large.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called PepinRitual
+    with concern: determining the primality of Fermat numbers
+
+-- Compute the remainder of a divided by b.
+-- (a mod b = a - floor(a/b) * b)
+the behavior called remainder-of
+    with intent: find what is left over after dividing dividend by divisor
+    takes:
+        an integer called dividend
+        an integer called divisor
+    delivers: an integer
+    as:
+        derivation: quotient derives-from dividend partitions-by divisor
+        derivation: product  derives-from quotient scales-by divisor
+        dividend decreased-by product
+
+-- Modular exponentiation by repeated squaring.
+-- Computes (base ^ exponent) mod modulus without ever forming the full power.
+-- Each step keeps the running value below modulus, preventing overflow.
+the behavior called power-mod
+    with intent: compute a large power while keeping the result bounded by the modulus
+    takes:
+        an integer called base
+        an integer called exponent
+        an integer called modulus
+    delivers: an integer
+    with diminishing: exponent
+    as:
+        if exponent matches 0
+            then 1
+            else
+                derivation: half-exp  derives-from exponent partitions-by 2
+                derivation: even-test derives-from (half-exp scales-by 2) matches exponent
+                if even-test
+                    then
+                        -- Exponent is even: square the half-power result
+                        derivation: half-result derives-from base utilizes power-mod half-exp modulus
+                        (half-result scales-by half-result) utilizes remainder-of modulus
+                    else
+                        -- Exponent is odd: multiply by base once more
+                        derivation: pred-exp    derives-from exponent decreased-by 1
+                        derivation: pred-result derives-from base utilizes power-mod pred-exp modulus
+                        (base scales-by pred-result) utilizes remainder-of modulus
+
+-- Compute the Fermat number F(n) = 2^(2^n) + 1.
+-- We build 2^(2^n) by repeated squaring: start from 2 and square n times.
+the behavior called fermat-number
+    with intent: compute the n-th Fermat candidate number
+    takes:
+        an integer called n
+    delivers: an integer
+    with no guaranteed termination:
+    as:
+        if n matches 0
+            then 3
+            else
+                derivation: prev   derives-from (n decreased-by 1) utilizes fermat-number
+                derivation: inner  derives-from prev decreased-by 1
+                inner scales-by inner added-to 1
+
+-- Apply the Pépin primality ritual to F(n).
+-- Returns 1 if F(n) is prime, 0 if composite.
+the behavior called pepin-test
+    with intent: determine if the n-th Fermat number is prime
+    takes:
+        an integer called n
+    delivers: an integer
+    as:
+        derivation: fn      derives-from n utilizes fermat-number
+        derivation: fn-minus derives-from fn decreased-by 1
+        derivation: half    derives-from fn-minus partitions-by 2
+        derivation: result  derives-from 3 utilizes power-mod half fn
+        result matches fn-minus
+
+the effect behavior called run
+    with intent: demonstrate the Pépin ritual certifying Fermat primes
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2 derives-from nothing broadcasts "  THE PÉPIN RITUAL (Fermat Primality)"
+        derivation: d3 derives-from nothing broadcasts "  1 = prime confirmed, 0 = not prime"
+        derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        -- F(1) = 5: should be prime (result = 1)
+        derivation: f1   derives-from an integer 1 utilizes fermat-number
+        derivation: p1   derives-from an integer 1 utilizes pepin-test
+        derivation: fn1  derives-from "F(1) = " joined-with (f1 utilizes as-text)
+        derivation: r1   derives-from fn1 joined-with "  -> prime? "
+        derivation: msg1 derives-from r1 joined-with (p1 utilizes as-text)
+        derivation: out1 derives-from nothing broadcasts msg1
+
+        -- F(2) = 17: should be prime (result = 1)
+        derivation: f2   derives-from an integer 2 utilizes fermat-number
+        derivation: p2   derives-from an integer 2 utilizes pepin-test
+        derivation: fn2  derives-from "F(2) = " joined-with (f2 utilizes as-text)
+        derivation: r2   derives-from fn2 joined-with "  -> prime? "
+        derivation: msg2 derives-from r2 joined-with (p2 utilizes as-text)
+        derivation: out2 derives-from nothing broadcasts msg2
+
+        -- F(3) = 257: should be prime (result = 1)
+        derivation: f3   derives-from an integer 3 utilizes fermat-number
+        derivation: p3   derives-from an integer 3 utilizes pepin-test
+        derivation: fn3  derives-from "F(3) = " joined-with (f3 utilizes as-text)
+        derivation: r3   derives-from fn3 joined-with "  -> prime? "
+        derivation: msg3 derives-from r3 joined-with (p3 utilizes as-text)
+        derivation: out3 derives-from nothing broadcasts msg3
+
+        -- F(4) = 65537: should be prime (result = 1)
+        derivation: f4   derives-from an integer 4 utilizes fermat-number
+        derivation: p4   derives-from an integer 4 utilizes pepin-test
+        derivation: fn4  derives-from "F(4) = " joined-with (f4 utilizes as-text)
+        derivation: r4   derives-from fn4 joined-with "  -> prime? "
+        derivation: msg4 derives-from r4 joined-with (p4 utilizes as-text)
+        derivation: out4 derives-from nothing broadcasts msg4
+
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing

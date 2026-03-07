@@ -8,7 +8,7 @@ the effect behavior called greet
         a string called name via observation
     delivers: nothing
     as:
-        derivation: msg derives-from "Greetings, "
+        derivation: msg derives-from a string "Greetings, "
         derivation: full derives-from msg joined-with name
         broadcasts full
 

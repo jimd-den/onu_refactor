@@ -11,6 +11,7 @@ use crate::application::use_cases::lowering_service::LoweringService;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::module_service::ModuleService;
 use crate::application::use_cases::registry_service::RegistryService;
+use crate::application::use_cases::safety_pass;
 use crate::domain::entities::ast::Discourse;
 use crate::domain::entities::core_module::{CoreModule, StandardMathModule};
 use crate::domain::entities::error::OnuError;
@@ -76,6 +77,26 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         let hir_discourses = self.lower_hir(discourses)?;
         if self.options.stop_after == Some(CompilerStage::Analysis) {
             return Ok(());
+        }
+
+        // Safety pass: enforce S-1/S-2/S-3 grammar rules.
+        // Warnings are printed; hard errors abort compilation with a clear message.
+        match safety_pass::run(&hir_discourses) {
+            Ok(diagnostics) => {
+                for d in &diagnostics {
+                    eprintln!("[onu warning] {}", d.message);
+                }
+            }
+            Err(e) => {
+                // Format and print the full error before returning so the
+                // user sees the complete bilingual message in the terminal.
+                let msg = match &e {
+                    OnuError::GrammarViolation { message, .. } => message.clone(),
+                    other => format!("{:?}", other),
+                };
+                eprintln!("\n{}\n", msg);
+                return Err(e);
+            }
         }
 
         let mir = self.lower_mir(hir_discourses)?;

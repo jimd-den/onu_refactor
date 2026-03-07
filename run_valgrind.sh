@@ -62,7 +62,7 @@ for onu_file in samples/*.onu; do
     bin_file="${stem}_bin"
 
     # Compile to LLVM IR
-    if ! ./target/debug/onu_refactor "$onu_file" 2>/dev/null; then
+    if ! ./target/release/onu_refactor "$onu_file" 2>/dev/null; then
         msg="  [FAIL] $stem  (compile error)"
         echo "$msg" | tee -a "$OUTPUT_FILE"
         (( FAIL++ )) || true

@@ -12,6 +12,7 @@ pub mod mir_lowering_service;
 pub mod module_bootstrap;
 pub mod module_service;
 pub mod registry_service;
+pub mod safety_pass;
 pub mod stages;
 pub mod stdlib;
 pub mod tco_pass;
