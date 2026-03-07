@@ -1,0 +1,31 @@
+the module called HypothesisTesting
+    with concern: proving the Boss's theories on front-end failure
+
+-- Hypothesis 1: Intent Greediness (as: on same line)
+the behavior called greedy-intent
+    with intent: this documentation swallows the keyword as: { 0 }
+
+-- Hypothesis 2: Article Collision (variable named 'a')
+the behavior called article-collision
+    takes: an integer called input
+    delivers: an integer
+    as:
+        derivation: a derives-from 1
+        derivation: result derives-from a added-to input
+        result
+
+-- Hypothesis 3: Missing Braces
+the behavior called brace-test
+    takes: nothing
+    delivers: an integer
+    as: {
+        1
+    }
+
+-- Hypothesis 4: Operator Identity
+the behavior called operator-identity
+    takes: an integer called x
+    delivers: an integer
+    as:
+        derivation: res derives-from x opposes 1
+        res
