@@ -320,6 +320,23 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
             is_tail_call,
         } = inst
         {
+            // ── IO intrinsic interception ─────────────────────────────────
+            // These IO effects are implemented with inline x86_64 syscalls
+            // (no C / libc dependency).
+            match name.as_str() {
+                "receives-line" => {
+                    return generate_receives_line(context, builder, ssa_storage, *dest);
+                }
+                "receives-argument" => {
+                    let index_val = operand_to_llvm(context, builder, ssa_storage, &args[0]);
+                    return generate_receives_argument(context, module, builder, ssa_storage, *dest, index_val);
+                }
+                "argument-count" => {
+                    return generate_argument_count(context, module, builder, ssa_storage, *dest);
+                }
+                _ => {}
+            }
+
             let llvm_name = name.clone(); // Use original hyphenated names
 
             // Compute expected LLVM types from the MIR arg_types annotation.
@@ -460,89 +477,221 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
     }
 }
 
+// ---------------------------------------------------------------------------
+// IO intrinsic helpers — use the PlatformSyscalls abstraction so that
+// strategies remain architecture-agnostic.
+// ---------------------------------------------------------------------------
+
+/// `receives-line`: read a line from stdin via the platform read syscall.
+/// Returns an Onu string { i64 len, i8* ptr, i1 is_dynamic=false }.
+fn generate_receives_line<'ctx>(
+    context: &'ctx Context,
+    builder: &Builder<'ctx>,
+    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    dest: usize,
+) -> Result<(), OnuError> {
+    let syscalls = crate::adapters::codegen::platform::create_syscalls();
+    let i64_type = context.i64_type();
+    let i8_type = context.i8_type();
+    let i8_ptr_type = i8_type.ptr_type(inkwell::AddressSpace::default());
+    let bool_type = context.bool_type();
+
+    // Stack buffer for reading (4096 bytes).
+    let buf_size: u64 = 4096;
+    let buf_array_type = i8_type.array_type(buf_size as u32);
+    let buf_alloca = builder.build_alloca(buf_array_type, "read_buf").unwrap();
+    let buf_ptr = builder
+        .build_pointer_cast(buf_alloca, i8_ptr_type, "read_buf_ptr")
+        .unwrap();
+
+    let stdin_fd = i64_type.const_int(0, false);
+    let max_len = i64_type.const_int(buf_size, false);
+    let bytes_read = syscalls.emit_read(context, builder, stdin_fd, buf_ptr, max_len);
+
+    // Strip trailing newline: if last byte == '\n', length -= 1
+    let one = i64_type.const_int(1, false);
+    let len_minus_1 = builder.build_int_sub(bytes_read, one, "len_m1").unwrap();
+    let last_ptr = unsafe {
+        builder
+            .build_in_bounds_gep(buf_ptr, &[len_minus_1], "last_ptr")
+            .unwrap()
+    };
+    let last_byte = builder
+        .build_load(last_ptr, "last_byte")
+        .unwrap()
+        .into_int_value();
+    let is_nl = builder
+        .build_int_compare(
+            inkwell::IntPredicate::EQ,
+            last_byte,
+            i8_type.const_int(10, false),
+            "is_nl",
+        )
+        .unwrap();
+    let stripped_len = builder
+        .build_select(is_nl, len_minus_1, bytes_read, "stripped_len")
+        .unwrap()
+        .into_int_value();
+
+    // Build Onu string struct { i64 len, i8* ptr, i1 is_dynamic=false }
+    let str_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false);
+    let mut str_val = str_type.get_undef();
+    str_val = builder.build_insert_value(str_val, stripped_len, 0, "str_len").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, buf_ptr, 1, "str_ptr").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, bool_type.const_zero(), 2, "str_dyn").unwrap().into_struct_value();
+
+    let ptr = get_or_create_ssa(context, builder, ssa_storage, dest, str_type.as_basic_type_enum());
+    builder.build_store(ptr, str_val).unwrap();
+    Ok(())
+}
+
+/// `receives-argument`: read argv[index] via the `__onu_argv` global.
+/// Returns an Onu string { i64 len, i8* ptr, i1 is_dynamic=false }.
+fn generate_receives_argument<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    dest: usize,
+    index_val: BasicValueEnum<'ctx>,
+) -> Result<(), OnuError> {
+    let i64_type = context.i64_type();
+    let i8_type = context.i8_type();
+    let i8_ptr_type = i8_type.ptr_type(inkwell::AddressSpace::default());
+    let i8_ptr_ptr_type = i8_ptr_type.ptr_type(inkwell::AddressSpace::default());
+    let bool_type = context.bool_type();
+
+    // Load __onu_argv global (i8**)
+    let argv_global = get_or_declare_global(module, context, "__onu_argv", i8_ptr_ptr_type.as_basic_type_enum());
+    let argv_ptr = builder.build_load(argv_global, "argv_val").unwrap().into_pointer_value();
+
+    // GEP to argv[index]
+    let idx = if index_val.is_int_value() {
+        index_val.into_int_value()
+    } else {
+        i64_type.const_int(0, false)
+    };
+    let arg_ptr_ptr = unsafe {
+        builder.build_in_bounds_gep(argv_ptr, &[idx], "arg_ptr_ptr").unwrap()
+    };
+    let arg_ptr = builder.build_load(arg_ptr_ptr, "arg_ptr").unwrap().into_pointer_value();
+
+    // Compute strlen by scanning for '\0' (pure LLVM loop — no libc)
+    let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let strlen_entry = context.append_basic_block(current_fn, "strlen_entry");
+    let strlen_loop = context.append_basic_block(current_fn, "strlen_loop");
+    let strlen_done = context.append_basic_block(current_fn, "strlen_done");
+
+    builder.build_unconditional_branch(strlen_entry).unwrap();
+
+    builder.position_at_end(strlen_entry);
+    builder.build_unconditional_branch(strlen_loop).unwrap();
+
+    builder.position_at_end(strlen_loop);
+    let i_phi = builder.build_phi(i64_type, "i").unwrap();
+    i_phi.add_incoming(&[(&i64_type.const_int(0, false), strlen_entry)]);
+    let i_val = i_phi.as_basic_value().into_int_value();
+
+    let byte_ptr = unsafe {
+        builder.build_in_bounds_gep(arg_ptr, &[i_val], "byte_ptr").unwrap()
+    };
+    let byte = builder.build_load(byte_ptr, "byte").unwrap().into_int_value();
+    let is_zero = builder
+        .build_int_compare(inkwell::IntPredicate::EQ, byte, i8_type.const_int(0, false), "is_zero")
+        .unwrap();
+    let i_next = builder
+        .build_int_add(i_val, i64_type.const_int(1, false), "i_next")
+        .unwrap();
+    i_phi.add_incoming(&[(&i_next, strlen_loop)]);
+    builder.build_conditional_branch(is_zero, strlen_done, strlen_loop).unwrap();
+
+    builder.position_at_end(strlen_done);
+    let str_len = i_phi.as_basic_value().into_int_value();
+
+    // Build Onu string struct
+    let str_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false);
+    let mut str_val = str_type.get_undef();
+    str_val = builder.build_insert_value(str_val, str_len, 0, "str_len").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, arg_ptr, 1, "str_ptr").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, bool_type.const_zero(), 2, "str_dyn").unwrap().into_struct_value();
+
+    let ptr = get_or_create_ssa(context, builder, ssa_storage, dest, str_type.as_basic_type_enum());
+    builder.build_store(ptr, str_val).unwrap();
+    Ok(())
+}
+
+/// `argument-count`: return `__onu_argc` (i64) from the global.
+fn generate_argument_count<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    dest: usize,
+) -> Result<(), OnuError> {
+    let i64_type = context.i64_type();
+
+    let argc_global = get_or_declare_global(module, context, "__onu_argc", i64_type.as_basic_type_enum());
+    let argc_val = builder.build_load(argc_global, "argc_val").unwrap().into_int_value();
+
+    let ptr = get_or_create_ssa(context, builder, ssa_storage, dest, i64_type.as_basic_type_enum());
+    builder.build_store(ptr, argc_val).unwrap();
+    Ok(())
+}
+
+/// Get or declare an internal global variable with the given name and type.
+fn get_or_declare_global<'ctx>(
+    module: &Module<'ctx>,
+    context: &'ctx Context,
+    name: &str,
+    typ: BasicTypeEnum<'ctx>,
+) -> PointerValue<'ctx> {
+    if let Some(g) = module.get_global(name) {
+        g.as_pointer_value()
+    } else {
+        let g = module.add_global(typ, None, name);
+        g.set_linkage(inkwell::module::Linkage::Internal);
+        match typ {
+            BasicTypeEnum::IntType(t) => g.set_initializer(&t.const_zero()),
+            BasicTypeEnum::PointerType(t) => g.set_initializer(&t.const_null()),
+            _ => {}
+        }
+        g.as_pointer_value()
+    }
+}
+
 pub struct EmitStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
     fn generate(
         &self,
         context: &'ctx Context,
-        module: &Module<'ctx>,
+        _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        registry: &RegistryService,
+        _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Emit(op) = inst {
+            let syscalls = crate::adapters::codegen::platform::create_syscalls();
             let val = operand_to_llvm(context, builder, ssa_storage, op);
 
             // Onu Strings are { i64 len, i8* ptr, i1 is_dynamic }
             if val.is_struct_value() {
                 let s = val.into_struct_value();
-                let len = builder
-                    .build_extract_value(s, 0, "emit_len")
-                    .unwrap()
-                    .into_int_value();
-                let ptr = builder
-                    .build_extract_value(s, 1, "emit_ptr")
-                    .unwrap()
-                    .into_pointer_value();
+                let len = builder.build_extract_value(s, 0, "emit_len").unwrap().into_int_value();
+                let ptr = builder.build_extract_value(s, 1, "emit_ptr").unwrap().into_pointer_value();
 
-                // x86_64 syscall: %rax=1 (write), %rdi=1 (stdout), %rsi=buffer, %rdx=length
-                // Clobbers: rcx, r11
                 let i64_type = context.i64_type();
-                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                let stdout_fd = i64_type.const_int(1, false);
 
-                let syscall_type = i64_type.fn_type(
-                    &[
-                        i64_type.into(),    // rax
-                        i64_type.into(),    // rdi
-                        i8_ptr_type.into(), // rsi
-                        i64_type.into(),    // rdx
-                    ],
-                    false,
-                );
+                // 1. Write the string to stdout
+                syscalls.emit_write(context, builder, stdout_fd, ptr, len);
 
-                let asm_fn = context.create_inline_asm(
-                    syscall_type,
-                    "syscall".to_string(),
-                    "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{dirflag},~{fpsr},~{flags}"
-                        .to_string(),
-                    true,
-                    false,
-                    None,
-                    false, // Missing boolean: can_throw?
-                );
-
-                builder
-                    .build_call(
-                        CallableValue::try_from(asm_fn).unwrap(),
-                        &[
-                            i64_type.const_int(1, false).into(), // sys_write
-                            i64_type.const_int(1, false).into(), // stdout
-                            ptr.into(),
-                            len.into(),
-                        ],
-                        "syscall_res",
-                    )
-                    .unwrap();
-
-                // 2. EMIT NEWLINE (\n = ASCII 10)
-                // We allocate a small stack buffer for the newline
+                // 2. Write a trailing newline (\n = ASCII 10)
                 let nl_val = context.i8_type().const_int(10, false);
                 let nl_ptr = builder.build_alloca(context.i8_type(), "nl_ptr").unwrap();
                 builder.build_store(nl_ptr, nl_val).unwrap();
-
-                builder
-                    .build_call(
-                        CallableValue::try_from(asm_fn).unwrap(),
-                        &[
-                            i64_type.const_int(1, false).into(), // sys_write
-                            i64_type.const_int(1, false).into(), // stdout
-                            nl_ptr.into(),
-                            i64_type.const_int(1, false).into(), // len 1
-                        ],
-                        "syscall_res",
-                    )
-                    .unwrap();
+                let one = i64_type.const_int(1, false);
+                syscalls.emit_write(context, builder, stdout_fd, nl_ptr, one);
             }
         }
         Ok(())
