@@ -408,14 +408,33 @@ impl ParserInternal {
                 Token::WithIntent => {
                     self.advance();
                     self.match_token(Token::Operator(":".to_string()));
-                    // Treat the rest of the line as freeform prose (like a comment).
-                    // Use raw peek/advance so we can actually see the NewLine token
-                    // that marks end-of-line; the normal advance() skips NewLines.
-                    loop {
-                        match self.peek_raw() {
-                            None => break,
-                            Some(Token::NewLine) => { self.advance_raw(); break; }
-                            _ => { self.advance_raw(); }
+                    // Intent isolation: support both quoted and unquoted prose.
+                    match self.peek_raw() {
+                        Some(Token::Literal(Literal::String(_))) => {
+                            // Quoted intent: consume only the string literal.
+                            if let Some(Token::Literal(Literal::String(s))) = self.advance_raw().cloned() {
+                                intent = s;
+                            }
+                        }
+                        _ => {
+                            // Unquoted prose: consume identifiers until a structural
+                            // keyword or end-of-line is hit (Stop-Word Strategy).
+                            let mut parts = Vec::new();
+                            loop {
+                                match self.peek_raw() {
+                                    None => break,
+                                    Some(Token::NewLine) => { self.advance_raw(); break; }
+                                    Some(Token::Takes) | Some(Token::Delivers)
+                                    | Some(Token::As) | Some(Token::WithDiminishing)
+                                    | Some(Token::NoGuaranteedTermination) => break,
+                                    Some(Token::Identifier(s)) => {
+                                        parts.push(s.clone());
+                                        self.advance_raw();
+                                    }
+                                    _ => { self.advance_raw(); }
+                                }
+                            }
+                            intent = parts.join(" ");
                         }
                     }
                 }
@@ -656,6 +675,16 @@ impl ParserInternal {
 
         let name = match token {
             Token::Identifier(s) => s.clone(),
+            Token::AddedTo => "added-to".to_string(),
+            Token::DecreasedBy => "decreased-by".to_string(),
+            Token::ScalesBy => "scales-by".to_string(),
+            Token::PartitionsBy => "partitions-by".to_string(),
+            Token::Matches => "matches".to_string(),
+            Token::Exceeds => "exceeds".to_string(),
+            Token::FallsShortOf => "falls-short-of".to_string(),
+            Token::UnitesWith => "unites-with".to_string(),
+            Token::JoinsWith => "joins-with".to_string(),
+            Token::Opposes => "opposes".to_string(),
             Token::InitOf => "init-of".to_string(),
             Token::TailOf => "tail-of".to_string(),
             Token::DuplicatedAs => "duplicated-as".to_string(),
@@ -730,14 +759,37 @@ impl ParserInternal {
     fn parse_type_info(&mut self, registry: &mut RegistryService) -> Result<Option<TypeInfo>, OnuError> {
         if let Some(Token::Identifier(s)) = self.peek() {
             if s == "a" || s == "an" || s == "the" {
-                self.advance();
-                let onu_type = self.parse_type_name(registry)?;
-                let display_name = format!("{:?}", onu_type); 
-                
-                return Ok(Some(TypeInfo { onu_type, display_name, via_role: None, is_observation: false }));
+                // Lookahead guard: only consume the article if followed by a known type.
+                if self.is_type_lookahead(registry) {
+                    self.advance();
+                    let onu_type = self.parse_type_name(registry)?;
+                    let display_name = format!("{:?}", onu_type); 
+                    
+                    return Ok(Some(TypeInfo { onu_type, display_name, via_role: None, is_observation: false }));
+                }
             }
         }
         Ok(None)
+    }
+
+    /// Returns true if the token after the current article (`a`/`an`/`the`)
+    /// is a recognized type name (an identifier that could be a type).
+    fn is_type_lookahead(&self, _registry: &RegistryService) -> bool {
+        let mut i = self.pos;
+        // Skip newlines to find the article
+        while i < self.tokens.len() && matches!(self.tokens[i], Token::NewLine) {
+            i += 1;
+        }
+        // Now i is on the article; skip it to look at the next token
+        i += 1;
+        while i < self.tokens.len() && matches!(self.tokens[i], Token::NewLine) {
+            i += 1;
+        }
+        // After the article, the next token must be an Identifier
+        // (could be a primitive like "integer" or a shape name like "point").
+        // Operator tokens (DerivesFrom, AddedTo, etc.) indicate that
+        // the article is actually a variable name, not a type indicator.
+        matches!(self.tokens.get(i), Some(Token::Identifier(_)))
     }
 
     fn parse_type_name(&mut self, registry: &mut RegistryService) -> Result<OnuType, OnuError> {
@@ -821,6 +873,12 @@ impl ParserInternal {
                     args.push(Argument { name, type_info });
                 }
                 _ => { 
+                    if let Token::Identifier(s) = token {
+                        return Err(OnuError::GrammarViolation { 
+                            message: format!("Strict typing enforced: expected type indicator ('a', 'an', 'the') before argument '{}', found bare identifier", s),
+                            span: self.current_span() 
+                        });
+                    }
                     self.log(LogLevel::Trace, &format!("Advancing past non-argument token: {:?}", token));
                     self.advance(); 
                 }
