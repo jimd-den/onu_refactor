@@ -108,14 +108,14 @@ the effect behavior called interpret
                     then
                         -- '+': increase value at focus
                         derivation: v1       derives-from an integer tape utilizes read-tape focus
-                        derivation: new-tape1 derives-from tape utilizes write-tape focus (v1 added-to 1)
+                        derivation: new-tape1 derives-from a string tape utilizes write-tape focus (v1 added-to 1)
                         scroll utilizes interpret next-ip new-tape1 focus
                     else
                 if symbol matches 45
                     then
                         -- '-': decrease value at focus
                         derivation: v2       derives-from an integer tape utilizes read-tape focus
-                        derivation: new-tape2 derives-from tape utilizes write-tape focus (v2 decreased-by 1)
+                        derivation: new-tape2 derives-from a string tape utilizes write-tape focus (v2 decreased-by 1)
                         scroll utilizes interpret next-ip new-tape2 focus
                     else
                 if symbol matches 62
@@ -172,7 +172,7 @@ the behavior called blank-tape
         if position matches limit
             then tape
             else
-                derivation: cleared-tape derives-from tape utilizes write-tape position 0
+                derivation: cleared-tape derives-from a string tape utilizes write-tape position 0
                 cleared-tape utilizes blank-tape (position added-to 1) limit
 
 the effect behavior called run

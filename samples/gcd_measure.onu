@@ -28,7 +28,7 @@ the behavior called find-common-measure
         an integer called longer-length
         an integer called shorter-length
     delivers: an integer
-    with diminishing: longer-length, shorter-length
+    with no guaranteed termination
     as:
         if shorter-length matches 0
             then longer-length

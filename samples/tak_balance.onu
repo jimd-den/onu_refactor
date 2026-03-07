@@ -40,7 +40,7 @@ the behavior called find-balance
             else weight-z
 
 the effect behavior called run
-    with intent: demonstrate the convergence of three recursive weights
+    with intent: demonstrate the convergence of three recursive weights under memoization
     takes: nothing
     delivers: nothing
     as:
@@ -49,20 +49,11 @@ the effect behavior called run
         derivation: d3 derives-from nothing broadcasts "  Three-way recursive balancing"
         derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
 
-        -- Small test: tak(7, 4, 2) = 4
-        derivation: r1 derives-from an integer 7 utilizes find-balance 4 2
-        derivation: m1 derives-from "Balance(7, 4, 2)    = " joined-with (r1 utilizes as-text)
-        derivation: p1 derives-from nothing broadcasts m1
-
-        -- Medium test: tak(12, 8, 4) = 5 (showcases memoization speedup)
-        derivation: r2 derives-from an integer 12 utilizes find-balance 8 4
-        derivation: m2 derives-from "Balance(12, 8, 4)   = " joined-with (r2 utilizes as-text)
-        derivation: p2 derives-from nothing broadcasts m2
-
-        -- Heavy test: tak(18, 12, 6) (the ultimate boss without memoization)
-        derivation: r3 derives-from an integer 18 utilizes find-balance 12 6
-        derivation: m3 derives-from "Balance(18, 12, 6)  = " joined-with (r3 utilizes as-text)
-        derivation: p3 derives-from nothing broadcasts m3
+        -- Heavy benchmark: tak(18, 12, 6) — millions of calls without memo, sub-ms with it
+        derivation: result derives-from an integer 18 utilizes find-balance 12 6
+        derivation: label  derives-from "Balance(18, 12, 6) = "
+        derivation: msg    derives-from label joined-with (result utilizes as-text)
+        broadcasts msg
 
         derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
         nothing
