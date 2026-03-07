@@ -1,7 +1,7 @@
 /*
  * SHA-256 benchmark: C reference matching samples/sha256.onu
  *
- * Same 20 inputs: 32-bit LCG seeded at 42
+ * Same 1000 inputs: 32-bit LCG seeded at 42
  *   next(s) = (s * 1664525 + 1013904223) & 0xFFFFFFFF
  * Same message layout per block:
  *   W[0]  = lcg_value  (the "message")

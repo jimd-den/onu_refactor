@@ -1,11 +1,11 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Discourse Unit: The Cryptographic Seal
--- Concern: SHA-256 benchmark generating 20 randomised digests versus C.
+-- Concern: SHA-256 benchmark generating 1000 randomized digests versus C.
 --
 -- Uses native bitwise ops (bit-and-with, bit-or-with, bit-xor-with,
 -- shifted-right-by, shifted-left-by) throughout.  No libc, pure LLVM.
--- Inputs: 20 values from a 32-bit LCG seeded at 42, each padded to a
--- single 512-bit block.  Output: 20 × 64-character lower-case hex digests.
+-- Inputs: 1000 values from a 32-bit LCG seeded at 42, each padded to a
+-- single 512-bit block.  Output: 1000 × 64-character lower-case hex digests.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 the module called Sha256Benchmark
