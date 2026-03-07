@@ -1,0 +1,112 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Digital Fingerprint
+-- Concern: Computing a unique numeric identity for any sequence of symbols.
+--
+-- A hash function transforms a fixed sequence of symbols into a compact
+-- numeric fingerprint. The same input always produces the same fingerprint,
+-- but even a single changed symbol produces a completely different one.
+--
+-- This implements the DJB2 hashing algorithm by Daniel J. Bernstein.
+-- DJB2 is a general-purpose, non-cryptographic hash function well-suited
+-- for hash tables and checksums.  It is NOT suitable for security-sensitive
+-- applications (passwords, signatures, etc.) which require a cryptographic
+-- hash function such as SHA-256.
+--
+-- Each symbol is folded into a running digest with the round function:
+--
+--   digest = (digest * 33 + symbol-code) mod prime
+--
+-- Seed:    5381          (the canonical DJB2 magic constant)
+-- Modulus: 2147483647    (Mersenne prime M31, ensuring wide distribution)
+--
+-- Core properties demonstrated:
+--   Determinism:  the same input always yields the same fingerprint.
+--   Avalanche:    one changed symbol scrambles the entire result;
+--                 "hello" (h=104) and "Hello" (H=72) diverge immediately.
+--   Compression:  a five-symbol sequence collapses to a bounded integer.
+--
+-- Character codes used below are standard ASCII decimal values.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called DigitalFingerprint
+    with concern: computing a unique numeric identity for any sequence of symbols
+
+-- Reduce a value modulo a prime using integer division.
+-- remainder = value - floor(value / prime) * prime
+-- This keeps the running digest bounded without any native modulo operator.
+the behavior called reduce-mod
+    with intent: fold a large integer back into a bounded range
+    takes:
+        an integer called value
+        an integer called prime
+    delivers: an integer
+    as:
+        derivation: quotient derives-from value partitions-by prime
+        derivation: product  derives-from quotient scales-by prime
+        value decreased-by product
+
+-- Apply one DJB2 round: digest = (digest * 33 + symbol-code) mod prime.
+the behavior called mix-symbol
+    with intent: fold one symbol code into the running digest
+    takes:
+        an integer called digest
+        an integer called symbol-code
+        an integer called prime
+    delivers: an integer
+    as:
+        derivation: stirred derives-from (digest scales-by 33) added-to symbol-code
+        stirred utilizes reduce-mod prime
+
+-- Hash a five-symbol sequence by applying five consecutive DJB2 rounds.
+-- The receiver (seed) carries the running digest into the first round.
+-- Arguments: five ASCII codes followed by the modulus prime.
+the behavior called hash-5
+    with intent: fold five symbol codes into the running digest
+    takes:
+        an integer called seed
+        an integer called c1
+        an integer called c2
+        an integer called c3
+        an integer called c4
+        an integer called c5
+        an integer called prime
+    delivers: an integer
+    as:
+        derivation: r1 derives-from seed utilizes mix-symbol c1 prime
+        derivation: r2 derives-from r1   utilizes mix-symbol c2 prime
+        derivation: r3 derives-from r2   utilizes mix-symbol c3 prime
+        derivation: r4 derives-from r3   utilizes mix-symbol c4 prime
+        r4 utilizes mix-symbol c5 prime
+
+the effect behavior called run
+    with intent: demonstrate the digital fingerprint on three five-letter inputs
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2 derives-from nothing broadcasts "  THE DIGITAL FINGERPRINT (DJB2 Hash)"
+        derivation: d3 derives-from nothing broadcasts "  input  =>  DJB2 digest (mod 2^31-1)"
+        derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        derivation: prime derives-from an integer 2147483647
+        derivation: seed  derives-from an integer 5381
+
+        -- "hello"  ASCII: h=104  e=101  l=108  l=108  o=111
+        derivation: hash-hello derives-from seed utilizes hash-5 104 101 108 108 111 prime
+        derivation: msg1 derives-from a string "hello  =>  " joined-with (hash-hello utilizes as-text)
+        derivation: p1   derives-from nothing broadcasts msg1
+
+        -- "world"  ASCII: w=119  o=111  r=114  l=108  d=100
+        derivation: hash-world derives-from seed utilizes hash-5 119 111 114 108 100 prime
+        derivation: msg2 derives-from a string "world  =>  " joined-with (hash-world utilizes as-text)
+        derivation: p2   derives-from nothing broadcasts msg2
+
+        -- "Hello"  ASCII: H=72   e=101  l=108  l=108  o=111
+        -- Only the first character differs from "hello" (72 vs 104).
+        -- The avalanche effect scrambles the entire digest.
+        derivation: hash-Hello derives-from seed utilizes hash-5 72 101 108 108 111 prime
+        derivation: msg3 derives-from a string "Hello  =>  " joined-with (hash-Hello utilizes as-text)
+        derivation: p3   derives-from nothing broadcasts msg3
+
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing
