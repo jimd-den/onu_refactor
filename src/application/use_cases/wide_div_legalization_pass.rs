@@ -132,7 +132,7 @@ mod tests {
                 terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
             }],
             is_pure_data_leaf: true,
-            diminishing: None,
+            diminishing: vec![],
             memo_cache_size: None,
         }
     }
@@ -207,7 +207,7 @@ mod tests {
                 terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
             }],
             is_pure_data_leaf: true,
-            diminishing: None,
+            diminishing: vec![],
             memo_cache_size: None,
         };
         let program = MirProgram {
@@ -254,7 +254,7 @@ mod tests {
                 terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
             }],
             is_pure_data_leaf: true,
-            diminishing: None,
+            diminishing: vec![],
             memo_cache_size: None,
         };
         let program = MirProgram {

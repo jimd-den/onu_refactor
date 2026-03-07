@@ -76,7 +76,7 @@ fn test_synthetic_argument_injection() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -103,7 +103,7 @@ fn test_broadcasts_lowering() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };
@@ -137,7 +137,7 @@ fn test_drop_lowering() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
         memo_cache_size: None,
         skip_termination_check: false,
     };

@@ -119,6 +119,10 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                     .build_int_signed_div(l_val.into_int_value(), r_val.into_int_value(), "divtmp")
                     .unwrap()
                     .into(),
+                MirBinOp::And => builder
+                    .build_and(l_val.into_int_value(), r_val.into_int_value(), "andtmp")
+                    .unwrap()
+                    .into(),
                 MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt => {
                     let pred = match op {
                         MirBinOp::Eq => inkwell::IntPredicate::EQ,
@@ -677,6 +681,69 @@ impl<'ctx> InstructionStrategy<'ctx> for AllocStrategy {
     }
 }
 
+/// Emits (or re-uses) a module-level zeroed byte-array global and yields a
+/// pointer to its first element.  The global is zero-initialised once by the
+/// OS/loader and persists for the program lifetime, making it safe to use as
+/// a memoisation cache backing that survives across multiple wrapper calls.
+pub struct GlobalAllocStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for GlobalAllocStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::GlobalAlloc { dest, size_bytes, name } = inst {
+            let i8_type = context.i8_type();
+            // Guard against extremely large (> 4 GiB) allocations that would
+            // truncate silently when cast to u32.  In practice memo caches are
+            // bounded by ARENA_SIZE_BYTES (16 MiB), so this is a safety net.
+            assert!(
+                *size_bytes <= u32::MAX as usize,
+                "GlobalAlloc: size_bytes {} exceeds u32::MAX; cannot create LLVM array type",
+                size_bytes
+            );
+            let array_type = i8_type.array_type(*size_bytes as u32);
+
+            // Reuse an existing global if one with this name was already emitted
+            // (e.g. if the same function appears in multiple compilation units).
+            let global = if let Some(g) = module.get_global(name) {
+                g
+            } else {
+                let g = module.add_global(array_type, None, name);
+                g.set_initializer(&array_type.const_zero());
+                g.set_linkage(inkwell::module::Linkage::Internal);
+                g
+            };
+
+            // GEP to get an i8* pointer to element 0.
+            let zero = context.i64_type().const_zero();
+            let ptr = unsafe {
+                builder
+                    .build_in_bounds_gep(
+                        global.as_pointer_value(),
+                        &[zero, zero],
+                        &format!("{}_ptr", name),
+                    )
+                    .unwrap()
+            };
+
+            let slot = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                ptr.get_type().as_basic_type_enum(),
+            );
+            builder.build_store(slot, ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct MemCopyStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
     fn generate(
@@ -809,6 +876,14 @@ impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
                 .unwrap();
 
             let loaded_val = builder.build_load(typed_ptr, "loaded_val").unwrap();
+            if let inkwell::values::BasicValueEnum::IntValue(iv) = loaded_val {
+                if iv.get_type().get_bit_width() == 64 {
+                    unsafe {
+                        let load_inst = loaded_val.as_value_ref();
+                        llvm_sys::core::LLVMSetAlignment(load_inst, 8);
+                    }
+                }
+            }
             let ssa_ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, dest_llvm_type);
             builder.build_store(ssa_ptr, loaded_val).unwrap();
         }
@@ -890,7 +965,35 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
                     "typed_store_ptr",
                 )
                 .unwrap();
-            builder.build_store(typed_ptr, val).unwrap();
+
+            // Guard: if the source value is wider than the destination type, truncate
+            // before storing.  This is the key case for the occupancy flag: the MIR
+            // emits MirLiteral::I64(1) (i64) but the destination is typed as I8 (i8*).
+            // LLVM requires the stored value width to match the pointer element type.
+            let val_to_store = if val.is_int_value() && dest_llvm_type.is_int_type() {
+                let src_bits = val.into_int_value().get_type().get_bit_width();
+                let dst_bits = dest_llvm_type.into_int_type().get_bit_width();
+                if src_bits > dst_bits {
+                    builder
+                        .build_int_truncate(
+                            val.into_int_value(),
+                            dest_llvm_type.into_int_type(),
+                            "typed_store_trunc",
+                        )
+                        .unwrap()
+                        .into()
+                } else {
+                    val
+                }
+            } else {
+                val
+            };
+            let store_inst = builder.build_store(typed_ptr, val_to_store).unwrap();
+            if val_to_store.is_int_value() && val_to_store.into_int_value().get_type().get_bit_width() == 64 {
+                unsafe {
+                    llvm_sys::core::LLVMSetAlignment(store_inst.as_value_ref(), 8);
+                }
+            }
         }
         Ok(())
     }

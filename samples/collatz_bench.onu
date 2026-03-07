@@ -1,49 +1,55 @@
-the module called CollatzBenchmark
-    with concern: recursive performance verification
+the module called PeanutCollatzBenchmark
+    with concern: recursive performance verification with a peanut-themed metaphor
 
-the behavior called collatz-steps
-    with intent: count steps to reach 1
+the behavior called count-peanut-steps
+    with intent: discover how many steps it takes for a peanut-inventory to reach 1
     takes:
-        an integer called n
-        an integer called count
+        an integer called peanut-inventory
     delivers: an integer
-    with no guaranteed termination
+    with diminishing: peanut-inventory
     as:
-        if n matches 1
-            then count
+        if peanut-inventory matches 1
+            then 0
             else
-                derivation: half    derives-from n partitions-by 2
-                derivation: is-even derives-from (half scales-by 2) matches n
-                derivation: next    derives-from if is-even then half else (n scales-by 3 added-to 1)
-                derivation: next-count derives-from count added-to 1
-                next utilizes collatz-steps next-count
+                derivation: half-pile derives-from peanut-inventory partitions-by 2
+                derivation: even-inventory-found derives-from (half-pile scales-by 2) matches peanut-inventory
+                derivation: next-inventory derives-from 
+                    if even-inventory-found 
+                    then half-pile 
+                    else (peanut-inventory scales-by 3 added-to 1)
+                
+                -- By adding 1 after the result, we trade TCO for the massive benefit of Memoization
+                (next-inventory utilizes count-peanut-steps) added-to 1
 
-the behavior called collatz-range
-    with intent: sum steps for a range of numbers
+the behavior called peanut-range-sum
+    with intent: sum the steps required for a range of starting inventories
     takes:
-        an integer called current
-        an integer called target
+        an integer called current-inventory
+        an integer called target-inventory
         an integer called accumulator
     delivers: an integer
-    with no guaranteed termination
+    with diminishing: current-inventory
     as:
-        if current exceeds target
+        -- Notice: this is tail-recursive, the compiler will optimize this to a loop
+        if current-inventory exceeds target-inventory
             then accumulator
             else
-                derivation: steps derives-from current utilizes collatz-steps 0
-                derivation: next  derives-from current added-to 1
-                next utilizes collatz-range target (accumulator added-to steps)
+                derivation: steps-required derives-from current-inventory utilizes count-peanut-steps
+                derivation: next-step  derives-from current-inventory added-to 1
+                next-step utilizes peanut-range-sum target-inventory (accumulator added-to steps-required)
 
 the effect behavior called run
+    with intent: prepare the final peanut processing report
     takes: nothing
     delivers: an integer
     as:
-        derivation: limit  derives-from 1000000
-        derivation: result derives-from 1 utilizes collatz-range limit 0
+        -- Setting the limit for a million peanut-counting operations
+        derivation: inventory-limit derives-from 1000000
+        derivation: grand-total    derives-from 1 utilizes peanut-range-sum inventory-limit 0
         
-        derivation: msg derives-from "Total Collatz steps for 1 to " joined-with (limit utilizes as-text)
-        derivation: msg2 derives-from msg joined-with " is: "
-        derivation: msg3 derives-from msg2 joined-with (result utilizes as-text)
-        broadcasts msg3
+        derivation: label-part1 derives-from "Total Peanut Steps for 1 to " joined-with (inventory-limit utilizes as-text)
+        derivation: label-part2 derives-from label-part1 joined-with " is: "
+        derivation: final-report derives-from label-part2 joined-with (grand-total utilizes as-text)
         
+        broadcasts final-report
         0

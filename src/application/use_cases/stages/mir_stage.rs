@@ -30,26 +30,30 @@ impl<'a, E: EnvironmentPort> PipelineStage for MirStage<'a, E> {
         let mir_lowering_service = MirLoweringService::new(self.env, self.registry);
         // Stage 1: Lower HIR → MIR (recursive call structure, raw SSA).
         let mir_program = mir_lowering_service.lower_program(&hir_discourses)?;
-        // Stage 2: Loop-lower self-tail-calls FIRST.
-        // A recursive function cannot be safely inlined into its caller because the inlined
-        // body would contain another call to itself, causing infinite expansion. TcoPass
-        // rewrites self-recursion into a loop, making the body finite and therefore inlineable.
-        let mir_program = TcoPass::run(mir_program);
-        // Stage 3: Expand loop-shaped pure callees inline into their callers.
-        // Now that collatz-steps is a loop (not recursive), InlinePass can safely expand it
-        // into collatz-range, fusing the two loops into one for LLVM to optimize holistically.
-        let mir_program = InlinePass::run(mir_program);
-        // Stage 4: Run TcoPass again to catch any new self-tail-calls that emerged.
-        let mir_program = TcoPass::run(mir_program);
-        // Stage 4.5: Automatically promote doubly-recursive pure functions from I64
-        // to WideInt(bits) when call-site literals imply overflow.  This gives the
-        // correct full-precision answer (e.g. fib(1000) as a 209-digit integer)
-        // using native LLVM wide integers — no external BigInt library required.
-        // MemoPass (Stage 5) will then memoize the widened function for O(n) time.
+        // Stage 2: Automatically promote doubly-recursive pure functions from I64
+        // to WideInt(bits) when call-site literals imply overflow.  Must run before
+        // MemoPass (so the wrapper caches WideInt values) and before TcoPass (so the
+        // doubly-recursive call structure is still visible for candidate detection).
         let mir_program = IntegerUpgradePass::run(mir_program);
-        // Stage 5: Memoization for recursive algorithms based on diminishing hints.
+        // Stage 3: Memoization for recursive algorithms based on diminishing hints.
+        // Must run BEFORE TcoPass: TcoPass erases tail-recursive Call instructions
+        // into Branch loops, so any memoizable call that is also tail-recursive
+        // would be invisible to MemoPass if the order were reversed.
         let mir_program = MemoPass::run(mir_program, self.registry);
-        // Stage 6: Operation Legalization — replace any WideInt (> 128-bit) division or
+        // Stage 4: Loop-lower self-tail-calls AFTER memoization.
+        // A recursive function cannot be safely inlined into its caller because the
+        // inlined body would contain another call to itself, causing infinite expansion.
+        // TcoPass rewrites self-recursion into a loop, making the body finite and
+        // inlineable.  It now also acts on the .inner functions produced by MemoPass.
+        let mir_program = TcoPass::run(mir_program);
+        // Stage 5: Expand loop-shaped pure callees inline into their callers.
+        // Now that collatz-steps is a loop (not recursive), InlinePass can safely
+        // expand it into collatz-range, fusing the two loops into one for LLVM
+        // to optimize holistically.
+        let mir_program = InlinePass::run(mir_program);
+        // Stage 6: Run TcoPass again to catch any new self-tail-calls that emerged.
+        let mir_program = TcoPass::run(mir_program);
+        // Stage 7: Operation Legalization — replace any WideInt (> 128-bit) division or
         // modulo with a call to a compiler-internal helper function (__onu_wide_div_N /
         // __onu_wide_mod_N).  This prevents the LLVM backend from attempting to lower
         // an `sdiv iN` for which no runtime library entry exists, which would otherwise

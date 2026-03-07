@@ -1,4 +1,5 @@
 pub mod compound_memo_strategy;
+pub mod hash_memo_strategy;
 pub mod primitive_memo_strategy;
 
 use crate::domain::entities::mir::MirFunction;

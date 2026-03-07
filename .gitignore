@@ -3,4 +3,8 @@
 /repomix-output.xml
 GEMINI.md
 *_bin
+*.llcbench_collatz
+cbenchmark
+test_output/
 *.ll
+cbench_collatz

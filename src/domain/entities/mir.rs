@@ -17,7 +17,7 @@ pub struct MirFunction {
     pub return_type: OnuType,
     pub blocks: Vec<BasicBlock>,
     pub is_pure_data_leaf: bool,
-    pub diminishing: Option<String>,
+    pub diminishing: Vec<String>,
     /// Override the memoization cache entry count.  When `None` the MemoPass
     /// uses its internal default (10 000).  IntegerUpgradePass sets this to
     /// `max_call_arg + 1` so that the per-entry WideInt allocation stays well
@@ -79,6 +79,18 @@ pub enum MirInstruction {
     Alloc {
         dest: usize,
         size_bytes: MirOperand,
+    },
+    /// Declares (or references) a named LLVM global zeroed byte-array of `size_bytes` bytes
+    /// and yields a pointer to its first element in SSA `dest`.
+    ///
+    /// Unlike `Alloc` (which bumps the per-call arena), `GlobalAlloc` is backed by an
+    /// LLVM module-level global — it is allocated exactly once (zero-initialised by the
+    /// OS/loader) and persists for the lifetime of the program.  This is the correct
+    /// backing store for memo caches that must survive across many calls to the wrapper.
+    GlobalAlloc {
+        dest: usize,
+        size_bytes: usize,
+        name: String,
     },
     MemCopy {
         dest: MirOperand,
@@ -142,6 +154,9 @@ pub enum MirBinOp {
     Ne,
     Gt,
     Lt,
+    /// Bitwise AND.  Used by HashMemoStrategy to reduce a hash value to a
+    /// power-of-2 table slot with a single instruction (`and rX, mask`).
+    And,
 }
 
 #[derive(Debug, Clone, PartialEq)]

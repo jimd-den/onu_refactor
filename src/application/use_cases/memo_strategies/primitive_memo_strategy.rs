@@ -174,38 +174,30 @@ impl PrimitiveMemoStrategy {
         let stride = registry.size_of(ret_type) as i64;
         let total_bytes = (cache_size as i64)
             .checked_mul(stride)
-            .expect("Memo cache size calculation overflowed i64");
+            .expect("Memo cache size calculation overflowed i64") as usize;
 
-        // 2. Double-Buffer Allocation
+        // 2. Global backing store — allocated exactly once, zero-initialised by
+        //    the OS/loader.  This avoids draining the per-call arena bump-pointer
+        //    when the wrapper is invoked from an outer loop.
         let cache_ptr = builder.alloc_ssa();
-        let occ_ptr = builder.alloc_ssa();
-        let val_size_ssa = builder.alloc_ssa();
-        let occ_size_ssa = builder.alloc_ssa();
+        let occ_ptr   = builder.alloc_ssa();
 
         let call_id = builder.alloc_block();
 
-        // 3. Entry Block (ID 0)
+        // 3. Entry Block: obtain pointers to the global arrays.
+        //    No Alloc/MemSet needed — GlobalAlloc yields a pointer to a
+        //    module-level zeroed global, so the occupancy flags start at 0
+        //    and the block is idempotent across multiple calls.
         let entry_insts = vec![
-            MirInstruction::Assign {
-                dest: val_size_ssa,
-                src: MirOperand::Constant(MirLiteral::I64(total_bytes)),
-            },
-            MirInstruction::Assign {
-                dest: occ_size_ssa,
-                src: MirOperand::Constant(MirLiteral::I64(cache_size as i64)),
-            },
-            MirInstruction::Alloc {
+            MirInstruction::GlobalAlloc {
                 dest: cache_ptr,
-                size_bytes: MirOperand::Variable(val_size_ssa, false),
+                size_bytes: total_bytes,
+                name: format!("{}_cache_val", func.name),
             },
-            MirInstruction::Alloc {
+            MirInstruction::GlobalAlloc {
                 dest: occ_ptr,
-                size_bytes: MirOperand::Variable(occ_size_ssa, false),
-            },
-            MirInstruction::MemSet {
-                ptr: MirOperand::Variable(occ_ptr, false),
-                value: MirOperand::Constant(MirLiteral::I64(0)),
-                size: MirOperand::Variable(occ_size_ssa, false),
+                size_bytes: cache_size,
+                name: format!("{}_cache_occ", func.name),
             },
         ];
 

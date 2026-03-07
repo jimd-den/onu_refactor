@@ -21,7 +21,7 @@ fn make_memoizable_fn(name: &str) -> MirFunction {
             terminator: MirTerminator::Return(MirOperand::Constant(MirLiteral::I64(42))),
         }],
         is_pure_data_leaf: true,
-        diminishing: Some("n".to_string()),
+        diminishing: vec!["n".to_string()],
         memo_cache_size: None,
     }
 }

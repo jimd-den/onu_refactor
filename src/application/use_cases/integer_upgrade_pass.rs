@@ -91,7 +91,7 @@ impl IntegerUpgradePass {
 
     fn is_upgrade_candidate(func: &MirFunction) -> bool {
         func.is_pure_data_leaf
-            && func.diminishing.is_some()
+            && !func.diminishing.is_empty()
             && func.args.len() == 1
             && func.args[0].typ == OnuType::I64
             && func.return_type == OnuType::I64
@@ -677,7 +677,7 @@ mod tests {
             }],
             return_type: OnuType::I64,
             is_pure_data_leaf: true,
-            diminishing: Some("n".to_string()),
+            diminishing: vec!["n".to_string()],
             memo_cache_size: None,
             blocks: vec![
                 BasicBlock {
@@ -742,7 +742,7 @@ mod tests {
             args: vec![],
             return_type: OnuType::I64,
             is_pure_data_leaf: false,
-            diminishing: None,
+            diminishing: vec![],
             memo_cache_size: None,
             blocks: vec![BasicBlock {
                 id: 0,

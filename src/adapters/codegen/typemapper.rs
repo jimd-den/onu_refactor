@@ -12,8 +12,11 @@ impl LlvmTypeMapper {
         registry: &RegistryService,
     ) -> Option<BasicTypeEnum<'ctx>> {
         match typ {
-            OnuType::I32 => Some(context.i32_type().as_basic_type_enum()),
-            OnuType::I64 => Some(context.i64_type().as_basic_type_enum()),
+            OnuType::I8 | OnuType::U8 => Some(context.i8_type().as_basic_type_enum()),
+            OnuType::I16 | OnuType::U16 => Some(context.i16_type().as_basic_type_enum()),
+            OnuType::I32 | OnuType::U32 => Some(context.i32_type().as_basic_type_enum()),
+            OnuType::I64 | OnuType::U64 => Some(context.i64_type().as_basic_type_enum()),
+            OnuType::I128 | OnuType::U128 => Some(context.i128_type().as_basic_type_enum()),
             OnuType::WideInt(bits) => Some(context.custom_width_int_type(*bits).as_basic_type_enum()),
             OnuType::Boolean => Some(context.bool_type().as_basic_type_enum()),
             OnuType::Strings => {
