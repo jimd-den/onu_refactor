@@ -66,7 +66,10 @@ impl X86_64Syscalls {
 
         match call_result.try_as_basic_value() {
             inkwell::values::ValueKind::Basic(v) => v.into_int_value(),
-            _ => i64_type.const_int(0, false), // fallback — should not happen
+            _ => {
+                eprintln!("[WARNING] Platform syscall returned unexpected non-basic value");
+                i64_type.const_int(0, false)
+            }
         }
     }
 }

@@ -779,7 +779,7 @@ impl ParserInternal {
         if let Some(Token::Identifier(s)) = self.peek() {
             if s == "a" || s == "an" || s == "the" {
                 // Lookahead guard: only consume the article if followed by a known type.
-                if self.is_type_lookahead(registry) {
+                if self.is_type_lookahead() {
                     self.advance();
                     let onu_type = self.parse_type_name(registry)?;
                     let display_name = format!("{:?}", onu_type); 
@@ -793,7 +793,7 @@ impl ParserInternal {
 
     /// Returns true if the token after the current article (`a`/`an`/`the`)
     /// is a recognized type name (an identifier that could be a type).
-    fn is_type_lookahead(&self, _registry: &RegistryService) -> bool {
+    fn is_type_lookahead(&self) -> bool {
         let mut i = self.pos;
         // Skip newlines to find the article
         while i < self.tokens.len() && matches!(self.tokens[i], Token::NewLine) {

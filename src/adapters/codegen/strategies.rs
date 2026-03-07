@@ -482,6 +482,16 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
 // strategies remain architecture-agnostic.
 // ---------------------------------------------------------------------------
 
+/// Standard file descriptors.
+const STDIN_FD: u64 = 0;
+const STDOUT_FD: u64 = 1;
+
+/// Maximum bytes read from stdin per `receives-line` call.
+const STDIN_BUFFER_SIZE: u64 = 4096;
+
+/// ASCII newline character.
+const NEWLINE_BYTE: u64 = 10;
+
 /// `receives-line`: read a line from stdin via the platform read syscall.
 /// Returns an Onu string { i64 len, i8* ptr, i1 is_dynamic=false }.
 fn generate_receives_line<'ctx>(
@@ -496,15 +506,15 @@ fn generate_receives_line<'ctx>(
     let i8_ptr_type = i8_type.ptr_type(inkwell::AddressSpace::default());
     let bool_type = context.bool_type();
 
-    // Stack buffer for reading (4096 bytes).
-    let buf_size: u64 = 4096;
+    // Stack buffer for reading.
+    let buf_size: u64 = STDIN_BUFFER_SIZE;
     let buf_array_type = i8_type.array_type(buf_size as u32);
     let buf_alloca = builder.build_alloca(buf_array_type, "read_buf").unwrap();
     let buf_ptr = builder
         .build_pointer_cast(buf_alloca, i8_ptr_type, "read_buf_ptr")
         .unwrap();
 
-    let stdin_fd = i64_type.const_int(0, false);
+    let stdin_fd = i64_type.const_int(STDIN_FD, false);
     let max_len = i64_type.const_int(buf_size, false);
     let bytes_read = syscalls.emit_read(context, builder, stdin_fd, buf_ptr, max_len);
 
@@ -524,7 +534,7 @@ fn generate_receives_line<'ctx>(
         .build_int_compare(
             inkwell::IntPredicate::EQ,
             last_byte,
-            i8_type.const_int(10, false),
+            i8_type.const_int(NEWLINE_BYTE, false),
             "is_nl",
         )
         .unwrap();
@@ -681,13 +691,13 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
                 let ptr = builder.build_extract_value(s, 1, "emit_ptr").unwrap().into_pointer_value();
 
                 let i64_type = context.i64_type();
-                let stdout_fd = i64_type.const_int(1, false);
+                let stdout_fd = i64_type.const_int(STDOUT_FD, false);
 
                 // 1. Write the string to stdout
                 syscalls.emit_write(context, builder, stdout_fd, ptr, len);
 
-                // 2. Write a trailing newline (\n = ASCII 10)
-                let nl_val = context.i8_type().const_int(10, false);
+                // 2. Write a trailing newline
+                let nl_val = context.i8_type().const_int(NEWLINE_BYTE, false);
                 let nl_ptr = builder.build_alloca(context.i8_type(), "nl_ptr").unwrap();
                 builder.build_store(nl_ptr, nl_val).unwrap();
                 let one = i64_type.const_int(1, false);
