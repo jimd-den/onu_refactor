@@ -1,0 +1,119 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Simple Universe (Rule 110)
+-- Concern: Universal computation from eight simple neighborhood rules.
+--
+-- Imagine a row of seeds, each either dormant (0) or active (1).
+-- Each generation, every seed looks at its left neighbor, itself, and its
+-- right neighbor -- three seeds in a row -- and decides its next state
+-- using one of eight simple rules. This is Rule 110.
+--
+-- The eight rules of the universe:
+--   Neighbors (left, self, right):  New state:
+--   (1, 1, 1)                    ->  0  (dormant)
+--   (1, 1, 0)                    ->  1  (active)
+--   (1, 0, 1)                    ->  1  (active)
+--   (1, 0, 0)                    ->  0  (dormant)
+--   (0, 1, 1)                    ->  1  (active)
+--   (0, 1, 0)                    ->  1  (active)
+--   (0, 0, 1)                    ->  1  (active)
+--   (0, 0, 0)                    ->  0  (dormant)
+--
+-- Astonishing fact: despite these eight rules, Rule 110 can simulate
+-- any computation a Turing machine can perform. Simple rules, infinite power.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called SimpleUniverse
+    with concern: simulating universal computation from eight neighborhood rules
+
+-- Apply Rule 110 to one seed's three-neighbor pattern.
+-- Encode the neighborhood as: pattern = left*4 + center*2 + right
+-- Rule 110 (binary 01101110): patterns 0, 4, 7 yield dormant; all others active.
+the behavior called next-seed-state
+    with intent: determine a seed's next generation from its neighborhood
+    takes:
+        an integer called left-neighbor
+        an integer called current-seed
+        an integer called right-neighbor
+    delivers: an integer
+    as:
+        derivation: pattern derives-from (left-neighbor scales-by 4) added-to ((current-seed scales-by 2) added-to right-neighbor)
+        if pattern matches 0
+            then 0
+            else if pattern matches 4
+                then 0
+                else if pattern matches 7
+                    then 0
+                    else 1
+
+-- Safely read the state of a seed at the given position.
+-- Seeds outside the row boundary are treated as dormant (0).
+the behavior called read-seed
+    with intent: read the dormant-or-active state of a seed at a position
+    takes:
+        a string called generation via observation
+        an integer called position
+        an integer called width
+    delivers: an integer
+    as:
+        if position falls-short-of 0
+            then 0
+            else if position exceeds (width decreased-by 1)
+                then 0
+                else (generation char-at position) decreased-by 48
+
+-- Build the next generation string one seed position at a time.
+the behavior called evolve-generation
+    with intent: construct the entire next generation from the current one
+    takes:
+        a string called current-gen via observation
+        an integer called width
+        an integer called position
+        a string called next-gen
+    delivers: a string
+    with no guaranteed termination
+    as:
+        if position matches width
+            then next-gen
+            else
+                derivation: l        derives-from current-gen utilizes read-seed (position decreased-by 1) width
+                derivation: c        derives-from current-gen utilizes read-seed position width
+                derivation: r        derives-from current-gen utilizes read-seed (position added-to 1) width
+                derivation: new-s    derives-from l utilizes next-seed-state c r
+                derivation: new-char derives-from (new-s added-to 48) utilizes char-from-code
+                derivation: grown    derives-from next-gen joined-with new-char
+                current-gen utilizes evolve-generation width (position added-to 1) grown
+
+-- Display each generation and evolve the universe step by step.
+the effect behavior called display-universe
+    with intent: show the universe unfolding generation by generation
+    takes:
+        a string called current-gen via observation
+        an integer called width
+        an integer called steps-remaining
+    delivers: nothing
+    with no guaranteed termination
+    as:
+        derivation: d1 derives-from nothing broadcasts (current-gen duplicated-as)
+        if steps-remaining matches 0
+            then nothing
+            else
+                derivation: next-gen derives-from current-gen utilizes evolve-generation width 0 ""
+                next-gen utilizes display-universe width (steps-remaining decreased-by 1)
+
+the effect behavior called run
+    with intent: demonstrate the simple universe unfolding from a single active seed
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2 derives-from nothing broadcasts "  THE SIMPLE UNIVERSE (Rule 110)"
+        derivation: d3 derives-from nothing broadcasts "  Each row = one generation (0=dormant 1=active)"
+        derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        -- Start with one active seed at the far right of a 16-cell row
+        derivation: seed  derives-from a string "0000000000000001"
+        derivation: width derives-from an integer 16
+        seed utilizes display-universe width 15
+
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing
