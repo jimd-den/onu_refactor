@@ -405,6 +405,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             dest: dest + ssa_offset,
             size_bytes: remap_operand(size_bytes, ssa_offset),
         },
+        MirInstruction::GlobalAlloc { dest, size_bytes, name } => MirInstruction::GlobalAlloc {
+            dest: dest + ssa_offset,
+            size_bytes: *size_bytes,
+            name: name.clone(),
+        },
         MirInstruction::PointerOffset { dest, ptr, offset } => MirInstruction::PointerOffset {
             dest: dest + ssa_offset,
             ptr: remap_operand(ptr, ssa_offset),
@@ -480,6 +485,7 @@ fn max_ssa_in_function(func: &MirFunction) -> usize {
                 MirInstruction::Tuple { dest, .. } => Some(*dest),
                 MirInstruction::Index { dest, .. } => Some(*dest),
                 MirInstruction::Alloc { dest, .. } => Some(*dest),
+                MirInstruction::GlobalAlloc { dest, .. } => Some(*dest),
                 MirInstruction::PointerOffset { dest, .. } => Some(*dest),
                 MirInstruction::Load { dest, .. } => Some(*dest),
                 MirInstruction::Promote { dest, .. } => Some(*dest),

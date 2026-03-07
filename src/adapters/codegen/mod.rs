@@ -537,6 +537,14 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 &mut self.ssa_storage,
                 inst,
             ),
+            MirInstruction::GlobalAlloc { .. } => GlobalAllocStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
             MirInstruction::MemCopy { .. } => MemCopyStrategy.generate(
                 self.context,
                 &self.module,

@@ -53,6 +53,15 @@ pub enum Token {
     To,
     Read,
     From,
+    /// Emitted by the lexer for every `\n` character.
+    ///
+    /// Most parser contexts skip `NewLine` transparently (via `peek()`/`advance()`).
+    /// The `with intent:` header parser is the sole consumer: it treats every
+    /// token up to the first `NewLine` as freeform prose (like a line comment)
+    /// and discards them, which prevents header keywords that appear inside an
+    /// intent description (e.g. "… it *takes* a …") from being mis-parsed as
+    /// actual `takes:` clauses.
+    NewLine,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

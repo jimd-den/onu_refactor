@@ -193,6 +193,9 @@ struct ParserInternal {
     tokens: Vec<Token>,
     pos: usize,
     log_level: LogLevel,
+    /// 0-indexed count of `Token::NewLine` tokens consumed so far.
+    /// Used to produce 1-based line numbers in error spans.
+    current_line: usize,
 }
 
 impl ParserInternal {
@@ -201,6 +204,7 @@ impl ParserInternal {
             tokens,
             pos: 0,
             log_level,
+            current_line: 0,
         }
     }
 
@@ -215,11 +219,64 @@ impl ParserInternal {
         self.pos >= self.tokens.len()
     }
 
-    fn peek(&self) -> Option<&Token> {
+    /// Returns the current 1-based line number for use in error spans.
+    fn current_span(&self) -> Span {
+        Span::point(self.current_line + 1, 0)
+    }
+
+    // -----------------------------------------------------------------------
+    // Raw advance / peek — see every token including NewLine.
+    // Used only by the `with intent` parser so it can stop at end-of-line.
+    // -----------------------------------------------------------------------
+
+    fn peek_raw(&self) -> Option<&Token> {
         self.tokens.get(self.pos)
     }
 
+    /// Advances one token without skipping NewLines.
+    /// Increments `current_line` when a NewLine is consumed.
+    fn advance_raw(&mut self) -> Option<&Token> {
+        if !self.is_at_end() {
+            if matches!(self.tokens[self.pos], Token::NewLine) {
+                self.current_line += 1;
+            }
+            self.pos += 1;
+            self.tokens.get(self.pos - 1)
+        } else {
+            None
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Normal advance / peek — skip NewLine tokens transparently.
+    // All parser logic outside `with intent` uses these.
+    // -----------------------------------------------------------------------
+
+    /// Returns the next non-NewLine token without consuming it.
+    fn peek(&self) -> Option<&Token> {
+        let mut i = self.pos;
+        while i < self.tokens.len() {
+            if matches!(self.tokens[i], Token::NewLine) {
+                i += 1;
+            } else {
+                return self.tokens.get(i);
+            }
+        }
+        None
+    }
+
+    /// Consumes and returns the next non-NewLine token, incrementing
+    /// `current_line` for each NewLine skipped along the way.
     fn advance(&mut self) -> Option<&Token> {
+        // Skip leading NewLines, counting them.
+        while !self.is_at_end() {
+            if matches!(self.tokens[self.pos], Token::NewLine) {
+                self.current_line += 1;
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
         if !self.is_at_end() {
             self.pos += 1;
             self.tokens.get(self.pos - 1)
@@ -236,10 +293,10 @@ impl ParserInternal {
             }
             return Err(OnuError::GrammarViolation { 
                 message: format!("Expected {:?}, found {:?}", expected, t), 
-                span: Span::default() 
+                span: self.current_span()
             });
         }
-        Err(OnuError::GrammarViolation { message: format!("Expected {:?}, found EOF", expected), span: Span::default() })
+        Err(OnuError::GrammarViolation { message: format!("Expected {:?}, found EOF", expected), span: self.current_span() })
     }
 
     fn match_token(&mut self, token: Token) -> bool {
@@ -277,7 +334,7 @@ impl ParserInternal {
         self.log(LogLevel::Debug, "Parsing shape");
         self.consume(Token::TheShapeCalled)?;
         let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { 
-            return Err(OnuError::GrammarViolation { message: "Expected shape name".into(), span: Span::default() });
+            return Err(OnuError::GrammarViolation { message: "Expected shape name".into(), span: self.current_span() });
         };
         
         let mut fields = Vec::new();
@@ -301,7 +358,7 @@ impl ParserInternal {
         self.log(LogLevel::Debug, "Parsing module");
         self.consume(Token::TheModuleCalled)?;
         let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { 
-            return Err(OnuError::GrammarViolation { message: "Expected module name".into(), span: Span::default() });
+            return Err(OnuError::GrammarViolation { message: "Expected module name".into(), span: self.current_span() });
         };
         
         let mut concern = String::new();
@@ -337,7 +394,7 @@ impl ParserInternal {
         self.consume(behavior_keyword)?;
 
         let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { 
-            return Err(OnuError::GrammarViolation { message: "Expected behavior name".into(), span: Span::default() });
+            return Err(OnuError::GrammarViolation { message: "Expected behavior name".into(), span: self.current_span() });
         };
 
         let mut intent = String::new();
@@ -351,19 +408,16 @@ impl ParserInternal {
                 Token::WithIntent => {
                     self.advance();
                     self.match_token(Token::Operator(":".to_string()));
-                    // Consume everything until next keyword
-                    let mut parts = Vec::new();
-                    while let Some(t) = self.peek() {
-                        if matches!(t, Token::Takes | Token::Delivers | Token::WithDiminishing | Token::NoGuaranteedTermination | Token::As) {
-                            break;
-                        }
-                        if let Some(Token::Identifier(s)) = self.advance() {
-                            parts.push(s.clone());
-                        } else {
-                            break;
+                    // Treat the rest of the line as freeform prose (like a comment).
+                    // Use raw peek/advance so we can actually see the NewLine token
+                    // that marks end-of-line; the normal advance() skips NewLines.
+                    loop {
+                        match self.peek_raw() {
+                            None => break,
+                            Some(Token::NewLine) => { self.advance_raw(); break; }
+                            _ => { self.advance_raw(); }
                         }
                     }
-                    intent = parts.join(" ");
                 }
                 Token::Takes => {
                     self.advance();
@@ -480,7 +534,7 @@ impl ParserInternal {
         self.consume(Token::Derivation)?;
         self.match_token(Token::Operator(":".to_string()));
         let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { 
-            return Err(OnuError::GrammarViolation { message: "Expected derivation name".into(), span: Span::default() });
+            return Err(OnuError::GrammarViolation { message: "Expected derivation name".into(), span: self.current_span() });
         };
         
         self.consume(Token::DerivesFrom)?;
@@ -597,7 +651,7 @@ impl ParserInternal {
 
     fn parse_behavior_name(&mut self) -> Result<String, OnuError> {
         let token = self.peek().cloned().ok_or_else(|| {
-            OnuError::GrammarViolation { message: "Expected behavior name".into(), span: Span::default() }
+            OnuError::GrammarViolation { message: "Expected behavior name".into(), span: self.current_span() }
         })?;
 
         let name = match token {
@@ -608,7 +662,7 @@ impl ParserInternal {
             Token::Broadcasts => "broadcasts".to_string(),
             _ => return Err(OnuError::GrammarViolation { 
                 message: format!("Expected behavior name, found {:?}", token), 
-                span: Span::default() 
+                span: self.current_span() 
             }),
         };
         self.advance();
@@ -617,7 +671,7 @@ impl ParserInternal {
 
     fn parse_primary(&mut self, registry: &mut RegistryService) -> Result<Expression, OnuError> {
         let token = self.peek().cloned().ok_or_else(|| {
-            OnuError::GrammarViolation { message: "Unexpected end of input".into(), span: Span::default() }
+            OnuError::GrammarViolation { message: "Unexpected end of input".into(), span: self.current_span() }
         })?;
 
         match &token {
@@ -666,10 +720,10 @@ impl ParserInternal {
                     message: "Matrix literals are not yet implemented; \
                               use a behavior that constructs the matrix element-by-element instead"
                         .to_string(),
-                    span: Span::default(),
+                    span: self.current_span(),
                 })
             }
-            _ => Err(OnuError::GrammarViolation { message: format!("Unexpected token in primary: {:?}", token), span: Span::default() }),
+            _ => Err(OnuError::GrammarViolation { message: format!("Unexpected token in primary: {:?}", token), span: self.current_span() }),
         }
     }
 
@@ -729,7 +783,7 @@ impl ParserInternal {
             return Ok(ReturnType(OnuType::Nothing));
         }
         let ti = self.parse_type_info(registry)?.ok_or_else(|| {
-            OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit return type".into(), span: Span::default() }
+            OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit return type".into(), span: self.current_span() }
         })?;
         Ok(ReturnType(ti.onu_type))
     }
@@ -739,13 +793,13 @@ impl ParserInternal {
         let mut args = Vec::new();
         while let Some(token) = self.peek() {
             self.log(LogLevel::Trace, &format!("Arguments loop peeking: {:?}", token));
-            if matches!(token, Token::TheModuleCalled | Token::TheShapeCalled | Token::TheBehaviorCalled | Token::TheEffectBehaviorCalled | Token::Delivers | Token::As) {
+            if matches!(token, Token::TheModuleCalled | Token::TheShapeCalled | Token::TheBehaviorCalled | Token::TheEffectBehaviorCalled | Token::Delivers | Token::As | Token::Takes | Token::WithDiminishing) {
                 break;
             }
             match token {
                 Token::Identifier(s) if s == "a" || s == "an" || s == "the" => {
                     let mut type_info = self.parse_type_info(registry)?.ok_or_else(|| {
-                        OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit type indicator (e.g. 'a', 'an', 'the') for argument".into(), span: Span::default() }
+                        OnuError::GrammarViolation { message: "Strict typing enforced: Missing explicit type indicator (e.g. 'a', 'an', 'the') for argument".into(), span: self.current_span() }
                     })?;
                     self.match_token(Token::Called);
                     let name = if let Some(Token::Identifier(n)) = self.advance() { n.clone() } else { "".to_string() };

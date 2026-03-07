@@ -70,8 +70,9 @@ impl<'a> LexerInternal<'a> {
 
     fn skip_whitespace_and_comments(&mut self) {
         loop {
+            // Skip horizontal whitespace only — newlines are emitted as Token::NewLine.
             while let Some(c) = self.peek_char() {
-                if c.is_whitespace() {
+                if c.is_whitespace() && c != '\n' {
                     self.input.next();
                 } else {
                     break;
@@ -106,6 +107,7 @@ impl<'a> LexerInternal<'a> {
         let first_char = self.peek_char()?;
 
         let token = match first_char {
+            '\n' => { self.input.next(); Token::NewLine }
             '(' => { self.input.next(); Token::Delimiter('(') }
             ')' => { self.input.next(); Token::Delimiter(')') }
             '[' => { self.input.next(); Token::Delimiter('[') }

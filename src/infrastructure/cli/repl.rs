@@ -230,11 +230,12 @@ impl Repl {
 
         let mir_service = MirLoweringService::new(&env, &registry);
         let mir = mir_service.lower_program(&hir_discourses)?;
-        let mir = TcoPass::run(mir);
-        let mir = InlinePass::run(mir);
-        let mir = TcoPass::run(mir);
         let mir = IntegerUpgradePass::run(mir);
         let mir = MemoPass::run(mir, &registry);
+        let mir = TcoPass::run(mir);
+        let mir = InlinePass::run(mir);
+        // Second TcoPass: catches tail calls exposed by inlining.
+        let mir = TcoPass::run(mir);
         let mir = WideDivLegalizationPass::run(mir);
 
         // Codegen

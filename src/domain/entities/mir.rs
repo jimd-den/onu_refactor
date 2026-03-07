@@ -80,6 +80,18 @@ pub enum MirInstruction {
         dest: usize,
         size_bytes: MirOperand,
     },
+    /// Declares (or references) a named LLVM global zeroed byte-array of `size_bytes` bytes
+    /// and yields a pointer to its first element in SSA `dest`.
+    ///
+    /// Unlike `Alloc` (which bumps the per-call arena), `GlobalAlloc` is backed by an
+    /// LLVM module-level global — it is allocated exactly once (zero-initialised by the
+    /// OS/loader) and persists for the lifetime of the program.  This is the correct
+    /// backing store for memo caches that must survive across many calls to the wrapper.
+    GlobalAlloc {
+        dest: usize,
+        size_bytes: usize,
+        name: String,
+    },
     MemCopy {
         dest: MirOperand,
         src: MirOperand,

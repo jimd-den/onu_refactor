@@ -681,6 +681,69 @@ impl<'ctx> InstructionStrategy<'ctx> for AllocStrategy {
     }
 }
 
+/// Emits (or re-uses) a module-level zeroed byte-array global and yields a
+/// pointer to its first element.  The global is zero-initialised once by the
+/// OS/loader and persists for the program lifetime, making it safe to use as
+/// a memoisation cache backing that survives across multiple wrapper calls.
+pub struct GlobalAllocStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for GlobalAllocStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::GlobalAlloc { dest, size_bytes, name } = inst {
+            let i8_type = context.i8_type();
+            // Guard against extremely large (> 4 GiB) allocations that would
+            // truncate silently when cast to u32.  In practice memo caches are
+            // bounded by ARENA_SIZE_BYTES (16 MiB), so this is a safety net.
+            assert!(
+                *size_bytes <= u32::MAX as usize,
+                "GlobalAlloc: size_bytes {} exceeds u32::MAX; cannot create LLVM array type",
+                size_bytes
+            );
+            let array_type = i8_type.array_type(*size_bytes as u32);
+
+            // Reuse an existing global if one with this name was already emitted
+            // (e.g. if the same function appears in multiple compilation units).
+            let global = if let Some(g) = module.get_global(name) {
+                g
+            } else {
+                let g = module.add_global(array_type, None, name);
+                g.set_initializer(&array_type.const_zero());
+                g.set_linkage(inkwell::module::Linkage::Internal);
+                g
+            };
+
+            // GEP to get an i8* pointer to element 0.
+            let zero = context.i64_type().const_zero();
+            let ptr = unsafe {
+                builder
+                    .build_in_bounds_gep(
+                        global.as_pointer_value(),
+                        &[zero, zero],
+                        &format!("{}_ptr", name),
+                    )
+                    .unwrap()
+            };
+
+            let slot = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                ptr.get_type().as_basic_type_enum(),
+            );
+            builder.build_store(slot, ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct MemCopyStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
     fn generate(
