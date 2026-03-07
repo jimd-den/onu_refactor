@@ -3,7 +3,31 @@ name = "onu_refactor"
 version = "0.1.0"
 edition = "2024"
 
+# ── LLVM version features ─────────────────────────────────────────────────────
+# Select exactly ONE llvm* feature at build time.  The default is LLVM 14,
+# which is the only version currently fully supported because the codegen layer
+# uses the typed-pointer LLVM API (ptr_type, bitcast, const_cast) that was
+# removed in LLVM 16.
+#
+# To build against a different LLVM installation:
+#
+#   cargo build --no-default-features --features llvm16
+#   LLVM_SYS_160_PREFIX=/usr/lib/llvm-16 cargo build --no-default-features --features llvm16
+#
+# NOTE: LLVM 15 requires the `typed-pointers` inkwell sub-feature (deprecated
+# but still present).  LLVM 16+ requires a codegen refactor to opaque pointers.
+#
+[features]
+default = ["llvm14"]
+llvm14  = ["inkwell/llvm14-0"]
+llvm15  = ["inkwell/llvm15-0", "inkwell/typed-pointers"]
+llvm16  = ["inkwell/llvm16-0"]
+llvm17  = ["inkwell/llvm17-0"]
+llvm18  = ["inkwell/llvm18-1"]
+llvm19  = ["inkwell/llvm19-1"]
+llvm20  = ["inkwell/llvm20-1"]
+
 [dependencies]
 chrono = { version = "0.4.44", features = ["serde"] }
 either = "1.15.0"
-inkwell = { version = "0.8.0", features = ["llvm14-0"] }
+inkwell = { version = "0.8.0", default-features = false, features = ["target-all"] }

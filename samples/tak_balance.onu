@@ -40,7 +40,7 @@ the behavior called find-balance
             else weight-z
 
 the effect behavior called run
-    with intent: demonstrate the convergence of three recursive weights under memoization
+    with intent: run the heavy tak(18,12,6) benchmark showing memoization speed
     takes: nothing
     delivers: nothing
     as:

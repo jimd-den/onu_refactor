@@ -185,9 +185,12 @@ the effect behavior called run
         derivation: d3 derives-from nothing broadcasts "  A Brainfuck interpreter in Onu"
         derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
 
-        -- Prepare a blank 30-cell tape
-        derivation: raw-tape  derives-from a string "                              "
-        derivation: tape      derives-from raw-tape utilizes blank-tape 0 30
+        -- Prepare a blank 30-cell tape.
+        -- IMPORTANT: join with "" first to copy the literal into mutable arena memory.
+        -- String literals compile to read-only LLVM constants; set-char on them causes
+        -- LLVM to constant-fold subsequent tape reads, breaking the interpreter loop.
+        derivation: raw-tape  derives-from "                              " joined-with ""
+        derivation: tape      derives-from a string raw-tape utilizes blank-tape 0 30
 
         -- This scroll: ++++++++[>++++++<-]>.
         -- Sets cell[1] = 8 * 6 = 48 by looping 8 times, then prints char(48) = '0'
