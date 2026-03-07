@@ -417,8 +417,10 @@ impl ParserInternal {
                             }
                         }
                         _ => {
-                            // Unquoted prose: consume identifiers until a structural
-                            // keyword or end-of-line is hit (Stop-Word Strategy).
+                            // Unquoted prose: consume tokens until end-of-line.
+                            // A structural keyword (takes, delivers, as, etc.) only
+                            // triggers a stop when followed by ':', preventing prose
+                            // words like "it takes a while" from being mis-parsed.
                             let mut parts = Vec::new();
                             loop {
                                 match self.peek_raw() {
@@ -426,7 +428,24 @@ impl ParserInternal {
                                     Some(Token::NewLine) => { self.advance_raw(); break; }
                                     Some(Token::Takes) | Some(Token::Delivers)
                                     | Some(Token::As) | Some(Token::WithDiminishing)
-                                    | Some(Token::NoGuaranteedTermination) => break,
+                                    | Some(Token::NoGuaranteedTermination) => {
+                                        // Two-token lookahead: only stop if followed by ':'
+                                        let next = self.tokens.get(self.pos + 1);
+                                        if matches!(next, Some(Token::Operator(s)) if s == ":") {
+                                            break;
+                                        }
+                                        // Otherwise it's just a prose word — convert to text
+                                        let word = match self.peek_raw() {
+                                            Some(Token::Takes) => "takes",
+                                            Some(Token::Delivers) => "delivers",
+                                            Some(Token::As) => "as",
+                                            Some(Token::WithDiminishing) => "with-diminishing",
+                                            Some(Token::NoGuaranteedTermination) => "no-guaranteed-termination",
+                                            _ => "",
+                                        };
+                                        parts.push(word.to_string());
+                                        self.advance_raw();
+                                    }
                                     Some(Token::Identifier(s)) => {
                                         parts.push(s.clone());
                                         self.advance_raw();
