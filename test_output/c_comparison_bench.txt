@@ -1,4 +1,4 @@
 === Runtime Benchmark: fib(40) — 5 runs each ===
-C   (cbenchmark, gcc -O3):    197 ms/run  runs=[198, 197, 197, 197, 196]
-Onu (fibonacci_bin, LLVM):      0 ms/run  runs=[0, 0, 0, 0, 0]
+C   (cbenchmark, gcc -O3):    200 ms/run  runs=[213, 197, 197, 197, 197]
+Onu (fibonacci_bin, LLVM):      0 ms/run  runs=[1, 0, 0, 0, 0]
 Ratio (Onu / C):            0.00x

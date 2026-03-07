@@ -16,4 +16,4 @@ the effect behavior called run
     delivers: nothing
     as:
         derivation: result derives-from an integer 5 utilizes example-derivation
-        broadcasts result
+        broadcasts (result utilizes as-text)

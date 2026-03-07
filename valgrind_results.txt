@@ -5,11 +5,11 @@
 ────────────────────────────────────────────────────────────────────
   Sample: ackermann
 ────────────────────────────────────────────────────────────────────
-==5588== Memcheck, a memory error detector
-==5588== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5588== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5588== Command: ./ackermann_bin
-==5588== 
+==6350== Memcheck, a memory error detector
+==6350== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6350== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6350== Command: ./ackermann_bin
+==6350== 
 ═══════════════════════════════════════════
   ACKERMANN GROWTH DEMONSTRATION
   Rules: Successor, Descent, and Spiral
@@ -19,68 +19,68 @@ Solving Spiral(2, 2)...
 Solving Spiral(3, 2)...
 29
 ═══════════════════════════════════════════
-==5588== 
-==5588== HEAP SUMMARY:
-==5588==     in use at exit: 0 bytes in 0 blocks
-==5588==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5588== 
-==5588== All heap blocks were freed -- no leaks are possible
-==5588== 
-==5588== For lists of detected and suppressed errors, rerun with: -s
-==5588== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6350== 
+==6350== HEAP SUMMARY:
+==6350==     in use at exit: 0 bytes in 0 blocks
+==6350==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6350== 
+==6350== All heap blocks were freed -- no leaks are possible
+==6350== 
+==6350== For lists of detected and suppressed errors, rerun with: -s
+==6350== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] ackermann
 ────────────────────────────────────────────────────────────────────
   Sample: ackermann_bench
 ────────────────────────────────────────────────────────────────────
-==5601== Memcheck, a memory error detector
-==5601== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5601== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5601== Command: ./ackermann_bench_bin
-==5601== 
-Ackermann(3, 11) Result: 16381
-==5601== 
-==5601== HEAP SUMMARY:
-==5601==     in use at exit: 0 bytes in 0 blocks
-==5601==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5601== 
-==5601== All heap blocks were freed -- no leaks are possible
-==5601== 
-==5601== For lists of detected and suppressed errors, rerun with: -s
-==5601== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6363== Memcheck, a memory error detector
+==6363== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6363== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6363== Command: ./ackermann_bench_bin
+==6363== 
+Ackermann(3, 11) for the great peanut leader is: 16381
+==6363== 
+==6363== HEAP SUMMARY:
+==6363==     in use at exit: 0 bytes in 0 blocks
+==6363==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6363== 
+==6363== All heap blocks were freed -- no leaks are possible
+==6363== 
+==6363== For lists of detected and suppressed errors, rerun with: -s
+==6363== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] ackermann_bench
   [SKIP] bf
 ────────────────────────────────────────────────────────────────────
   Sample: bsort
 ────────────────────────────────────────────────────────────────────
-==5620== Memcheck, a memory error detector
-==5620== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5620== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5620== Command: ./bsort_bin
-==5620== 
+==6379== Memcheck, a memory error detector
+==6379== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6379== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6379== Command: ./bsort_bin
+==6379== 
 Unsorted Sequence: 40, 10, 30, 20
 Sorting...
 Sorted Sequence: 10, 20, 30, 40
-==5620== 
-==5620== HEAP SUMMARY:
-==5620==     in use at exit: 0 bytes in 0 blocks
-==5620==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5620== 
-==5620== All heap blocks were freed -- no leaks are possible
-==5620== 
-==5620== For lists of detected and suppressed errors, rerun with: -s
-==5620== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6379== 
+==6379== HEAP SUMMARY:
+==6379==     in use at exit: 0 bytes in 0 blocks
+==6379==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6379== 
+==6379== All heap blocks were freed -- no leaks are possible
+==6379== 
+==6379== For lists of detected and suppressed errors, rerun with: -s
+==6379== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] bsort
 ────────────────────────────────────────────────────────────────────
   Sample: bsort_hard
 ────────────────────────────────────────────────────────────────────
-==5633== Memcheck, a memory error detector
-==5633== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5633== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5633== Command: ./bsort_hard_bin
-==5633== 
+==6392== Memcheck, a memory error detector
+==6392== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6392== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6392== Command: ./bsort_hard_bin
+==6392== 
 Initial unsorted (first 2): 
 513
 5913
@@ -90,25 +90,25 @@ Sorted First/Last:
 8968
 \nStarting Hard Benchmark (1,000,000 sorts, 225M swaps)...\n
 Benchmark Complete. Checksum: 587390571
-==5633== 
-==5633== HEAP SUMMARY:
-==5633==     in use at exit: 0 bytes in 0 blocks
-==5633==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5633== 
-==5633== All heap blocks were freed -- no leaks are possible
-==5633== 
-==5633== For lists of detected and suppressed errors, rerun with: -s
-==5633== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6392== 
+==6392== HEAP SUMMARY:
+==6392==     in use at exit: 0 bytes in 0 blocks
+==6392==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6392== 
+==6392== All heap blocks were freed -- no leaks are possible
+==6392== 
+==6392== For lists of detected and suppressed errors, rerun with: -s
+==6392== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] bsort_hard
 ────────────────────────────────────────────────────────────────────
   Sample: collatz
 ────────────────────────────────────────────────────────────────────
-==5647== Memcheck, a memory error detector
-==5647== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5647== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5647== Command: ./collatz_bin
-==5647== 
+==6406== Memcheck, a memory error detector
+==6406== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6406== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6406== Command: ./collatz_bin
+==6406== 
 COLLATZ SEQUENCE (Starting at 1,000,000):
 1000000
 500000
@@ -120,170 +120,171 @@ COLLATZ SEQUENCE (Starting at 1,000,000):
 46876
 23438
 11719
-==5647== 
-==5647== HEAP SUMMARY:
-==5647==     in use at exit: 0 bytes in 0 blocks
-==5647==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5647== 
-==5647== All heap blocks were freed -- no leaks are possible
-==5647== 
-==5647== For lists of detected and suppressed errors, rerun with: -s
-==5647== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6406== 
+==6406== HEAP SUMMARY:
+==6406==     in use at exit: 0 bytes in 0 blocks
+==6406==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6406== 
+==6406== All heap blocks were freed -- no leaks are possible
+==6406== 
+==6406== For lists of detected and suppressed errors, rerun with: -s
+==6406== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] collatz
 ────────────────────────────────────────────────────────────────────
   Sample: collatz_bench
 ────────────────────────────────────────────────────────────────────
-==5660== Memcheck, a memory error detector
-==5660== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5660== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5660== Command: ./collatz_bench_bin
-==5660== 
-Total Collatz steps for 1 to 1000000 is: 131434424
-==5660== 
-==5660== HEAP SUMMARY:
-==5660==     in use at exit: 0 bytes in 0 blocks
-==5660==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5660== 
-==5660== All heap blocks were freed -- no leaks are possible
-==5660== 
-==5660== For lists of detected and suppressed errors, rerun with: -s
-==5660== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6419== Memcheck, a memory error detector
+==6419== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6419== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6419== Command: ./collatz_bench_bin
+==6419== 
+Total Peanut Steps for 1 to 1000000 is: 131434424
+==6419== 
+==6419== HEAP SUMMARY:
+==6419==     in use at exit: 0 bytes in 0 blocks
+==6419==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6419== 
+==6419== All heap blocks were freed -- no leaks are possible
+==6419== 
+==6419== For lists of detected and suppressed errors, rerun with: -s
+==6419== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] collatz_bench
   [SKIP] complex_args_tco
 ────────────────────────────────────────────────────────────────────
   Sample: deep_recursion
 ────────────────────────────────────────────────────────────────────
-==5677== Memcheck, a memory error detector
-==5677== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5677== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5677== Command: ./deep_recursion_bin
-==5677== 
-==5677== 
-==5677== HEAP SUMMARY:
-==5677==     in use at exit: 0 bytes in 0 blocks
-==5677==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5677== 
-==5677== All heap blocks were freed -- no leaks are possible
-==5677== 
-==5677== For lists of detected and suppressed errors, rerun with: -s
-==5677== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6436== Memcheck, a memory error detector
+==6436== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6436== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6436== Command: ./deep_recursion_bin
+==6436== 
+==6436== 
+==6436== HEAP SUMMARY:
+==6436==     in use at exit: 0 bytes in 0 blocks
+==6436==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6436== 
+==6436== All heap blocks were freed -- no leaks are possible
+==6436== 
+==6436== For lists of detected and suppressed errors, rerun with: -s
+==6436== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] deep_recursion
 ────────────────────────────────────────────────────────────────────
   Sample: deep_sum
 ────────────────────────────────────────────────────────────────────
-==5690== Memcheck, a memory error detector
-==5690== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5690== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5690== Command: ./deep_sum_bin
-==5690== 
+==6449== Memcheck, a memory error detector
+==6449== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6449== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6449== Command: ./deep_sum_bin
+==6449== 
 The sum of the first 1B integers is: 500000000500000000
-==5690== 
-==5690== HEAP SUMMARY:
-==5690==     in use at exit: 0 bytes in 0 blocks
-==5690==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5690== 
-==5690== All heap blocks were freed -- no leaks are possible
-==5690== 
-==5690== For lists of detected and suppressed errors, rerun with: -s
-==5690== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6449== 
+==6449== HEAP SUMMARY:
+==6449==     in use at exit: 0 bytes in 0 blocks
+==6449==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6449== 
+==6449== All heap blocks were freed -- no leaks are possible
+==6449== 
+==6449== For lists of detected and suppressed errors, rerun with: -s
+==6449== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] deep_sum
   [SKIP] echo_demo
 ────────────────────────────────────────────────────────────────────
   Sample: factorial
 ────────────────────────────────────────────────────────────────────
-==5706== Memcheck, a memory error detector
-==5706== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5706== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5706== Command: ./factorial_bin
-==5706== 
+==6465== Memcheck, a memory error detector
+==6465== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6465== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6465== Command: ./factorial_bin
+==6465== 
 The accumulation of 5 steps is: 
 120
-==5706== 
-==5706== HEAP SUMMARY:
-==5706==     in use at exit: 0 bytes in 0 blocks
-==5706==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5706== 
-==5706== All heap blocks were freed -- no leaks are possible
-==5706== 
-==5706== For lists of detected and suppressed errors, rerun with: -s
-==5706== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6465== 
+==6465== HEAP SUMMARY:
+==6465==     in use at exit: 0 bytes in 0 blocks
+==6465==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6465== 
+==6465== All heap blocks were freed -- no leaks are possible
+==6465== 
+==6465== For lists of detected and suppressed errors, rerun with: -s
+==6465== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] factorial
 ────────────────────────────────────────────────────────────────────
   Sample: fib_bench
 ────────────────────────────────────────────────────────────────────
-==5719== Memcheck, a memory error detector
-==5719== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5719== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5719== Command: ./fib_bench_bin
-==5719== 
+==6478== Memcheck, a memory error detector
+==6478== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6478== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6478== Command: ./fib_bench_bin
+==6478== 
 fib-naive(40) = 102334155
 fib-tco(10000) mod 1000000 = 
 sum(fib(0..92)) = 1293530146158671550
-==5719== 
-==5719== HEAP SUMMARY:
-==5719==     in use at exit: 0 bytes in 0 blocks
-==5719==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5719== 
-==5719== All heap blocks were freed -- no leaks are possible
-==5719== 
-==5719== For lists of detected and suppressed errors, rerun with: -s
-==5719== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6478== 
+==6478== HEAP SUMMARY:
+==6478==     in use at exit: 0 bytes in 0 blocks
+==6478==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6478== 
+==6478== All heap blocks were freed -- no leaks are possible
+==6478== 
+==6478== For lists of detected and suppressed errors, rerun with: -s
+==6478== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] fib_bench
 ────────────────────────────────────────────────────────────────────
   Sample: fib_naive_only
 ────────────────────────────────────────────────────────────────────
-==5732== Memcheck, a memory error detector
-==5732== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5732== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5732== Command: ./fib_naive_only_bin
-==5732== 
-fib(1000) = 43466557686937456435688527675040625802564660517371780402481729089536555417949051890403879840079255169295922593080322634775209689623239873322471161642996440906533187938298969649928516003704476137795166849228875
-==5732== 
-==5732== HEAP SUMMARY:
-==5732==     in use at exit: 0 bytes in 0 blocks
-==5732==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5732== 
-==5732== All heap blocks were freed -- no leaks are possible
-==5732== 
-==5732== For lists of detected and suppressed errors, rerun with: -s
-==5732== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6491== Memcheck, a memory error detector
+==6491== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6491== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6491== Command: ./fib_naive_only_bin
+==6491== 
+On peanut festival day 2000, the elephant demands exactly: 4224696333392304878706725602341482782579852840250681098010280137314308584370130707224123599639141511088446087538909603607640194711643596029271983312598737326253555802606991585915229492453904998722256795316982874482472992263901833716778060607011615497886719879858311468870876264597369086722884023654422295243347964480139515349562972087652656069529806499841977448720155612802665404554171717881930324025204312082516817125
+Total peanuts for the ritual =4224696333392304878706725602341482782579852840250681098010280137314308584370130707224123599639141511088446087538909603607640194711643596029271983312598737326253555802606991585915229492453904998722256795316982874482472992263901833716778060607011615497886719879858311468870876264597369086722884023654422295243347964480139515349562972087652656069529806499841977448720155612802665404554171717881930324025204312082516817125
+==6491== 
+==6491== HEAP SUMMARY:
+==6491==     in use at exit: 0 bytes in 0 blocks
+==6491==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6491== 
+==6491== All heap blocks were freed -- no leaks are possible
+==6491== 
+==6491== For lists of detected and suppressed errors, rerun with: -s
+==6491== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] fib_naive_only
 ────────────────────────────────────────────────────────────────────
   Sample: fibonacci
 ────────────────────────────────────────────────────────────────────
-==5746== Memcheck, a memory error detector
-==5746== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5746== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5746== Command: ./fibonacci_bin
-==5746== 
-The population at generation 92 has reached: 7540113804746346429
-==5746== 
-==5746== HEAP SUMMARY:
-==5746==     in use at exit: 0 bytes in 0 blocks
-==5746==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5746== 
-==5746== All heap blocks were freed -- no leaks are possible
-==5746== 
-==5746== For lists of detected and suppressed errors, rerun with: -s
-==5746== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6506== Memcheck, a memory error detector
+==6506== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6506== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6506== Command: ./fibonacci_bin
+==6506== 
+The population at generation 40 has reached: 102334155
+==6506== 
+==6506== HEAP SUMMARY:
+==6506==     in use at exit: 0 bytes in 0 blocks
+==6506==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6506== 
+==6506== All heap blocks were freed -- no leaks are possible
+==6506== 
+==6506== For lists of detected and suppressed errors, rerun with: -s
+==6506== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] fibonacci
   [SKIP] guess
 ────────────────────────────────────────────────────────────────────
   Sample: hanoi
 ────────────────────────────────────────────────────────────────────
-==5762== Memcheck, a memory error detector
-==5762== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5762== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5762== Command: ./hanoi_bin
-==5762== 
+==6522== Memcheck, a memory error detector
+==6522== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6522== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6522== Command: ./hanoi_bin
+==6522== 
 COMMENCING LOGISTICS DISCOURSE:
 Depot-A: [321]
 Depot-C: []
@@ -325,118 +326,118 @@ Depot-C: [321]
 Depot-B: []
 ═══════════════════════════════════════════
 RELOCATION COMPLETE.
-==5762== 
-==5762== HEAP SUMMARY:
-==5762==     in use at exit: 0 bytes in 0 blocks
-==5762==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5762== 
-==5762== All heap blocks were freed -- no leaks are possible
-==5762== 
-==5762== For lists of detected and suppressed errors, rerun with: -s
-==5762== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6522== 
+==6522== HEAP SUMMARY:
+==6522==     in use at exit: 0 bytes in 0 blocks
+==6522==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6522== 
+==6522== All heap blocks were freed -- no leaks are possible
+==6522== 
+==6522== For lists of detected and suppressed errors, rerun with: -s
+==6522== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] hanoi
 ────────────────────────────────────────────────────────────────────
   Sample: hello_world
 ────────────────────────────────────────────────────────────────────
-==5775== Memcheck, a memory error detector
-==5775== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5775== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5775== Command: ./hello_world_bin
-==5775== 
+==6535== Memcheck, a memory error detector
+==6535== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6535== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6535== Command: ./hello_world_bin
+==6535== 
 Hello, World!
-==5775== 
-==5775== HEAP SUMMARY:
-==5775==     in use at exit: 0 bytes in 0 blocks
-==5775==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5775== 
-==5775== All heap blocks were freed -- no leaks are possible
-==5775== 
-==5775== For lists of detected and suppressed errors, rerun with: -s
-==5775== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6535== 
+==6535== HEAP SUMMARY:
+==6535==     in use at exit: 0 bytes in 0 blocks
+==6535==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6535== 
+==6535== All heap blocks were freed -- no leaks are possible
+==6535== 
+==6535== For lists of detected and suppressed errors, rerun with: -s
+==6535== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] hello_world
 ────────────────────────────────────────────────────────────────────
   Sample: hello_world_int
 ────────────────────────────────────────────────────────────────────
-==5788== Memcheck, a memory error detector
-==5788== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5788== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5788== Command: ./hello_world_int_bin
-==5788== 
+==6550== Memcheck, a memory error detector
+==6550== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6550== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6550== Command: ./hello_world_int_bin
+==6550== 
 Hello, World!
-==5788== 
-==5788== HEAP SUMMARY:
-==5788==     in use at exit: 0 bytes in 0 blocks
-==5788==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5788== 
-==5788== All heap blocks were freed -- no leaks are possible
-==5788== 
-==5788== For lists of detected and suppressed errors, rerun with: -s
-==5788== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6550== 
+==6550== HEAP SUMMARY:
+==6550==     in use at exit: 0 bytes in 0 blocks
+==6550==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6550== 
+==6550== All heap blocks were freed -- no leaks are possible
+==6550== 
+==6550== For lists of detected and suppressed errors, rerun with: -s
+==6550== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] hello_world_int
   [SKIP] illegal_shared
 ────────────────────────────────────────────────────────────────────
   Sample: map_bench
 ────────────────────────────────────────────────────────────────────
-==5804== Memcheck, a memory error detector
-==5804== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5804== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5804== Command: ./map_bench_bin
-==5804== 
+==6566== Memcheck, a memory error detector
+==6566== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6566== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6566== Command: ./map_bench_bin
+==6566== 
 300
 200
 300
-==5804== 
-==5804== HEAP SUMMARY:
-==5804==     in use at exit: 0 bytes in 0 blocks
-==5804==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5804== 
-==5804== All heap blocks were freed -- no leaks are possible
-==5804== 
-==5804== For lists of detected and suppressed errors, rerun with: -s
-==5804== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6566== 
+==6566== HEAP SUMMARY:
+==6566==     in use at exit: 0 bytes in 0 blocks
+==6566==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6566== 
+==6566== All heap blocks were freed -- no leaks are possible
+==6566== 
+==6566== For lists of detected and suppressed errors, rerun with: -s
+==6566== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] map_bench
 ────────────────────────────────────────────────────────────────────
   Sample: map_shapes
 ────────────────────────────────────────────────────────────────────
-==5817== Memcheck, a memory error detector
-==5817== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5817== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5817== Command: ./map_shapes_bin
-==5817== 
+==6581== Memcheck, a memory error detector
+==6581== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6581== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6581== Command: ./map_shapes_bin
+==6581== 
 Alpha: 100
 Beta: 200
-==5817== 
-==5817== HEAP SUMMARY:
-==5817==     in use at exit: 0 bytes in 0 blocks
-==5817==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5817== 
-==5817== All heap blocks were freed -- no leaks are possible
-==5817== 
-==5817== For lists of detected and suppressed errors, rerun with: -s
-==5817== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6581== 
+==6581== HEAP SUMMARY:
+==6581==     in use at exit: 0 bytes in 0 blocks
+==6581==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6581== 
+==6581== All heap blocks were freed -- no leaks are possible
+==6581== 
+==6581== For lists of detected and suppressed errors, rerun with: -s
+==6581== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] map_shapes
 ────────────────────────────────────────────────────────────────────
   Sample: memory_escape_tco
 ────────────────────────────────────────────────────────────────────
-==5830== Memcheck, a memory error detector
-==5830== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5830== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5830== Command: ./memory_escape_tco_bin
-==5830== 
-==5830== 
-==5830== HEAP SUMMARY:
-==5830==     in use at exit: 0 bytes in 0 blocks
-==5830==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5830== 
-==5830== All heap blocks were freed -- no leaks are possible
-==5830== 
-==5830== For lists of detected and suppressed errors, rerun with: -s
-==5830== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6594== Memcheck, a memory error detector
+==6594== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6594== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6594== Command: ./memory_escape_tco_bin
+==6594== 
+==6594== 
+==6594== HEAP SUMMARY:
+==6594==     in use at exit: 0 bytes in 0 blocks
+==6594==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6594== 
+==6594== All heap blocks were freed -- no leaks are possible
+==6594== 
+==6594== For lists of detected and suppressed errors, rerun with: -s
+==6594== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] memory_escape_tco
   [SKIP] mutation
@@ -444,115 +445,116 @@ Beta: 200
 ────────────────────────────────────────────────────────────────────
   Sample: parity
 ────────────────────────────────────────────────────────────────────
-==5852== Memcheck, a memory error detector
-==5852== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5852== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5852== Command: ./parity_bin
-==5852== 
+==6613== Memcheck, a memory error detector
+==6613== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6613== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6613== Command: ./parity_bin
+==6613== 
 PARITY VERIFICATION:
 Is 10 even? (1=yes): 1
 Is 7 even?  (1=yes): 0
-==5852== 
-==5852== HEAP SUMMARY:
-==5852==     in use at exit: 0 bytes in 0 blocks
-==5852==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5852== 
-==5852== All heap blocks were freed -- no leaks are possible
-==5852== 
-==5852== For lists of detected and suppressed errors, rerun with: -s
-==5852== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6613== 
+==6613== HEAP SUMMARY:
+==6613==     in use at exit: 0 bytes in 0 blocks
+==6613==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6613== 
+==6613== All heap blocks were freed -- no leaks are possible
+==6613== 
+==6613== For lists of detected and suppressed errors, rerun with: -s
+==6613== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] parity
 ────────────────────────────────────────────────────────────────────
   Sample: sample
 ────────────────────────────────────────────────────────────────────
-==5865== Memcheck, a memory error detector
-==5865== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5865== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5865== Command: ./sample_bin
-==5865== 
-==5865== 
-==5865== HEAP SUMMARY:
-==5865==     in use at exit: 0 bytes in 0 blocks
-==5865==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5865== 
-==5865== All heap blocks were freed -- no leaks are possible
-==5865== 
-==5865== For lists of detected and suppressed errors, rerun with: -s
-==5865== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6626== Memcheck, a memory error detector
+==6626== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6626== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6626== Command: ./sample_bin
+==6626== 
+10
+==6626== 
+==6626== HEAP SUMMARY:
+==6626==     in use at exit: 0 bytes in 0 blocks
+==6626==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6626== 
+==6626== All heap blocks were freed -- no leaks are possible
+==6626== 
+==6626== For lists of detected and suppressed errors, rerun with: -s
+==6626== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] sample
 ────────────────────────────────────────────────────────────────────
   Sample: svo_e2e
 ────────────────────────────────────────────────────────────────────
-==5878== Memcheck, a memory error detector
-==5878== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5878== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5878== Command: ./svo_e2e_bin
-==5878== 
+==6639== Memcheck, a memory error detector
+==6639== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6639== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6639== Command: ./svo_e2e_bin
+==6639== 
 Greetings, Conductor
-==5878== 
-==5878== HEAP SUMMARY:
-==5878==     in use at exit: 0 bytes in 0 blocks
-==5878==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5878== 
-==5878== All heap blocks were freed -- no leaks are possible
-==5878== 
-==5878== For lists of detected and suppressed errors, rerun with: -s
-==5878== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6639== 
+==6639== HEAP SUMMARY:
+==6639==     in use at exit: 0 bytes in 0 blocks
+==6639==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6639== 
+==6639== All heap blocks were freed -- no leaks are possible
+==6639== 
+==6639== For lists of detected and suppressed errors, rerun with: -s
+==6639== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] svo_e2e
   [SKIP] test_logic
 ────────────────────────────────────────────────────────────────────
   Sample: test_ownership
 ────────────────────────────────────────────────────────────────────
-==5894== Memcheck, a memory error detector
-==5894== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5894== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5894== Command: ./test_ownership_bin
-==5894== 
+==6656== Memcheck, a memory error detector
+==6656== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6656== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6656== Command: ./test_ownership_bin
+==6656== 
 Linear Resource
 Branch Resource
 PASS: Ownership verification complete.
-==5894== 
-==5894== HEAP SUMMARY:
-==5894==     in use at exit: 0 bytes in 0 blocks
-==5894==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5894== 
-==5894== All heap blocks were freed -- no leaks are possible
-==5894== 
-==5894== For lists of detected and suppressed errors, rerun with: -s
-==5894== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6656== 
+==6656== HEAP SUMMARY:
+==6656==     in use at exit: 0 bytes in 0 blocks
+==6656==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6656== 
+==6656== All heap blocks were freed -- no leaks are possible
+==6656== 
+==6656== For lists of detected and suppressed errors, rerun with: -s
+==6656== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] test_ownership
 ────────────────────────────────────────────────────────────────────
   Sample: test_recursion
 ────────────────────────────────────────────────────────────────────
-==5907== Memcheck, a memory error detector
-==5907== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5907== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5907== Command: ./test_recursion_bin
-==5907== 
+==6669== Memcheck, a memory error detector
+==6669== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6669== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6669== Command: ./test_recursion_bin
+==6669== 
 PASS: Deep recursion complete.
-==5907== 
-==5907== HEAP SUMMARY:
-==5907==     in use at exit: 0 bytes in 0 blocks
-==5907==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5907== 
-==5907== All heap blocks were freed -- no leaks are possible
-==5907== 
-==5907== For lists of detected and suppressed errors, rerun with: -s
-==5907== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6669== 
+==6669== HEAP SUMMARY:
+==6669==     in use at exit: 0 bytes in 0 blocks
+==6669==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6669== 
+==6669== All heap blocks were freed -- no leaks are possible
+==6669== 
+==6669== For lists of detected and suppressed errors, rerun with: -s
+==6669== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] test_recursion
 ────────────────────────────────────────────────────────────────────
   Sample: tiny_gpt
 ────────────────────────────────────────────────────────────────────
-==5920== Memcheck, a memory error detector
-==5920== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
-==5920== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
-==5920== Command: ./tiny_gpt_bin
-==5920== 
+==6682== Memcheck, a memory error detector
+==6682== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==6682== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==6682== Command: ./tiny_gpt_bin
+==6682== 
 Tiny-GPT (Context=2) Generating: 
 H
 E
@@ -561,15 +563,15 @@ L
 O
 \nStarting 10,000,000 Step Bigram Benchmark...\n
 Benchmark Complete. Final Char: H
-==5920== 
-==5920== HEAP SUMMARY:
-==5920==     in use at exit: 0 bytes in 0 blocks
-==5920==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
-==5920== 
-==5920== All heap blocks were freed -- no leaks are possible
-==5920== 
-==5920== For lists of detected and suppressed errors, rerun with: -s
-==5920== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+==6682== 
+==6682== HEAP SUMMARY:
+==6682==     in use at exit: 0 bytes in 0 blocks
+==6682==   total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+==6682== 
+==6682== All heap blocks were freed -- no leaks are possible
+==6682== 
+==6682== For lists of detected and suppressed errors, rerun with: -s
+==6682== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
   [PASS] tiny_gpt
 
