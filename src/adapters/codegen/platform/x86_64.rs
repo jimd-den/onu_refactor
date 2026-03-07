@@ -10,6 +10,7 @@
 /// No C runtime or libc dependency — pure inline assembly via LLVM.
 
 use super::PlatformSyscalls;
+use crate::adapters::codegen::compat::onu_i8ptr;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::values::{CallableValue, IntValue, PointerValue};
@@ -29,7 +30,7 @@ impl X86_64Syscalls {
         call_name: &str,
     ) -> IntValue<'ctx> {
         let i64_type = context.i64_type();
-        let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+        let i8_ptr_type = onu_i8ptr(context);
 
         let syscall_type = i64_type.fn_type(
             &[

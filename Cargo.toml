@@ -19,13 +19,20 @@ edition = "2024"
 #
 [features]
 default = ["llvm14"]
-llvm14  = ["inkwell/llvm14-0"]
-llvm15  = ["inkwell/llvm15-0", "inkwell/typed-pointers"]
-llvm16  = ["inkwell/llvm16-0"]
-llvm17  = ["inkwell/llvm17-0"]
-llvm18  = ["inkwell/llvm18-1"]
-llvm19  = ["inkwell/llvm19-1"]
-llvm20  = ["inkwell/llvm20-1"]
+# ── local relay flag ─────────────────────────────────────────────────────────
+# `typed-pointers` is set whenever the selected LLVM version uses the
+# typed-pointer inkwell API (LLVM 14 and LLVM 15 with typed-pointers).
+# Our src/adapters/codegen/compat.rs uses `#[cfg(feature = "typed-pointers")]`
+# to pick the right API at compile time.  LLVM 16+ leaves this flag unset,
+# activating the opaque-pointer path in compat.rs.
+typed-pointers = ["inkwell/typed-pointers"]
+llvm14  = ["inkwell/llvm14-0", "typed-pointers"]   # LLVM 14 — typed only
+llvm15  = ["inkwell/llvm15-0", "typed-pointers"]   # LLVM 15 — opt into typed
+llvm16  = ["inkwell/llvm16-0"]                     # LLVM 16 — opaque only
+llvm17  = ["inkwell/llvm17-0"]                     # LLVM 17 — opaque only
+llvm18  = ["inkwell/llvm18-1"]                     # LLVM 18 — opaque only
+llvm19  = ["inkwell/llvm19-1"]                     # LLVM 19 — opaque only
+llvm20  = ["inkwell/llvm20-1"]                     # LLVM 20 — opaque only
 
 [dependencies]
 chrono = { version = "0.4.44", features = ["serde"] }

@@ -51,7 +51,7 @@ the effect behavior called run
 
         -- Heavy benchmark: tak(18, 12, 6) — millions of calls without memo, sub-ms with it
         derivation: result derives-from an integer 18 utilizes find-balance 12 6
-        derivation: label  derives-from "Balance(18, 12, 6) = "
+        derivation: label  derives-from a string "Balance(18, 12, 6) = "
         derivation: msg    derives-from label joined-with (result utilizes as-text)
         broadcasts msg
 

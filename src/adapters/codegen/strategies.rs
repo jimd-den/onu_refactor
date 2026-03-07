@@ -1,3 +1,6 @@
+use crate::adapters::codegen::compat::{
+    build_byte_gep, build_typed_load, cast_to_typed_ptr, onu_i8ptr, store_int_element_type,
+};
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 /// Codegen Strategies: Interface Adapter Layer
@@ -493,7 +496,7 @@ const STDIN_BUFFER_SIZE: u64 = 4096;
 const NEWLINE_BYTE: u64 = 10;
 
 /// `receives-line`: read a line from stdin via the platform read syscall.
-/// Returns an Onu string { i64 len, i8* ptr, i1 is_dynamic=false }.
+/// Returns an Onu string { i64 len, ptr data, i1 is_dynamic=false }.
 fn generate_receives_line<'ctx>(
     context: &'ctx Context,
     builder: &Builder<'ctx>,
@@ -503,16 +506,14 @@ fn generate_receives_line<'ctx>(
     let syscalls = crate::adapters::codegen::platform::create_syscalls();
     let i64_type = context.i64_type();
     let i8_type = context.i8_type();
-    let i8_ptr_type = i8_type.ptr_type(inkwell::AddressSpace::default());
+    let i8_ptr_type = onu_i8ptr(context);
     let bool_type = context.bool_type();
 
     // Stack buffer for reading.
     let buf_size: u64 = STDIN_BUFFER_SIZE;
     let buf_array_type = i8_type.array_type(buf_size as u32);
     let buf_alloca = builder.build_alloca(buf_array_type, "read_buf").unwrap();
-    let buf_ptr = builder
-        .build_pointer_cast(buf_alloca, i8_ptr_type, "read_buf_ptr")
-        .unwrap();
+    let buf_ptr = cast_to_typed_ptr(context, builder, buf_alloca, i8_type, "read_buf_ptr");
 
     let stdin_fd = i64_type.const_int(STDIN_FD, false);
     let max_len = i64_type.const_int(buf_size, false);
@@ -521,15 +522,8 @@ fn generate_receives_line<'ctx>(
     // Strip trailing newline: if last byte == '\n', length -= 1
     let one = i64_type.const_int(1, false);
     let len_minus_1 = builder.build_int_sub(bytes_read, one, "len_m1").unwrap();
-    let last_ptr = unsafe {
-        builder
-            .build_in_bounds_gep(buf_ptr, &[len_minus_1], "last_ptr")
-            .unwrap()
-    };
-    let last_byte = builder
-        .build_load(last_ptr, "last_byte")
-        .unwrap()
-        .into_int_value();
+    let last_ptr = unsafe { build_byte_gep(context, builder, buf_ptr, len_minus_1, "last_ptr") };
+    let last_byte = build_typed_load(context, builder, i8_type, last_ptr, "last_byte").into_int_value();
     let is_nl = builder
         .build_int_compare(
             inkwell::IntPredicate::EQ,
@@ -543,7 +537,7 @@ fn generate_receives_line<'ctx>(
         .unwrap()
         .into_int_value();
 
-    // Build Onu string struct { i64 len, i8* ptr, i1 is_dynamic=false }
+    // Build Onu string struct { i64 len, ptr data, i1 is_dynamic=false }
     let str_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false);
     let mut str_val = str_type.get_undef();
     str_val = builder.build_insert_value(str_val, stripped_len, 0, "str_len").unwrap().into_struct_value();
@@ -556,7 +550,7 @@ fn generate_receives_line<'ctx>(
 }
 
 /// `receives-argument`: read argv[index] via the `__onu_argv` global.
-/// Returns an Onu string { i64 len, i8* ptr, i1 is_dynamic=false }.
+/// Returns an Onu string { i64 len, ptr data, i1 is_dynamic=false }.
 fn generate_receives_argument<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,
@@ -567,13 +561,12 @@ fn generate_receives_argument<'ctx>(
 ) -> Result<(), OnuError> {
     let i64_type = context.i64_type();
     let i8_type = context.i8_type();
-    let i8_ptr_type = i8_type.ptr_type(inkwell::AddressSpace::default());
-    let i8_ptr_ptr_type = i8_ptr_type.ptr_type(inkwell::AddressSpace::default());
+    let i8_ptr_type = onu_i8ptr(context);
     let bool_type = context.bool_type();
 
-    // Load __onu_argv global (i8**)
-    let argv_global = get_or_declare_global(module, context, "__onu_argv", i8_ptr_ptr_type.as_basic_type_enum());
-    let argv_ptr = builder.build_load(argv_global, "argv_val").unwrap().into_pointer_value();
+    // Load __onu_argv global (ptr / i8**)
+    let argv_global = get_or_declare_global(module, context, "__onu_argv", i8_ptr_type.as_basic_type_enum());
+    let argv_ptr = build_typed_load(context, builder, i8_ptr_type, argv_global, "argv_val").into_pointer_value();
 
     // GEP to argv[index]
     let idx = if index_val.is_int_value() {
@@ -581,10 +574,8 @@ fn generate_receives_argument<'ctx>(
     } else {
         i64_type.const_int(0, false)
     };
-    let arg_ptr_ptr = unsafe {
-        builder.build_in_bounds_gep(argv_ptr, &[idx], "arg_ptr_ptr").unwrap()
-    };
-    let arg_ptr = builder.build_load(arg_ptr_ptr, "arg_ptr").unwrap().into_pointer_value();
+    let arg_ptr_ptr = unsafe { build_byte_gep(context, builder, argv_ptr, idx, "arg_ptr_ptr") };
+    let arg_ptr = build_typed_load(context, builder, i8_ptr_type, arg_ptr_ptr, "arg_ptr").into_pointer_value();
 
     // Compute strlen by scanning for '\0' (pure LLVM loop — no libc)
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -602,10 +593,8 @@ fn generate_receives_argument<'ctx>(
     i_phi.add_incoming(&[(&i64_type.const_int(0, false), strlen_entry)]);
     let i_val = i_phi.as_basic_value().into_int_value();
 
-    let byte_ptr = unsafe {
-        builder.build_in_bounds_gep(arg_ptr, &[i_val], "byte_ptr").unwrap()
-    };
-    let byte = builder.build_load(byte_ptr, "byte").unwrap().into_int_value();
+    let byte_ptr = unsafe { build_byte_gep(context, builder, arg_ptr, i_val, "byte_ptr") };
+    let byte = build_typed_load(context, builder, i8_type, byte_ptr, "byte").into_int_value();
     let is_zero = builder
         .build_int_compare(inkwell::IntPredicate::EQ, byte, i8_type.const_int(0, false), "is_zero")
         .unwrap();
@@ -919,10 +908,15 @@ impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
             let src_val = operand_to_llvm(context, builder, ssa_storage, src);
             let size_val = operand_to_llvm(context, builder, ssa_storage, size);
 
-            // LLVM intrinsic for memcpy: @llvm.memcpy.p0i8.p0i8.i64(i8* align 1 %dest, i8* align 1 %src, i64 %size, i1 %isvolatile)
-            let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+            // LLVM intrinsic for memcpy: @llvm.memcpy.p0.p0.i64 (LLVM 16+) / @llvm.memcpy.p0i8.p0i8.i64 (LLVM 14/15)
+            let i8_ptr_type = onu_i8ptr(context);
             let i64_type = context.i64_type();
             let bool_type = context.bool_type();
+
+            #[cfg(feature = "typed-pointers")]
+            let memcpy_name = "llvm.memcpy.p0i8.p0i8.i64";
+            #[cfg(not(feature = "typed-pointers"))]
+            let memcpy_name = "llvm.memcpy.p0.p0.i64";
 
             let memcpy_type = context.void_type().fn_type(
                 &[
@@ -935,10 +929,10 @@ impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
             );
 
             let memcpy_fn = module
-                .get_function("llvm.memcpy.p0i8.p0i8.i64")
+                .get_function(memcpy_name)
                 .unwrap_or_else(|| {
                     module.add_function(
-                        "llvm.memcpy.p0i8.p0i8.i64",
+                        memcpy_name,
                         memcpy_type,
                         Some(inkwell::module::Linkage::External),
                     )
@@ -977,11 +971,9 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
             let offset_val =
                 operand_to_llvm(context, builder, ssa_storage, offset).into_int_value();
 
-            // GEPI (GetElementPtr) for i8*
+            // GEPI (GetElementPtr) for byte arrays (arena/string buffers)
             let offset_ptr = unsafe {
-                builder
-                    .build_in_bounds_gep(ptr_val, &[offset_val], "offset_ptr")
-                    .unwrap()
+                build_byte_gep(context, builder, ptr_val, offset_val, "offset_ptr")
             };
 
             let ptr_ssa = get_or_create_ssa(
@@ -989,7 +981,7 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
                 builder,
                 ssa_storage,
                 *dest,
-                offset_ptr.get_type().as_basic_type_enum(),
+                onu_i8ptr(context).as_basic_type_enum(),
             );
             builder.build_store(ptr_ssa, offset_ptr).unwrap();
         }
@@ -1021,20 +1013,13 @@ impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
         if let MirInstruction::Load { dest, ptr, typ } = inst {
             let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
 
-            // Cast the raw i8* to the target element pointer type.
-            // For i64 values: i8* → i64* so that build_load reads 8 bytes.
-            // For WideInt(N): i8* → iN* so that build_load reads N/8 bytes.
+            // Cast the raw ptr to the target element pointer type (LLVM 14/15 typed ptr)
+            // or load directly using the explicit type (LLVM 16+ opaque ptr).
             let dest_llvm_type = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, typ, registry)
                 .unwrap_or_else(|| context.i64_type().as_basic_type_enum());
-            let typed_ptr = builder
-                .build_pointer_cast(
-                    ptr_val,
-                    dest_llvm_type.ptr_type(inkwell::AddressSpace::default()),
-                    "typed_ptr",
-                )
-                .unwrap();
+            let typed_ptr = cast_to_typed_ptr(context, builder, ptr_val, dest_llvm_type, "typed_ptr");
 
-            let loaded_val = builder.build_load(typed_ptr, "loaded_val").unwrap();
+            let loaded_val = build_typed_load(context, builder, dest_llvm_type, typed_ptr, "loaded_val");
             if let inkwell::values::BasicValueEnum::IntValue(iv) = loaded_val {
                 if iv.get_type().get_bit_width() == 64 {
                     unsafe {
@@ -1066,11 +1051,10 @@ impl<'ctx> InstructionStrategy<'ctx> for StoreStrategy {
             let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
             let val = operand_to_llvm(context, builder, ssa_storage, value);
 
-            // If storing i64 to i8*, we might need a cast if LLVM is strict,
-            // but usually build_store handles basic values.
-            // However, we want to store it as a byte if it's for itoa.
-            let val_to_store = if ptr_val.get_type().get_element_type().is_int_type() {
-                let target_type = ptr_val.get_type().get_element_type().into_int_type();
+            // Truncate to the pointer element type when storing narrower values.
+            // store_int_element_type() returns None for LLVM 16+ opaque pointers
+            // (the value type drives the store width directly).
+            let val_to_store = if let Some(target_type) = store_int_element_type(ptr_val) {
                 if val.get_type().into_int_type().get_bit_width() > target_type.get_bit_width() {
                     builder
                         .build_int_truncate(val.into_int_value(), target_type, "store_trunc")
@@ -1110,20 +1094,14 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
             let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
             let val = operand_to_llvm(context, builder, ssa_storage, value);
 
-            // Cast the i8* to the element pointer type matching the value width.
-            // WideInt(N) → iN* so that all N/8 bytes are written.
+            // Cast the raw ptr to the element pointer type (LLVM 14/15) or store
+            // directly using the value type (LLVM 16+ — cast_to_typed_ptr is a no-op).
             let dest_llvm_type =
                 crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
                     context, typ, registry,
                 )
                 .unwrap_or_else(|| context.i64_type().as_basic_type_enum());
-            let typed_ptr = builder
-                .build_pointer_cast(
-                    ptr_val,
-                    dest_llvm_type.ptr_type(inkwell::AddressSpace::default()),
-                    "typed_store_ptr",
-                )
-                .unwrap();
+            let typed_ptr = cast_to_typed_ptr(context, builder, ptr_val, dest_llvm_type, "typed_store_ptr");
 
             // Guard: if the source value is wider than the destination type, truncate
             // before storing.  This is the key case for the occupancy flag: the MIR
@@ -1174,11 +1152,16 @@ impl<'ctx> InstructionStrategy<'ctx> for MemSetStrategy {
             let value_val = operand_to_llvm(context, builder, ssa_storage, value).into_int_value();
             let size_val = operand_to_llvm(context, builder, ssa_storage, size).into_int_value();
 
-            // LLVM intrinsic for memset: @llvm.memset.p0i8.i64(i8* align 1 %ptr, i8 %value, i64 %size, i1 %isvolatile)
-            let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+            // LLVM intrinsic for memset: @llvm.memset.p0.i64 (LLVM 16+) / @llvm.memset.p0i8.i64 (LLVM 14/15)
+            let i8_ptr_type = onu_i8ptr(context);
             let i8_type = context.i8_type();
             let i64_type = context.i64_type();
             let bool_type = context.bool_type();
+
+            #[cfg(feature = "typed-pointers")]
+            let memset_name = "llvm.memset.p0i8.i64";
+            #[cfg(not(feature = "typed-pointers"))]
+            let memset_name = "llvm.memset.p0.i64";
 
             let memset_type = context.void_type().fn_type(
                 &[
@@ -1191,10 +1174,10 @@ impl<'ctx> InstructionStrategy<'ctx> for MemSetStrategy {
             );
 
             let memset_fn = module
-                .get_function("llvm.memset.p0i8.i64")
+                .get_function(memset_name)
                 .unwrap_or_else(|| {
                     module.add_function(
-                        "llvm.memset.p0i8.i64",
+                        memset_name,
                         memset_type,
                         Some(inkwell::module::Linkage::External),
                     )
@@ -1324,7 +1307,7 @@ pub fn operand_to_llvm<'ctx>(
                 let length = context.i64_type().const_int(s.len() as u64, false);
                 let global_str = builder.build_global_string_ptr(s, "strtmp").unwrap();
                 let i64_type = context.i64_type();
-                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                let i8_ptr_type = onu_i8ptr(context);
                 let bool_type = context.bool_type();
                 let is_dynamic = bool_type.const_int(0, false); // Literal strings are not dynamic
 
@@ -1333,7 +1316,7 @@ pub fn operand_to_llvm<'ctx>(
                     false,
                 );
 
-                // Achievement: Use const_named_struct to ensure this is a compile-time constant
+                // Use const_named_struct to ensure this is a compile-time constant
                 let string_val = string_struct_type.const_named_struct(&[
                     length.into(),
                     global_str.as_pointer_value().into(),
@@ -1347,11 +1330,17 @@ pub fn operand_to_llvm<'ctx>(
                 context.custom_width_int_type(*bits).const_int_from_string(val_str, inkwell::types::StringRadix::Decimal).unwrap().into()
             }
         },
-        MirOperand::Variable(id, _) => {
+        MirOperand::Variable(id, _consuming) => {
             let ptr = ssa_storage
                 .get(id)
                 .expect(&format!("SSA variable {} not found", id));
-            builder.build_load(*ptr, &format!("v{}", id)).unwrap()
+            // For typed pointers (LLVM 14/15) build_load infers type from the alloca.
+            // For opaque pointers (LLVM 16+) we explicitly pass i64 as the default;
+            // struct values are loaded correctly because get_or_create_ssa tracks them.
+            #[cfg(feature = "typed-pointers")]
+            { builder.build_load(*ptr, &format!("v{}", id)).unwrap() }
+            #[cfg(not(feature = "typed-pointers"))]
+            { build_typed_load(context, builder, context.i64_type(), *ptr, &format!("v{}", id)) }
         }
     }
 }

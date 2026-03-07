@@ -75,9 +75,9 @@ the effect behavior called relocate-stack
                 derivation: s2       derives-from s1-dup init-of
                 derivation: d2       derives-from d1 joined-with anchor
                 
-                derivation: divider  derives-from "═══════════════════════════════════════════"
+                derivation: divider  derives-from a string "═══════════════════════════════════════════"
                 derivation: dump1    derives-from nothing broadcasts divider
-                derivation: msg      derives-from "Relocating [" joined-with anchor
+                derivation: msg      derives-from a string "Relocating [" joined-with anchor
                 derivation: msg2     derives-from msg joined-with "] from "
                 derivation: msg3     derives-from msg2 joined-with source-name
                 derivation: msg4     derives-from msg3 joined-with " to "
@@ -102,9 +102,9 @@ the effect behavior called run
     takes: nothing
     delivers: nothing
     as:
-        derivation: depot-a-start derives-from "321"
-        derivation: depot-b-start derives-from ""
-        derivation: depot-c-start derives-from ""
+        derivation: depot-a-start derives-from a string "321"
+        derivation: depot-b-start derives-from a string ""
+        derivation: depot-c-start derives-from a string ""
         
         derivation: d1 derives-from nothing broadcasts "COMMENCING LOGISTICS DISCOURSE:"
         derivation: d2 derives-from nothing "Depot-A" utilizes inspect-depot depot-a-start
