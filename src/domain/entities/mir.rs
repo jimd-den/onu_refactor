@@ -207,6 +207,23 @@ pub enum MirInstruction {
         /// Bit-width of the rotation (e.g. 32 for rotr32).
         width: u32,
     },
+
+    // ── Phase 4: Buffered I/O ───────────────────────────────────────────
+
+    /// Write bytes to the internal stdout buffer instead of issuing a syscall.
+    /// The buffer is flushed when full or when `FlushStdout` is executed.
+    ///
+    /// This eliminates per-line kernel context switches, matching (or beating)
+    /// C's `printf` with its internal `FILE*` buffer.
+    BufferedWrite {
+        ptr: MirOperand,
+        len: MirOperand,
+    },
+
+    /// Flush the internal stdout buffer by issuing a single batched syscall.
+    /// Emitted at program exit (in the `run`/`main` teardown) to ensure all
+    /// buffered output reaches the terminal.
+    FlushStdout,
 }
 
 #[derive(Debug, Clone, PartialEq)]

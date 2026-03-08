@@ -268,6 +268,13 @@ impl LifetimePass {
                 if let MirOperand::Variable(id, _) = index { ids.push(*id); }
                 ids
             }
+            MirInstruction::BufferedWrite { ptr, len } => {
+                let mut ids = vec![];
+                if let MirOperand::Variable(id, _) = ptr { ids.push(*id); }
+                if let MirOperand::Variable(id, _) = len { ids.push(*id); }
+                ids
+            }
+            MirInstruction::FlushStdout => vec![],
         }
     }
 }

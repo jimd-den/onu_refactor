@@ -514,6 +514,176 @@ const STDIN_BUFFER_SIZE: u64 = 4096;
 /// ASCII newline character.
 const NEWLINE_BYTE: u64 = 10;
 
+/// Size of the internal stdout buffer (64 KiB).
+/// Writes are accumulated here and flushed with a single syscall
+/// when the buffer is full or the program exits.
+const STDOUT_BUFFER_SIZE: u64 = 65536;
+
+/// Get or declare the stdout buffer globals:
+///   `@__onu_stdout_buf` — [65536 x i8] internal zeroed buffer
+///   `@__onu_stdout_cursor` — i64, current write position
+fn get_or_declare_stdout_buffer<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+) -> (PointerValue<'ctx>, PointerValue<'ctx>) {
+    let i8_type = context.i8_type();
+    let i64_type = context.i64_type();
+
+    let buf_global = if let Some(g) = module.get_global("__onu_stdout_buf") {
+        g
+    } else {
+        let buf_type = i8_type.array_type(STDOUT_BUFFER_SIZE as u32);
+        let g = module.add_global(buf_type, None, "__onu_stdout_buf");
+        g.set_linkage(inkwell::module::Linkage::Internal);
+        g.set_initializer(&buf_type.const_zero());
+        g
+    };
+
+    let cursor_global = if let Some(g) = module.get_global("__onu_stdout_cursor") {
+        g
+    } else {
+        let g = module.add_global(i64_type, None, "__onu_stdout_cursor");
+        g.set_linkage(inkwell::module::Linkage::Internal);
+        g.set_initializer(&i64_type.const_zero());
+        g
+    };
+
+    (buf_global.as_pointer_value(), cursor_global.as_pointer_value())
+}
+
+/// Emit inline code that copies `len` bytes from `src_ptr` into the stdout
+/// buffer, flushing automatically if the buffer would overflow.
+fn emit_buffered_write<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+    src_ptr: PointerValue<'ctx>,
+    len: inkwell::values::IntValue<'ctx>,
+) {
+    let i64_type = context.i64_type();
+    let (buf_global, cursor_global) = get_or_declare_stdout_buffer(context, module);
+
+    // Load current cursor position.
+    let cursor = builder
+        .build_load(cursor_global, "stdout_cursor")
+        .unwrap()
+        .into_int_value();
+
+    // Check if adding `len` would overflow the buffer.
+    let new_cursor = builder
+        .build_int_add(cursor, len, "new_cursor")
+        .unwrap();
+    let buf_size = i64_type.const_int(STDOUT_BUFFER_SIZE, false);
+    let would_overflow = builder
+        .build_int_compare(
+            inkwell::IntPredicate::UGT,
+            new_cursor,
+            buf_size,
+            "would_overflow",
+        )
+        .unwrap();
+
+    let parent_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let flush_bb = context.append_basic_block(parent_fn, "buf_flush");
+    let copy_bb = context.append_basic_block(parent_fn, "buf_copy");
+
+    builder.build_conditional_branch(would_overflow, flush_bb, copy_bb).unwrap();
+
+    // ── Flush block: write current buffer to stdout, then reset cursor ──
+    builder.position_at_end(flush_bb);
+    {
+        let syscalls = crate::adapters::codegen::platform::create_syscalls();
+        let stdout_fd = i64_type.const_int(STDOUT_FD, false);
+
+        // GEP to get i8* to the start of the buffer.
+        let zero = i64_type.const_zero();
+        let buf_ptr = unsafe {
+            builder.build_in_bounds_gep(buf_global, &[zero, zero], "buf_start").unwrap()
+        };
+
+        // Write everything currently in the buffer.
+        syscalls.emit_write(context, builder, stdout_fd, buf_ptr, cursor);
+
+        // Reset cursor to 0.
+        builder.build_store(cursor_global, i64_type.const_zero()).unwrap();
+    }
+    builder.build_unconditional_branch(copy_bb).unwrap();
+
+    // ── Copy block: append data to buffer ──
+    builder.position_at_end(copy_bb);
+    {
+        // Reload cursor after potential flush (could be 0 now).
+        let cur = builder
+            .build_load(cursor_global, "cur_after_flush")
+            .unwrap()
+            .into_int_value();
+
+        // GEP to the current write position in the buffer.
+        let zero = i64_type.const_zero();
+        let buf_start = unsafe {
+            builder.build_in_bounds_gep(buf_global, &[zero, zero], "buf_base").unwrap()
+        };
+        let write_pos = unsafe {
+            builder.build_in_bounds_gep(buf_start, &[cur], "write_pos").unwrap()
+        };
+
+        // memcpy(write_pos, src_ptr, len)
+        builder
+            .build_memcpy(write_pos, 1, src_ptr, 1, len)
+            .unwrap();
+
+        // Update cursor.
+        let updated = builder.build_int_add(cur, len, "updated_cursor").unwrap();
+        builder.build_store(cursor_global, updated).unwrap();
+    }
+}
+
+/// Emit inline code that flushes the stdout buffer to the kernel.
+pub fn emit_flush_stdout<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+) {
+    let i64_type = context.i64_type();
+    let (buf_global, cursor_global) = get_or_declare_stdout_buffer(context, module);
+
+    let cursor = builder
+        .build_load(cursor_global, "flush_cursor")
+        .unwrap()
+        .into_int_value();
+
+    // Only flush if there's data in the buffer.
+    let has_data = builder
+        .build_int_compare(
+            inkwell::IntPredicate::UGT,
+            cursor,
+            i64_type.const_zero(),
+            "has_data",
+        )
+        .unwrap();
+
+    let parent_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let do_flush_bb = context.append_basic_block(parent_fn, "do_final_flush");
+    let done_bb = context.append_basic_block(parent_fn, "flush_done");
+
+    builder.build_conditional_branch(has_data, do_flush_bb, done_bb).unwrap();
+
+    builder.position_at_end(do_flush_bb);
+    {
+        let syscalls = crate::adapters::codegen::platform::create_syscalls();
+        let stdout_fd = i64_type.const_int(STDOUT_FD, false);
+        let zero = i64_type.const_zero();
+        let buf_ptr = unsafe {
+            builder.build_in_bounds_gep(buf_global, &[zero, zero], "final_buf_start").unwrap()
+        };
+        syscalls.emit_write(context, builder, stdout_fd, buf_ptr, cursor);
+        builder.build_store(cursor_global, i64_type.const_zero()).unwrap();
+    }
+    builder.build_unconditional_branch(done_bb).unwrap();
+
+    builder.position_at_end(done_bb);
+}
+
 /// `receives-line`: read a line from stdin via the platform read syscall.
 /// Returns an Onu string { i64 len, ptr data, i1 is_dynamic=false }.
 fn generate_receives_line<'ctx>(
@@ -682,14 +852,13 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
     fn generate(
         &self,
         context: &'ctx Context,
-        _module: &Module<'ctx>,
+        module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Emit(op) = inst {
-            let syscalls = crate::adapters::codegen::platform::create_syscalls();
             let val = operand_to_llvm(context, builder, ssa_storage, op);
 
             // Onu Strings are { i64 len, i8* ptr, i1 is_dynamic }
@@ -698,18 +867,15 @@ impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
                 let len = builder.build_extract_value(s, 0, "emit_len").unwrap().into_int_value();
                 let ptr = builder.build_extract_value(s, 1, "emit_ptr").unwrap().into_pointer_value();
 
-                let i64_type = context.i64_type();
-                let stdout_fd = i64_type.const_int(STDOUT_FD, false);
+                // Buffer the string data + newline into the stdout buffer.
+                emit_buffered_write(context, module, builder, ptr, len);
 
-                // 1. Write the string to stdout
-                syscalls.emit_write(context, builder, stdout_fd, ptr, len);
-
-                // 2. Write a trailing newline
+                // Also buffer the trailing newline.
                 let nl_val = context.i8_type().const_int(NEWLINE_BYTE, false);
                 let nl_ptr = builder.build_alloca(context.i8_type(), "nl_ptr").unwrap();
                 builder.build_store(nl_ptr, nl_val).unwrap();
-                let one = i64_type.const_int(1, false);
-                syscalls.emit_write(context, builder, stdout_fd, nl_ptr, one);
+                let one = context.i64_type().const_int(1, false);
+                emit_buffered_write(context, module, builder, nl_ptr, one);
             }
         }
         Ok(())
@@ -1716,6 +1882,58 @@ impl<'ctx> InstructionStrategy<'ctx> for FunnelShiftRightStrategy {
 
             let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, final_val.get_type());
             builder.build_store(ptr, final_val).unwrap();
+        }
+        Ok(())
+    }
+}
+
+// ── Phase 4: Buffered I/O Strategies ────────────────────────────────────
+
+/// Strategy for `MirInstruction::BufferedWrite`.
+///
+/// Copies bytes into the internal 64 KiB stdout buffer, flushing to the
+/// kernel only when the buffer is full.  This eliminates per-line syscall
+/// overhead and matches C's buffered `printf` performance.
+pub struct BufferedWriteStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for BufferedWriteStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::BufferedWrite { ptr, len } = inst {
+            let ptr_val =
+                operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
+            let len_val =
+                operand_to_llvm(context, builder, ssa_storage, len).into_int_value();
+
+            emit_buffered_write(context, module, builder, ptr_val, len_val);
+        }
+        Ok(())
+    }
+}
+
+/// Strategy for `MirInstruction::FlushStdout`.
+///
+/// Flushes the internal stdout buffer to the kernel via a single syscall.
+/// Emitted at program exit to ensure all buffered output is visible.
+pub struct FlushStdoutStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for FlushStdoutStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        _ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::FlushStdout = inst {
+            emit_flush_stdout(context, module, builder);
         }
         Ok(())
     }

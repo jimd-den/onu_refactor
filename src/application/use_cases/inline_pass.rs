@@ -484,6 +484,11 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             amount: remap_operand(amount, ssa_offset),
             width: *width,
         },
+        MirInstruction::BufferedWrite { ptr, len } => MirInstruction::BufferedWrite {
+            ptr: remap_operand(ptr, ssa_offset),
+            len: remap_operand(len, ssa_offset),
+        },
+        MirInstruction::FlushStdout => MirInstruction::FlushStdout,
     }
 }
 
