@@ -44,11 +44,6 @@ impl LifetimePass {
             return Self::promote_stack_allocs(func);
         }
 
-        // Check if any block contains an Alloc instruction.
-        let has_arena_alloc = func.blocks.iter().any(|b| {
-            b.instructions.iter().any(|inst| matches!(inst, MirInstruction::Alloc { .. }))
-        });
-
         let func = Self::promote_stack_allocs(func);
 
         // Re-check after promotion — if all allocs were promoted, no save/restore needed.
@@ -56,7 +51,7 @@ impl LifetimePass {
             b.instructions.iter().any(|inst| matches!(inst, MirInstruction::Alloc { .. }))
         });
 
-        if !has_arena_alloc || !still_has_arena_alloc {
+        if !still_has_arena_alloc {
             return func;
         }
 

@@ -197,17 +197,14 @@ impl IdiomRecognizerPass {
                 rhs,
                 ..
             } => (lhs, rhs),
-            // Case 2: AND masking a left-shift result — we treat this as part
-            // of the rotation pattern (the mask is `(1 << W) - 1`).
+            // Case 2: AND masking a left-shift result — this could be part of a
+            // rotation pattern where the mask is `(1 << W) - 1`, but we cannot
+            // easily resolve the intermediate SSA chain without deeper analysis.
+            // Bail and let LLVM's own pattern matcher handle it.
             MirInstruction::BinaryOperation {
                 op: MirBinOp::And,
-                lhs,
-                rhs: _mask,
                 ..
             } => {
-                // The lhs of the AND is the SSA variable from the left-shift.
-                // We can't easily resolve the chain here without more context,
-                // so we bail and let LLVM handle it.
                 return None;
             }
             _ => return None,
