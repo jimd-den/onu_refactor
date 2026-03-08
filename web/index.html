@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="manifest.json">
+  <title>Ọ̀nụ Playground</title>
+  <style>
+    /* ── Reset / Base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --accent2:   #d2a8ff;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --red:       #f85149;
+      --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      --font-ui:   -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Toolbar ──────────────────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 1rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .logo {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--accent2);
+      user-select: none;
+    }
+
+    .toolbar-spacer { flex: 1; }
+
+    button {
+      padding: 0.45rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover { background: #21262d; border-color: var(--accent); }
+
+    #run-btn {
+      background: var(--green);
+      border-color: var(--green);
+      color: #000;
+      font-weight: 600;
+    }
+
+    #run-btn:hover { background: #56d364; }
+
+    #run-btn:disabled {
+      background: var(--muted);
+      border-color: var(--muted);
+      cursor: wait;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    .status-dot.ready  { background: var(--green); }
+    .status-dot.error  { background: var(--red); }
+    .status-dot.loading { background: var(--accent); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+    /* ── Main layout ──────────────────────────────────────────────────────── */
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-height: 0;
+    }
+
+    @media (min-width: 768px) {
+      .workspace {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr;
+      }
+    }
+
+    /* ── Editor pane ──────────────────────────────────────────────────────── */
+    .editor-pane {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .pane-header {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    #editor-container {
+      flex: 1;
+      overflow: auto;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* CodeMirror 6 theme overrides */
+    .cm-editor {
+      height: 100%;
+      background: var(--bg) !important;
+    }
+    .cm-content { color: var(--text); }
+    .cm-gutters { background: var(--surface); border-right: 1px solid var(--border); }
+    .cm-activeLineGutter, .cm-activeLine { background: rgba(88,166,255,0.05) !important; }
+    .cm-cursor { border-left-color: var(--accent); }
+    .cm-selectionBackground { background: rgba(88,166,255,0.15) !important; }
+
+    /* ── Output pane ──────────────────────────────────────────────────────── */
+    .output-pane {
+      display: flex;
+      flex-direction: column;
+      min-height: 150px;
+      max-height: 40vh;
+    }
+
+    @media (min-width: 768px) {
+      .output-pane { max-height: none; }
+    }
+
+    #output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .out-info    { color: var(--text); }
+    .out-error   { color: var(--red); }
+    .out-muted   { color: var(--muted); }
+    .out-success { color: var(--green); }
+
+    /* ── Offline badge ────────────────────────────────────────────────────── */
+    #offline-badge {
+      display: none;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      background: #b45309;
+      color: #fef3c7;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="logo">Ọ̀nụ</span>
+  <span class="status-dot loading" id="status-dot" title="Loading compiler…"></span>
+  <span id="status-label" style="font-size:0.8rem;color:var(--muted)">Loading…</span>
+  <span class="toolbar-spacer"></span>
+  <span id="offline-badge">✈ Offline</span>
+  <button id="clear-btn">Clear</button>
+  <button id="run-btn" disabled>▶ Run</button>
+</div>
+
+<div class="workspace">
+  <div class="editor-pane">
+    <div class="pane-header">editor</div>
+    <div id="editor-container"></div>
+  </div>
+  <div class="output-pane">
+    <div class="pane-header">output</div>
+    <div id="output"><span class="out-muted">— output will appear here —</span></div>
+  </div>
+</div>
+
+<!-- CodeMirror 6 — loaded from CDN; cached offline by the service worker -->
+<script type="importmap">
+{
+  "imports": {
+    "@codemirror/state":    "https://esm.sh/@codemirror/state@6",
+    "@codemirror/view":     "https://esm.sh/@codemirror/view@6",
+    "@codemirror/commands": "https://esm.sh/@codemirror/commands@6",
+    "@codemirror/language": "https://esm.sh/@codemirror/language@6",
+    "@codemirror/lint":     "https://esm.sh/@codemirror/lint@6",
+    "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6"
+  }
+}
+</script>
+<script type="module" src="app.js"></script>
+
+</body>
+</html>
