@@ -679,6 +679,54 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 &mut self.ssa_storage,
                 inst,
             ),
+            MirInstruction::SaveArena { .. } => SaveArenaStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::RestoreArena { .. } => RestoreArenaStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::StackAlloc { .. } => StackAllocStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::FunnelShiftRight { .. } => FunnelShiftRightStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::BufferedWrite { .. } => BufferedWriteStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::FlushStdout => FlushStdoutStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                &inst,
+            ),
         }
     }
 
@@ -690,6 +738,11 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
 
         match term {
             MirTerminator::Return(op) => {
+                // Flush the stdout buffer before returning from the entry point.
+                if is_main {
+                    strategies::emit_flush_stdout(self.context, &self.module, &self.builder);
+                }
+
                 let val = strategies::operand_to_llvm(
                     self.context,
                     &self.builder,

@@ -167,8 +167,10 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         &self,
         hir_discourses: Vec<HirDiscourse>,
     ) -> Result<crate::domain::entities::mir::MirProgram, OnuError> {
+        use crate::application::use_cases::idiom_recognizer_pass::IdiomRecognizerPass;
         use crate::application::use_cases::inline_pass::InlinePass;
         use crate::application::use_cases::integer_upgrade_pass::IntegerUpgradePass;
+        use crate::application::use_cases::lifetime_pass::LifetimePass;
         use crate::application::use_cases::memo_pass::MemoPass;
         use crate::application::use_cases::tco_pass::TcoPass;
 
@@ -209,6 +211,17 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         // helper exists).
         use crate::application::use_cases::wide_div_legalization_pass::WideDivLegalizationPass;
         let mir = WideDivLegalizationPass::run(mir);
+
+        // Stage 8: Idiom Recognition — detect well-known computational patterns
+        // (e.g. rotate-right via shift+or) and replace with LLVM target-independent
+        // intrinsics (llvm.fshr) for single-instruction hardware rotation.
+        let mir = IdiomRecognizerPass::run(mir);
+
+        // Stage 9: Lifetime Pass — region-based memory management.
+        // Inserts SaveArena/RestoreArena scopes for O(1) bulk deallocation
+        // and promotes fixed-size arena allocations to stack (alloca) when
+        // the buffer doesn't escape the function.
+        let mir = LifetimePass::run(mir);
 
         Ok(mir)
     }

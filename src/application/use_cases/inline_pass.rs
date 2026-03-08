@@ -467,6 +467,28 @@ fn remap_instruction(inst: &MirInstruction, ssa_offset: usize) -> MirInstruction
             values: values.clone(),
             index: remap_operand(index, ssa_offset),
         },
+        MirInstruction::SaveArena { dest } => MirInstruction::SaveArena {
+            dest: dest + ssa_offset,
+        },
+        MirInstruction::RestoreArena { saved } => MirInstruction::RestoreArena {
+            saved: remap_operand(saved, ssa_offset),
+        },
+        MirInstruction::StackAlloc { dest, size_bytes } => MirInstruction::StackAlloc {
+            dest: dest + ssa_offset,
+            size_bytes: *size_bytes,
+        },
+        MirInstruction::FunnelShiftRight { dest, hi, lo, amount, width } => MirInstruction::FunnelShiftRight {
+            dest: dest + ssa_offset,
+            hi: remap_operand(hi, ssa_offset),
+            lo: remap_operand(lo, ssa_offset),
+            amount: remap_operand(amount, ssa_offset),
+            width: *width,
+        },
+        MirInstruction::BufferedWrite { ptr, len } => MirInstruction::BufferedWrite {
+            ptr: remap_operand(ptr, ssa_offset),
+            len: remap_operand(len, ssa_offset),
+        },
+        MirInstruction::FlushStdout => MirInstruction::FlushStdout,
     }
 }
 
