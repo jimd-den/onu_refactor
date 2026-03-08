@@ -117,13 +117,25 @@ impl ExprLowerer for BinaryOpLowerer {
                 HirBinOp::NotEqual => MirBinOp::Ne,
                 HirBinOp::LessThan => MirBinOp::Lt,
                 HirBinOp::GreaterThan => MirBinOp::Gt,
+                HirBinOp::BitAnd => MirBinOp::And,
+                HirBinOp::BitOr => MirBinOp::Or,
+                HirBinOp::BitXor => MirBinOp::Xor,
+                HirBinOp::Shr => MirBinOp::Shr,
+                HirBinOp::Shl => MirBinOp::Shl,
             };
             
+            // Register type for the result
+            let res_type = match op {
+                HirBinOp::Equal | HirBinOp::NotEqual | HirBinOp::LessThan | HirBinOp::GreaterThan => OnuType::Boolean,
+                _ => OnuType::I64,
+            };
+
             builder.emit(MirInstruction::BinaryOperation { 
                 dest, 
                 op: mir_op, 
                 lhs: lhs.clone(), 
-                rhs: rhs.clone() 
+                rhs: rhs.clone(),
+                dest_type: res_type.clone()
             });
             
             // Parent cleanup: mark inputs as consumed and drop if resources
@@ -154,11 +166,6 @@ impl ExprLowerer for BinaryOpLowerer {
                 }
             }
 
-            // Register type for the result
-            let res_type = match op {
-                HirBinOp::Equal | HirBinOp::NotEqual | HirBinOp::LessThan | HirBinOp::GreaterThan => OnuType::Boolean,
-                _ => OnuType::I64,
-            };
             builder.set_ssa_type(dest, res_type);
 
             Ok(MirOperand::Variable(dest, true))
@@ -242,7 +249,7 @@ impl ExprLowerer for VariableLowerer {
 // --- Legacy Compatibility ---
 impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
     pub fn lower_literal(&self, lit: &HirLiteral) -> Result<MirOperand, OnuError> {
-        LiteralLowerer.lower(&HirExpression::Literal(lit.clone()), &self.context, &mut MirBuilder::new("tmp".to_string(), OnuType::Nothing, None), false)
+        LiteralLowerer.lower(&HirExpression::Literal(lit.clone()), &self.context, &mut MirBuilder::new("tmp".to_string(), OnuType::Nothing, vec![]), false)
     }
 
     pub fn lower_variable(&self, name: &str, is_consuming: bool, builder: &mut MirBuilder) -> Result<MirOperand, OnuError> {

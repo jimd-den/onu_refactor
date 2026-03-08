@@ -11,7 +11,9 @@ fn test_deep_recursion_repro() {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     let sample_path = "samples/deep_recursion.onu";
     pipeline.compile(sample_path).expect("Failed to compile deep_recursion.onu");
@@ -34,7 +36,9 @@ fn test_mutual_recursion_tco() {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     let sample_path = "samples/mutual_recursion.onu";
     pipeline.compile(sample_path).expect("Failed to compile mutual_recursion.onu");
@@ -56,7 +60,9 @@ fn test_complex_args_tco() {
     options.log_level = onu_refactor::application::options::LogLevel::Error;
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     let sample_path = "samples/complex_args_tco.onu";
     pipeline.compile(sample_path).expect("Failed to compile complex_args_tco.onu");

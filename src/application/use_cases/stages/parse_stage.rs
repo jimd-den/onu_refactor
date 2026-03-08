@@ -1,22 +1,17 @@
-use crate::application::options::LogLevel;
 use crate::application::ports::compiler_ports::{ParserPort, Token};
-use crate::adapters::parser::OnuParser;
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::ast::Discourse;
 use crate::domain::entities::error::OnuError;
 use super::PipelineStage;
 
 pub struct ParseStage<'a> {
-    parser: OnuParser,
+    parser: Box<dyn ParserPort>,
     registry: &'a mut RegistryService,
 }
 
 impl<'a> ParseStage<'a> {
-    pub fn new(registry: &'a mut RegistryService, log_level: LogLevel) -> Self {
-        Self {
-            parser: OnuParser::new(log_level),
-            registry,
-        }
+    pub fn new(registry: &'a mut RegistryService, parser: Box<dyn ParserPort>) -> Self {
+        Self { parser, registry }
     }
 }
 

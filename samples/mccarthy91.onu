@@ -1,0 +1,77 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The McCarthy 91 Ritual
+-- Concern: A function that always returns 91 for any offering of 100 or less.
+--
+-- Imagine a mystical oracle. You bring it any number as an offering.
+--
+-- The rule is simple but surprising:
+-- - If your offering is LARGE (above 100), the oracle simply returns
+--   your offering minus 10. Plain arithmetic.
+-- - If your offering is SMALL (100 or below), the oracle performs a
+--   double dive: it first adds 11 to your offering and consults itself,
+--   then takes THAT result and consults itself again.
+--
+-- The magic? No matter what small offering you bring (0, 1, 50, 100...),
+-- the oracle ALWAYS returns exactly 91. This is mathematics, not magic.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called McCarthyRitual
+    with concern: nested recursion converging to a single fixed point
+
+-- The Oracle's two rules:
+-- 1. Large offering (above 100): subtract ten and return.
+-- 2. Small offering (100 or below): dive twice -- elevate by eleven,
+--    consult the oracle, then consult the oracle again on that result.
+the behavior called perform-ritual
+    with intent: apply the oracle ritual to an offering
+    takes:
+        an integer called offering
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if offering exceeds 100
+            then offering decreased-by 10
+            else
+                -- Dive deeper: first elevate by eleven, then apply the ritual twice
+                derivation: elevated derives-from offering added-to 11
+                derivation: inner    derives-from elevated utilizes perform-ritual
+                inner utilizes perform-ritual
+
+the effect behavior called run
+    with intent: demonstrate the oracle always converging to 91
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2 derives-from nothing broadcasts "  THE McCARTHY 91 RITUAL"
+        derivation: d3 derives-from nothing broadcasts "  All offerings at or below 100 return 91"
+        derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        -- All of these should return 91
+        derivation: r1 derives-from an integer 0   utilizes perform-ritual
+        derivation: m1 derives-from "Ritual(0)   = " joined-with (r1 utilizes as-text)
+        derivation: p1 derives-from nothing broadcasts m1
+
+        derivation: r2 derives-from an integer 50  utilizes perform-ritual
+        derivation: m2 derives-from "Ritual(50)  = " joined-with (r2 utilizes as-text)
+        derivation: p2 derives-from nothing broadcasts m2
+
+        derivation: r3 derives-from an integer 99  utilizes perform-ritual
+        derivation: m3 derives-from "Ritual(99)  = " joined-with (r3 utilizes as-text)
+        derivation: p3 derives-from nothing broadcasts m3
+
+        derivation: r4 derives-from an integer 100 utilizes perform-ritual
+        derivation: m4 derives-from "Ritual(100) = " joined-with (r4 utilizes as-text)
+        derivation: p4 derives-from nothing broadcasts m4
+
+        -- This one is large enough to just subtract 10
+        derivation: r5 derives-from an integer 101 utilizes perform-ritual
+        derivation: m5 derives-from "Ritual(101) = " joined-with (r5 utilizes as-text)
+        derivation: p5 derives-from nothing broadcasts m5
+
+        derivation: r6 derives-from an integer 150 utilizes perform-ritual
+        derivation: m6 derives-from "Ritual(150) = " joined-with (r6 utilizes as-text)
+        derivation: p6 derives-from nothing broadcasts m6
+
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing

@@ -1,0 +1,28 @@
+# Cargo configuration for onu_refactor
+#
+# Points llvm-sys to the correct LLVM installation for each supported version.
+# The `force = false` setting means a matching environment variable set in the
+# shell always takes precedence over these defaults.
+#
+# Default build uses LLVM 14 (the only fully-supported version today because
+# the codegen uses typed-pointer LLVM APIs):
+#
+#   cargo build                             # uses llvm14 feature + LLVM 14
+#
+# To target a different LLVM version, pass the matching Cargo feature AND
+# ensure the prefix variable points to your installation:
+#
+#   cargo build --no-default-features --features llvm16
+#   LLVM_SYS_160_PREFIX=/usr/lib/llvm-16 cargo build --no-default-features --features llvm16
+#
+# Autodetect helper — build.rs sets the correct prefix automatically when the
+# standard Ubuntu/Debian paths are used.
+#
+[env]
+LLVM_SYS_140_PREFIX = { value = "/usr/lib/llvm-14", force = false }
+LLVM_SYS_150_PREFIX = { value = "/usr/lib/llvm-15", force = false }
+LLVM_SYS_160_PREFIX = { value = "/usr/lib/llvm-16", force = false }
+LLVM_SYS_170_PREFIX = { value = "/usr/lib/llvm-17", force = false }
+LLVM_SYS_181_PREFIX = { value = "/usr/lib/llvm-18", force = false }
+LLVM_SYS_190_PREFIX = { value = "/usr/lib/llvm-19", force = false }
+LLVM_SYS_200_PREFIX = { value = "/usr/lib/llvm-20", force = false }

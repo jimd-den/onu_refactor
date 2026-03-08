@@ -20,7 +20,9 @@ fn test_mir_call_has_tco_metadata() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = MockCodegen;
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     // Register the recursive function
     pipeline.registry.symbols_mut().add_signature(
@@ -38,7 +40,8 @@ fn test_mir_call_has_tco_metadata() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -77,7 +80,9 @@ fn test_if_tail_call_propagation() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = MockCodegen;
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     pipeline.registry.symbols_mut().add_signature(
         "rec",
@@ -94,7 +99,8 @@ fn test_if_tail_call_propagation() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -133,7 +139,9 @@ fn test_nested_if_tail_call_propagation() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = MockCodegen;
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     pipeline.registry.symbols_mut().add_signature(
         "rec",
@@ -150,7 +158,8 @@ fn test_nested_if_tail_call_propagation() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     

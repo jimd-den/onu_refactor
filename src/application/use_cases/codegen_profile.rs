@@ -211,7 +211,8 @@ mod tests {
                 terminator: MirTerminator::Return(MirOperand::Constant(MirLiteral::I64(0))),
             }],
             is_pure_data_leaf,
-            diminishing: None,
+            diminishing: vec![],
+            memo_cache_size: None,
         }
     }
 

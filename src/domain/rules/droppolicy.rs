@@ -1,5 +1,3 @@
-use crate::domain::entities::mir::{MirInstruction, MirOperand};
-use crate::application::use_cases::mir_builder::MirBuilder;
 
 pub struct DropPolicy;
 

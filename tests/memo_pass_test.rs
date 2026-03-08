@@ -16,15 +16,16 @@
 /// that causes the allocation to be optimised away as dead code.
 ///
 /// ## Bug 3 — Arena bump allocator has no bounds check
-/// The bump allocator uses a 1MB global arena with no guard.  MemoPass wraps
-/// every memoizable function with an 80KB cache allocation.  12 calls = 960KB,
-/// 13th call overflows the arena and overwrites adjacent globals.
+/// The bump allocator uses a global arena (now 16 MiB) with no guard.  MemoPass
+/// wraps every memoizable function with an 80KB cache allocation.
 use onu_refactor::application::use_cases::memo_pass::MemoPass;
+use onu_refactor::application::use_cases::registry_service::RegistryService;
 use onu_refactor::domain::entities::mir::{
     BasicBlock, MirArgument, MirFunction, MirInstruction, MirLiteral, MirOperand, MirProgram,
     MirTerminator,
 };
 use onu_refactor::domain::entities::types::OnuType;
+use onu_refactor::domain::entities::ARENA_SIZE_BYTES;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -55,7 +56,8 @@ fn make_recursive_pure_fn(name: &str) -> MirFunction {
             terminator: MirTerminator::Return(MirOperand::Variable(10, false)),
         }],
         is_pure_data_leaf: true,
-        diminishing: Some("n".to_string()),
+        diminishing: vec!["n".to_string()],
+        memo_cache_size: None,
     }
 }
 
@@ -64,7 +66,8 @@ fn run_memo_pass(func: MirFunction) -> (MirFunction, MirFunction) {
     let program = MirProgram {
         functions: vec![func],
     };
-    let result = MemoPass::run(program);
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
     assert_eq!(
         result.functions.len(),
         2,
@@ -168,26 +171,295 @@ fn memo_cache_pointer_offset_is_scaled_by_8() {
 /// require LLVM; that is out of scope for this pure-MIR test.
 /// Instead, we verify that MemoPass documents the allocation size correctly
 /// so the codegen can guard it — we use the Alloc instruction's size_bytes
-/// operand and confirm it is bounded (< 1MB = 1_048_576 bytes).
+/// operand and confirm it is bounded (< ARENA_SIZE_BYTES = 16 MiB).
 #[test]
 fn memo_cache_allocation_fits_within_arena_limit() {
     let func = make_recursive_pure_fn("fib");
     let (wrapper, _inner) = run_memo_pass(func);
 
-    const ARENA_SIZE_BYTES: i64 = 1_048_576; // 1MB
+    let arena_limit = ARENA_SIZE_BYTES as i64;
 
     for block in &wrapper.blocks {
         for inst in &block.instructions {
             if let MirInstruction::Alloc { size_bytes, .. } = inst {
                 if let MirOperand::Constant(MirLiteral::I64(size)) = size_bytes {
                     assert!(
-                        *size < ARENA_SIZE_BYTES,
-                        "Bug 3: Alloc requests {}B which equals or exceeds the 1MB arena. \
+                        *size < arena_limit,
+                        "Bug 3: Alloc requests {}B which equals or exceeds the {} byte arena. \
                          Reduce DEFAULT_MEMO_CACHE_SIZE or switch to a guarded allocator.",
-                        size
+                        size, arena_limit
                     );
                 }
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-dimensional memoization (Peanut-Arena)
+// ---------------------------------------------------------------------------
+
+/// Build a 2-arg function (like Ackermann) where both args are I64 and both
+/// appear in the `diminishing` list.
+/// The return type is `Tuple` (not `I64`) so that `MemoPass` routes it through
+/// `CompoundMemoStrategy` rather than `PrimitiveMemoStrategy`, letting us
+/// exercise the N-dim flattening logic directly.
+fn make_two_dim_fn(name: &str) -> MirFunction {
+    let self_call = MirInstruction::Call {
+        dest: 10,
+        name: name.to_string(),
+        args: vec![
+            MirOperand::Variable(0, false),
+            MirOperand::Variable(1, false),
+        ],
+        return_type: OnuType::Tuple(vec![OnuType::I64, OnuType::I64]),
+        arg_types: vec![OnuType::I64, OnuType::I64],
+        is_tail_call: false,
+    };
+    MirFunction {
+        name: name.to_string(),
+        args: vec![
+            MirArgument {
+                name: "m".to_string(),
+                typ: OnuType::I64,
+                ssa_var: 0,
+            },
+            MirArgument {
+                name: "n".to_string(),
+                typ: OnuType::I64,
+                ssa_var: 1,
+            },
+        ],
+        return_type: OnuType::Tuple(vec![OnuType::I64, OnuType::I64]),
+        blocks: vec![BasicBlock {
+            id: 0,
+            instructions: vec![self_call],
+            terminator: MirTerminator::Return(MirOperand::Variable(10, false)),
+        }],
+        is_pure_data_leaf: true,
+        diminishing: vec!["m".to_string(), "n".to_string()],
+        memo_cache_size: None,
+    }
+}
+
+/// A 2-arg function whose second arg is NOT in the `diminishing` list should
+/// NOT be memoized ("State Leakage" prevention).
+#[test]
+fn multi_dim_non_diminishing_arg_blocks_memoization() {
+    let func = MirFunction {
+        name: "leaky".to_string(),
+        args: vec![
+            MirArgument {
+                name: "n".to_string(),
+                typ: OnuType::I64,
+                ssa_var: 0,
+            },
+            MirArgument {
+                name: "ctx".to_string(), // NOT in diminishing
+                typ: OnuType::I64,
+                ssa_var: 1,
+            },
+        ],
+        return_type: OnuType::I64,
+        blocks: vec![BasicBlock {
+            id: 0,
+            instructions: vec![],
+            terminator: MirTerminator::Return(MirOperand::Variable(0, false)),
+        }],
+        is_pure_data_leaf: true,
+        // Only one of the two args is diminishing → should not memoize.
+        diminishing: vec!["n".to_string()],
+        memo_cache_size: None,
+    };
+    let program = MirProgram {
+        functions: vec![func],
+    };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+    assert_eq!(
+        result.functions.len(),
+        1,
+        "A function with a non-diminishing arg must NOT be memoized"
+    );
+}
+
+/// A 2-arg function where both args are I64 and both are in `diminishing`
+/// must be wrapped (wrapper + inner = 2 functions).
+#[test]
+fn multi_dim_both_diminishing_is_memoized() {
+    let func = make_two_dim_fn("ack");
+    let program = MirProgram {
+        functions: vec![func],
+    };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+    assert_eq!(
+        result.functions.len(),
+        2,
+        "A 2-arg function with both args diminishing must produce wrapper + inner"
+    );
+    assert_eq!(result.functions[0].name, "ack");
+    assert_eq!(result.functions[1].name, "ack.inner");
+}
+
+/// The wrapper for a 2-arg function must NOT be marked `is_pure_data_leaf`
+/// (it allocates memory).
+#[test]
+fn multi_dim_wrapper_is_not_pure_data_leaf() {
+    let func = make_two_dim_fn("ack");
+    let program = MirProgram {
+        functions: vec![func],
+    };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+    let wrapper = &result.functions[0];
+    assert!(
+        !wrapper.is_pure_data_leaf,
+        "Multi-dim wrapper must have is_pure_data_leaf = false (it calls Alloc)"
+    );
+}
+
+/// The inner function for a 2-dim case must have 4 args: m, n, cache_ptr, occ_ptr.
+#[test]
+fn multi_dim_inner_has_extra_ptr_args() {
+    let func = make_two_dim_fn("ack");
+    let program = MirProgram {
+        functions: vec![func],
+    };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+    let inner = &result.functions[1];
+    assert_eq!(
+        inner.args.len(),
+        4,
+        "Inner must have 2 original args + cache_ptr + occ_ptr = 4 total"
+    );
+    assert_eq!(inner.args[2].typ, OnuType::Ptr, "3rd arg must be cache_ptr");
+    assert_eq!(inner.args[3].typ, OnuType::Ptr, "4th arg must be occ_ptr");
+}
+
+/// Memory guard: for a 3-dim function the **combined** allocation
+/// (result cache `dim_size^3 * stride` PLUS occupancy array `dim_size^3 * 8`)
+/// must stay within `ARENA_SIZE_BYTES` regardless of the nominal cache_size.
+///
+/// The previous implementation only guarded the result-cache allocation, so the
+/// occupancy array would push the total over the arena boundary.  This test
+/// verifies that the sum of all `Alloc` sizes in the wrapper is within the arena.
+#[test]
+fn multi_dim_memory_guard_caps_allocation() {
+    // Build a 3-arg function — if dim_size were 10_000^3 * stride, that would be
+    // enormous. The memory guard must cap it to ≤ ARENA_SIZE_BYTES combined.
+    let func = MirFunction {
+        name: "f3".to_string(),
+        args: vec![
+            MirArgument { name: "a".to_string(), typ: OnuType::I64, ssa_var: 0 },
+            MirArgument { name: "b".to_string(), typ: OnuType::I64, ssa_var: 1 },
+            MirArgument { name: "c".to_string(), typ: OnuType::I64, ssa_var: 2 },
+        ],
+        return_type: OnuType::Tuple(vec![OnuType::I64, OnuType::I64]),
+        blocks: vec![BasicBlock {
+            id: 0,
+            instructions: vec![],
+            terminator: MirTerminator::Return(MirOperand::Variable(0, false)),
+        }],
+        is_pure_data_leaf: true,
+        diminishing: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        memo_cache_size: None,
+    };
+    let program = MirProgram { functions: vec![func] };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+
+    let limit = ARENA_SIZE_BYTES as i64;
+    let wrapper = &result.functions[0];
+
+    // Collect all Alloc sizes in the wrapper (result cache + occupancy array).
+    let total_alloc: i64 = wrapper
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .filter_map(|inst| {
+            if let MirInstruction::Alloc { size_bytes, .. } = inst {
+                if let MirOperand::Constant(MirLiteral::I64(bytes)) = size_bytes {
+                    return Some(*bytes);
+                }
+            }
+            None
+        })
+        .sum();
+
+    assert!(
+        total_alloc <= limit,
+        "3-dim wrapper total allocation {} bytes exceeds {} byte arena (result cache + occupancy combined must fit)",
+        total_alloc, limit
+    );
+}
+
+/// The inner function of a 2-dim ND case must contain a Mul instruction for
+/// Horner's-method flat-index computation (flat = m*dim_size + n).
+#[test]
+fn multi_dim_inner_contains_horner_flat_index() {
+    let func = make_two_dim_fn("ack");
+    let program = MirProgram {
+        functions: vec![func],
+    };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+    let inner = &result.functions[1];
+
+    // We expect at least one Mul instruction that multiplies by the dim_size
+    // constant (used in Horner's flat-index expansion).
+    let has_mul_by_dim_size = inner.blocks.iter().flat_map(|b| b.instructions.iter()).any(|i| {
+        matches!(
+            i,
+            MirInstruction::BinaryOperation {
+                op: onu_refactor::domain::entities::mir::MirBinOp::Mul,
+                rhs: MirOperand::Constant(MirLiteral::I64(_)),
+                ..
+            }
+        )
+    });
+    assert!(
+        has_mul_by_dim_size,
+        "Inner function must contain a Mul-by-dim_size instruction for Horner's flat-index"
+    );
+}
+
+
+/// Regression test: 2-dim I64 function (like Ackermann) must not overflow the
+/// arena.  Previously `safe_dim_size` only guarded the result-cache bytes
+/// (`dim_size^2 * 8`) and ignored the occupancy array (`dim_size^2 * 8`), so the
+/// combined allocation exceeded the arena boundary.
+///
+/// With `ARENA_SIZE_BYTES = 16 MiB` the safe dim_size is 1024, and the combined
+/// allocation is exactly 16 MiB — well within the declared arena.
+#[test]
+fn two_dim_i64_combined_allocation_within_arena() {
+    let func = make_two_dim_fn("ack");
+    let program = MirProgram { functions: vec![func] };
+    let registry = RegistryService::new();
+    let result = MemoPass::run(program, &registry);
+
+    let limit = ARENA_SIZE_BYTES as i64;
+    let wrapper = &result.functions[0];
+
+    let total_alloc: i64 = wrapper
+        .blocks
+        .iter()
+        .flat_map(|b| b.instructions.iter())
+        .filter_map(|inst| {
+            if let MirInstruction::Alloc { size_bytes, .. } = inst {
+                if let MirOperand::Constant(MirLiteral::I64(bytes)) = size_bytes {
+                    return Some(*bytes);
+                }
+            }
+            None
+        })
+        .sum();
+
+    assert!(
+        total_alloc <= limit,
+        "2-dim/I64 combined allocation {} bytes exceeds {} byte arena (result cache + occupancy must both fit)",
+        total_alloc, limit
+    );
 }

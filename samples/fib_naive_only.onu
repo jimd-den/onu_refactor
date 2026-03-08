@@ -1,27 +1,38 @@
-the module called FibNaiveOnly
-    with concern: measuring raw non-TCO recursive throughput vs C
+the module called PeanutElephantHarvest
+    with concern: counting snacks for the great gray leader
 
-the behavior called fib-naive
-    with intent: compute the nth Fibonacci number with naive double recursion
+the behavior called calculate-peanut-pile-size
+    with intent: discover how many peanuts are owed based on the day of the festival
     takes:
-        an integer called n
+        an integer called peanut-counting-day
     delivers: an integer
-    with diminishing: n
+    with diminishing: peanut-counting-day
     as:
-        if n matches 0
+        if peanut-counting-day matches 0
             then 0
-            else if (n decreased-by 1) matches 0
+            else if (peanut-counting-day decreased-by 1) matches 0
                 then 1
                 else
-                    derivation: left  derives-from (n decreased-by 1) utilizes fib-naive
-                    derivation: right derives-from (n decreased-by 2) utilizes fib-naive
-                    left added-to right
+                    derivation: yesterdays-peanuts derives-from (peanut-counting-day decreased-by 1) utilizes calculate-peanut-pile-size
+                    derivation: day-before-yesterdays-peanuts derives-from (peanut-counting-day decreased-by 2) utilizes calculate-peanut-pile-size
+                    yesterdays-peanuts added-to day-before-yesterdays-peanuts
 
 the effect behavior called run
+    with intent: prepare the final snack report for the thousandth day
     takes: nothing
     delivers: an integer
     as:
-        derivation: result derives-from 40 utilizes fib-naive
-        derivation: msg derives-from "fib(40) = " joined-with (result utilizes as-text)
-        broadcasts msg
+        derivation: festival-day derives-from an integer 2000
+        derivation: peanut-mountain derives-from festival-day utilizes calculate-peanut-pile-size
+        
+        derivation: report-start derives-from "On peanut festival day " joined-with (festival-day utilizes as-text)
+        derivation: report-middle derives-from report-start joined-with ", the elephant demands exactly: "
+        derivation: full-report   derives-from report-middle joined-with (peanut-mountain utilizes as-text)
+        
+        -- The '=' symbol is preserved for the measurement artifacts to recognize the numeric payload
+        derivation: payload-label derives-from a string "Total peanuts for the ritual ="
+        derivation: result-msg    derives-from payload-label joined-with (peanut-mountain utilizes as-text)
+        
+        broadcasts full-report
+        broadcasts result-msg
         0

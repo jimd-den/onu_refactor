@@ -1,3 +1,6 @@
+use crate::adapters::codegen::compat::{
+    build_byte_gep, build_typed_load, cast_to_typed_ptr, onu_i8ptr, store_int_element_type,
+};
 use crate::application::use_cases::registry_service::RegistryService;
 use crate::domain::entities::error::OnuError;
 /// Codegen Strategies: Interface Adapter Layer
@@ -13,7 +16,7 @@ use inkwell::context::Context;
 use inkwell::llvm_sys;
 use inkwell::module::Module;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{AnyValue, AsValueRef, BasicValueEnum, CallableValue, PointerValue};
+use inkwell::values::{AsValueRef, BasicValueEnum, CallableValue, PointerValue};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
@@ -29,6 +32,34 @@ pub trait InstructionStrategy<'ctx> {
     ) -> Result<(), OnuError>;
 }
 
+pub struct PromoteStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for PromoteStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::Promote { dest, src, to_type } = inst {
+            let src_val = operand_to_llvm(context, builder, ssa_storage, src);
+            let target_llvm_type = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, to_type, registry)
+                .unwrap().into_int_type();
+
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, target_llvm_type.into());
+
+            let promoted = builder
+                .build_int_z_extend(src_val.into_int_value(), target_llvm_type, "promote_zext")
+                .unwrap();
+
+            builder.build_store(ptr, promoted).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct BinaryOpStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
     fn generate(
@@ -40,9 +71,39 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
-        if let MirInstruction::BinaryOperation { dest, op, lhs, rhs } = inst {
-            let l_val = operand_to_llvm(context, builder, ssa_storage, lhs);
-            let r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
+        if let MirInstruction::BinaryOperation { dest, op, lhs, rhs, dest_type } = inst {
+            // Width-Aware Strategy: guard against unsupported LLVM backend widths.
+            // LLVM's compiler-rt only provides division helpers up to i128.  Any
+            // division on WideInt(bits > 128) must have been replaced by the
+            // WideDivLegalizationPass before reaching the codegen layer.  If we
+            // somehow encounter one here, it is a compiler bug — surface a clear error
+            // instead of silently producing a segfault in the LLVM backend.
+            if matches!(op, MirBinOp::Div) {
+                if let OnuType::WideInt(bits) = dest_type {
+                    if *bits > 128 {
+                        return Err(OnuError::CodeGenError { message: format!(
+                            "Codegen reached an unsupported WideInt({}) division instruction. \
+                             This instruction should have been legalized by WideDivLegalizationPass \
+                             before reaching the LLVM backend.",
+                            bits
+                        )});
+                    }
+                }
+            }
+
+            let mut l_val = operand_to_llvm(context, builder, ssa_storage, lhs);
+            let mut r_val = operand_to_llvm(context, builder, ssa_storage, rhs);
+
+            // Check if widths match for integers
+            if l_val.is_int_value() && r_val.is_int_value() {
+                let l_width = l_val.into_int_value().get_type().get_bit_width();
+                let r_width = r_val.into_int_value().get_type().get_bit_width();
+                if l_width < r_width {
+                    l_val = builder.build_int_z_extend(l_val.into_int_value(), r_val.into_int_value().get_type(), "implicit_zext_l").unwrap().into();
+                } else if r_width < l_width {
+                    r_val = builder.build_int_z_extend(r_val.into_int_value(), l_val.into_int_value().get_type(), "implicit_zext_r").unwrap().into();
+                }
+            }
 
             let res: BasicValueEnum = match op {
                 MirBinOp::Add => builder
@@ -59,6 +120,29 @@ impl<'ctx> InstructionStrategy<'ctx> for BinaryOpStrategy {
                     .into(),
                 MirBinOp::Div => builder
                     .build_int_signed_div(l_val.into_int_value(), r_val.into_int_value(), "divtmp")
+                    .unwrap()
+                    .into(),
+                MirBinOp::And => builder
+                    .build_and(l_val.into_int_value(), r_val.into_int_value(), "andtmp")
+                    .unwrap()
+                    .into(),
+                MirBinOp::Or => builder
+                    .build_or(l_val.into_int_value(), r_val.into_int_value(), "ortmp")
+                    .unwrap()
+                    .into(),
+                MirBinOp::Xor => builder
+                    .build_xor(l_val.into_int_value(), r_val.into_int_value(), "xortmp")
+                    .unwrap()
+                    .into(),
+                // Logical (unsigned) right shift: fills high bits with 0.
+                // Safe for SHA-256 since all 32-bit values live in the positive
+                // i64 range [0, 2^32-1] – LSHR and ASHR are identical there.
+                MirBinOp::Shr => builder
+                    .build_right_shift(l_val.into_int_value(), r_val.into_int_value(), false, "lshrtmp")
+                    .unwrap()
+                    .into(),
+                MirBinOp::Shl => builder
+                    .build_left_shift(l_val.into_int_value(), r_val.into_int_value(), "lshltmp")
                     .unwrap()
                     .into(),
                 MirBinOp::Eq | MirBinOp::Ne | MirBinOp::Gt | MirBinOp::Lt => {
@@ -258,12 +342,79 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
             is_tail_call,
         } = inst
         {
+            // ── IO intrinsic interception ─────────────────────────────────
+            // These IO effects are implemented with inline x86_64 syscalls
+            // (no C / libc dependency).
+            match name.as_str() {
+                "receives-line" => {
+                    return generate_receives_line(context, builder, ssa_storage, *dest);
+                }
+                "receives-argument" => {
+                    let index_val = operand_to_llvm(context, builder, ssa_storage, &args[0]);
+                    return generate_receives_argument(context, module, builder, ssa_storage, *dest, index_val);
+                }
+                "argument-count" => {
+                    return generate_argument_count(context, module, builder, ssa_storage, *dest);
+                }
+                _ => {}
+            }
+
             let llvm_name = name.clone(); // Use original hyphenated names
 
+            // Compute expected LLVM types from the MIR arg_types annotation.
+            // Used below to cast arguments that may have a different width
+            // (e.g. an I64 constant passed to a WideInt parameter).
+            let expected_llvm_types: Vec<Option<inkwell::types::BasicTypeEnum<'ctx>>> = arg_types
+                .iter()
+                .map(|t| {
+                    crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                        context, t, registry,
+                    )
+                })
+                .collect();
+
             let mut llvm_args = Vec::new();
-            for arg in args {
+            for (i, arg) in args.iter().enumerate() {
                 let val = operand_to_llvm(context, builder, ssa_storage, arg);
-                llvm_args.push(val.into());
+                // Width-cast integer arguments to the expected parameter type so
+                // that e.g. an i64 constant passed to __onu_wide_div_1024(i1024,i1024)
+                // is zero-extended to i1024 rather than causing an LLVM type error.
+                let cast_val = if val.is_int_value() {
+                    if let Some(Some(expected)) = expected_llvm_types.get(i) {
+                        if expected.is_int_type() {
+                            let src_w = val.into_int_value().get_type().get_bit_width();
+                            let dst_w = expected.into_int_type().get_bit_width();
+                            if src_w < dst_w {
+                                builder
+                                    .build_int_z_extend(
+                                        val.into_int_value(),
+                                        expected.into_int_type(),
+                                        "call_arg_zext",
+                                    )
+                                    .unwrap()
+                                    .into()
+                            } else if src_w > dst_w {
+                                builder
+                                    .build_int_truncate(
+                                        val.into_int_value(),
+                                        expected.into_int_type(),
+                                        "call_arg_trunc",
+                                    )
+                                    .unwrap()
+                                    .into()
+                            } else {
+                                val
+                            }
+                        } else {
+                            val
+                        }
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                };
+                llvm_args.push(cast_val.into());
             }
 
             let func = if let Some(f) = module.get_function(&llvm_name) {
@@ -348,89 +499,217 @@ impl<'ctx> InstructionStrategy<'ctx> for CallStrategy {
     }
 }
 
+// ---------------------------------------------------------------------------
+// IO intrinsic helpers — use the PlatformSyscalls abstraction so that
+// strategies remain architecture-agnostic.
+// ---------------------------------------------------------------------------
+
+/// Standard file descriptors.
+const STDIN_FD: u64 = 0;
+const STDOUT_FD: u64 = 1;
+
+/// Maximum bytes read from stdin per `receives-line` call.
+const STDIN_BUFFER_SIZE: u64 = 4096;
+
+/// ASCII newline character.
+const NEWLINE_BYTE: u64 = 10;
+
+/// `receives-line`: read a line from stdin via the platform read syscall.
+/// Returns an Onu string { i64 len, ptr data, i1 is_dynamic=false }.
+fn generate_receives_line<'ctx>(
+    context: &'ctx Context,
+    builder: &Builder<'ctx>,
+    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    dest: usize,
+) -> Result<(), OnuError> {
+    let syscalls = crate::adapters::codegen::platform::create_syscalls();
+    let i64_type = context.i64_type();
+    let i8_type = context.i8_type();
+    let i8_ptr_type = onu_i8ptr(context);
+    let bool_type = context.bool_type();
+
+    // Stack buffer for reading.
+    let buf_size: u64 = STDIN_BUFFER_SIZE;
+    let buf_array_type = i8_type.array_type(buf_size as u32);
+    let buf_alloca = builder.build_alloca(buf_array_type, "read_buf").unwrap();
+    let buf_ptr = cast_to_typed_ptr(context, builder, buf_alloca, i8_type, "read_buf_ptr");
+
+    let stdin_fd = i64_type.const_int(STDIN_FD, false);
+    let max_len = i64_type.const_int(buf_size, false);
+    let bytes_read = syscalls.emit_read(context, builder, stdin_fd, buf_ptr, max_len);
+
+    // Strip trailing newline: if last byte == '\n', length -= 1
+    let one = i64_type.const_int(1, false);
+    let len_minus_1 = builder.build_int_sub(bytes_read, one, "len_m1").unwrap();
+    let last_ptr = unsafe { build_byte_gep(context, builder, buf_ptr, len_minus_1, "last_ptr") };
+    let last_byte = build_typed_load(context, builder, i8_type, last_ptr, "last_byte").into_int_value();
+    let is_nl = builder
+        .build_int_compare(
+            inkwell::IntPredicate::EQ,
+            last_byte,
+            i8_type.const_int(NEWLINE_BYTE, false),
+            "is_nl",
+        )
+        .unwrap();
+    let stripped_len = builder
+        .build_select(is_nl, len_minus_1, bytes_read, "stripped_len")
+        .unwrap()
+        .into_int_value();
+
+    // Build Onu string struct { i64 len, ptr data, i1 is_dynamic=false }
+    let str_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false);
+    let mut str_val = str_type.get_undef();
+    str_val = builder.build_insert_value(str_val, stripped_len, 0, "str_len").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, buf_ptr, 1, "str_ptr").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, bool_type.const_zero(), 2, "str_dyn").unwrap().into_struct_value();
+
+    let ptr = get_or_create_ssa(context, builder, ssa_storage, dest, str_type.as_basic_type_enum());
+    builder.build_store(ptr, str_val).unwrap();
+    Ok(())
+}
+
+/// `receives-argument`: read argv[index] via the `__onu_argv` global.
+/// Returns an Onu string { i64 len, ptr data, i1 is_dynamic=false }.
+fn generate_receives_argument<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    dest: usize,
+    index_val: BasicValueEnum<'ctx>,
+) -> Result<(), OnuError> {
+    let i64_type = context.i64_type();
+    let i8_type = context.i8_type();
+    let i8_ptr_type = onu_i8ptr(context);
+    let bool_type = context.bool_type();
+
+    // Load __onu_argv global (ptr / i8**)
+    let argv_global = get_or_declare_global(module, context, "__onu_argv", i8_ptr_type.as_basic_type_enum());
+    let argv_ptr = build_typed_load(context, builder, i8_ptr_type, argv_global, "argv_val").into_pointer_value();
+
+    // GEP to argv[index]
+    let idx = if index_val.is_int_value() {
+        index_val.into_int_value()
+    } else {
+        i64_type.const_int(0, false)
+    };
+    let arg_ptr_ptr = unsafe { build_byte_gep(context, builder, argv_ptr, idx, "arg_ptr_ptr") };
+    let arg_ptr = build_typed_load(context, builder, i8_ptr_type, arg_ptr_ptr, "arg_ptr").into_pointer_value();
+
+    // Compute strlen by scanning for '\0' (pure LLVM loop — no libc)
+    let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let strlen_entry = context.append_basic_block(current_fn, "strlen_entry");
+    let strlen_loop = context.append_basic_block(current_fn, "strlen_loop");
+    let strlen_done = context.append_basic_block(current_fn, "strlen_done");
+
+    builder.build_unconditional_branch(strlen_entry).unwrap();
+
+    builder.position_at_end(strlen_entry);
+    builder.build_unconditional_branch(strlen_loop).unwrap();
+
+    builder.position_at_end(strlen_loop);
+    let i_phi = builder.build_phi(i64_type, "i").unwrap();
+    i_phi.add_incoming(&[(&i64_type.const_int(0, false), strlen_entry)]);
+    let i_val = i_phi.as_basic_value().into_int_value();
+
+    let byte_ptr = unsafe { build_byte_gep(context, builder, arg_ptr, i_val, "byte_ptr") };
+    let byte = build_typed_load(context, builder, i8_type, byte_ptr, "byte").into_int_value();
+    let is_zero = builder
+        .build_int_compare(inkwell::IntPredicate::EQ, byte, i8_type.const_int(0, false), "is_zero")
+        .unwrap();
+    let i_next = builder
+        .build_int_add(i_val, i64_type.const_int(1, false), "i_next")
+        .unwrap();
+    i_phi.add_incoming(&[(&i_next, strlen_loop)]);
+    builder.build_conditional_branch(is_zero, strlen_done, strlen_loop).unwrap();
+
+    builder.position_at_end(strlen_done);
+    let str_len = i_phi.as_basic_value().into_int_value();
+
+    // Build Onu string struct
+    let str_type = context.struct_type(&[i64_type.into(), i8_ptr_type.into(), bool_type.into()], false);
+    let mut str_val = str_type.get_undef();
+    str_val = builder.build_insert_value(str_val, str_len, 0, "str_len").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, arg_ptr, 1, "str_ptr").unwrap().into_struct_value();
+    str_val = builder.build_insert_value(str_val, bool_type.const_zero(), 2, "str_dyn").unwrap().into_struct_value();
+
+    let ptr = get_or_create_ssa(context, builder, ssa_storage, dest, str_type.as_basic_type_enum());
+    builder.build_store(ptr, str_val).unwrap();
+    Ok(())
+}
+
+/// `argument-count`: return `__onu_argc` (i64) from the global.
+fn generate_argument_count<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+    ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+    dest: usize,
+) -> Result<(), OnuError> {
+    let i64_type = context.i64_type();
+
+    let argc_global = get_or_declare_global(module, context, "__onu_argc", i64_type.as_basic_type_enum());
+    let argc_val = builder.build_load(argc_global, "argc_val").unwrap().into_int_value();
+
+    let ptr = get_or_create_ssa(context, builder, ssa_storage, dest, i64_type.as_basic_type_enum());
+    builder.build_store(ptr, argc_val).unwrap();
+    Ok(())
+}
+
+/// Get or declare an internal global variable with the given name and type.
+fn get_or_declare_global<'ctx>(
+    module: &Module<'ctx>,
+    context: &'ctx Context,
+    name: &str,
+    typ: BasicTypeEnum<'ctx>,
+) -> PointerValue<'ctx> {
+    if let Some(g) = module.get_global(name) {
+        g.as_pointer_value()
+    } else {
+        let g = module.add_global(typ, None, name);
+        g.set_linkage(inkwell::module::Linkage::Internal);
+        match typ {
+            BasicTypeEnum::IntType(t) => g.set_initializer(&t.const_zero()),
+            BasicTypeEnum::PointerType(t) => g.set_initializer(&t.const_null()),
+            _ => {}
+        }
+        g.as_pointer_value()
+    }
+}
+
 pub struct EmitStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for EmitStrategy {
     fn generate(
         &self,
         context: &'ctx Context,
-        module: &Module<'ctx>,
+        _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        registry: &RegistryService,
+        _registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Emit(op) = inst {
+            let syscalls = crate::adapters::codegen::platform::create_syscalls();
             let val = operand_to_llvm(context, builder, ssa_storage, op);
 
             // Onu Strings are { i64 len, i8* ptr, i1 is_dynamic }
             if val.is_struct_value() {
                 let s = val.into_struct_value();
-                let len = builder
-                    .build_extract_value(s, 0, "emit_len")
-                    .unwrap()
-                    .into_int_value();
-                let ptr = builder
-                    .build_extract_value(s, 1, "emit_ptr")
-                    .unwrap()
-                    .into_pointer_value();
+                let len = builder.build_extract_value(s, 0, "emit_len").unwrap().into_int_value();
+                let ptr = builder.build_extract_value(s, 1, "emit_ptr").unwrap().into_pointer_value();
 
-                // x86_64 syscall: %rax=1 (write), %rdi=1 (stdout), %rsi=buffer, %rdx=length
-                // Clobbers: rcx, r11
                 let i64_type = context.i64_type();
-                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                let stdout_fd = i64_type.const_int(STDOUT_FD, false);
 
-                let syscall_type = i64_type.fn_type(
-                    &[
-                        i64_type.into(),    // rax
-                        i64_type.into(),    // rdi
-                        i8_ptr_type.into(), // rsi
-                        i64_type.into(),    // rdx
-                    ],
-                    false,
-                );
+                // 1. Write the string to stdout
+                syscalls.emit_write(context, builder, stdout_fd, ptr, len);
 
-                let asm_fn = context.create_inline_asm(
-                    syscall_type,
-                    "syscall".to_string(),
-                    "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{dirflag},~{fpsr},~{flags}"
-                        .to_string(),
-                    true,
-                    false,
-                    None,
-                    false, // Missing boolean: can_throw?
-                );
-
-                builder
-                    .build_call(
-                        CallableValue::try_from(asm_fn).unwrap(),
-                        &[
-                            i64_type.const_int(1, false).into(), // sys_write
-                            i64_type.const_int(1, false).into(), // stdout
-                            ptr.into(),
-                            len.into(),
-                        ],
-                        "syscall_res",
-                    )
-                    .unwrap();
-
-                // 2. EMIT NEWLINE (\n = ASCII 10)
-                // We allocate a small stack buffer for the newline
-                let nl_val = context.i8_type().const_int(10, false);
+                // 2. Write a trailing newline
+                let nl_val = context.i8_type().const_int(NEWLINE_BYTE, false);
                 let nl_ptr = builder.build_alloca(context.i8_type(), "nl_ptr").unwrap();
                 builder.build_store(nl_ptr, nl_val).unwrap();
-
-                builder
-                    .build_call(
-                        CallableValue::try_from(asm_fn).unwrap(),
-                        &[
-                            i64_type.const_int(1, false).into(), // sys_write
-                            i64_type.const_int(1, false).into(), // stdout
-                            nl_ptr.into(),
-                            i64_type.const_int(1, false).into(), // len 1
-                        ],
-                        "syscall_res",
-                    )
-                    .unwrap();
+                let one = i64_type.const_int(1, false);
+                syscalls.emit_write(context, builder, stdout_fd, nl_ptr, one);
             }
         }
         Ok(())
@@ -569,6 +848,141 @@ impl<'ctx> InstructionStrategy<'ctx> for AllocStrategy {
     }
 }
 
+/// Emits (or re-uses) a module-level zeroed byte-array global and yields a
+/// pointer to its first element.  The global is zero-initialised once by the
+/// OS/loader and persists for the program lifetime, making it safe to use as
+/// a memoisation cache backing that survives across multiple wrapper calls.
+pub struct GlobalAllocStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for GlobalAllocStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::GlobalAlloc { dest, size_bytes, name } = inst {
+            let i8_type = context.i8_type();
+            // Guard against extremely large (> 4 GiB) allocations that would
+            // truncate silently when cast to u32.  In practice memo caches are
+            // bounded by ARENA_SIZE_BYTES (16 MiB), so this is a safety net.
+            assert!(
+                *size_bytes <= u32::MAX as usize,
+                "GlobalAlloc: size_bytes {} exceeds u32::MAX; cannot create LLVM array type",
+                size_bytes
+            );
+            let array_type = i8_type.array_type(*size_bytes as u32);
+
+            // Reuse an existing global if one with this name was already emitted
+            // (e.g. if the same function appears in multiple compilation units).
+            let global = if let Some(g) = module.get_global(name) {
+                g
+            } else {
+                let g = module.add_global(array_type, None, name);
+                g.set_initializer(&array_type.const_zero());
+                g.set_linkage(inkwell::module::Linkage::Internal);
+                g
+            };
+
+            // GEP to get an i8* pointer to element 0.
+            let zero = context.i64_type().const_zero();
+            let ptr = unsafe {
+                builder
+                    .build_in_bounds_gep(
+                        global.as_pointer_value(),
+                        &[zero, zero],
+                        &format!("{}_ptr", name),
+                    )
+                    .unwrap()
+            };
+
+            let slot = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                ptr.get_type().as_basic_type_enum(),
+            );
+            builder.build_store(slot, ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
+/// Strategy for `MirInstruction::ConstantTableLoad`.
+///
+/// Emits a single read-only LLVM global (`internal constant [N x i64]`) the
+/// first time it is encountered, then generates a GEP + load to retrieve the
+/// element at the runtime `index`.  This replaces deeply-nested if-else
+/// constant-table lookups (e.g. SHA-256 round constants) with one indexed
+/// memory load that lives in L1 cache after the first access.
+pub struct ConstantTableLoadStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for ConstantTableLoadStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::ConstantTableLoad { dest, name, values, index } = inst {
+            let i64_type = context.i64_type();
+            let n = values.len() as u32;
+            let array_type = i64_type.array_type(n);
+
+            // Declare the constant global only once per module.
+            let global = if let Some(g) = module.get_global(name) {
+                g
+            } else {
+                let consts: Vec<_> = values
+                    .iter()
+                    .map(|&v| i64_type.const_int(v as u64, false))
+                    .collect();
+                let const_array = i64_type.const_array(&consts);
+                let g = module.add_global(array_type, None, name);
+                g.set_constant(true);
+                g.set_linkage(inkwell::module::Linkage::Internal);
+                g.set_initializer(&const_array);
+                g
+            };
+
+            // Index value (already i64 in our IR).
+            let idx_val = operand_to_llvm(context, builder, ssa_storage, index)
+                .into_int_value();
+
+            // GEP: &table[index]
+            let zero = i64_type.const_zero();
+            let gep = unsafe {
+                builder
+                    .build_in_bounds_gep(
+                        global.as_pointer_value(),
+                        &[zero, idx_val],
+                        &format!("{}_gep", name),
+                    )
+                    .unwrap()
+            };
+
+            // Load the i64 element.
+            let loaded = builder.build_load(gep, &format!("{}_load", name)).unwrap();
+
+            // Store into SSA slot.
+            let slot = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                i64_type.as_basic_type_enum(),
+            );
+            builder.build_store(slot, loaded).unwrap();
+        }
+        Ok(())
+    }
+}
+
 pub struct MemCopyStrategy;
 impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
     fn generate(
@@ -585,10 +999,15 @@ impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
             let src_val = operand_to_llvm(context, builder, ssa_storage, src);
             let size_val = operand_to_llvm(context, builder, ssa_storage, size);
 
-            // LLVM intrinsic for memcpy: @llvm.memcpy.p0i8.p0i8.i64(i8* align 1 %dest, i8* align 1 %src, i64 %size, i1 %isvolatile)
-            let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+            // LLVM intrinsic for memcpy: @llvm.memcpy.p0.p0.i64 (LLVM 16+) / @llvm.memcpy.p0i8.p0i8.i64 (LLVM 14/15)
+            let i8_ptr_type = onu_i8ptr(context);
             let i64_type = context.i64_type();
             let bool_type = context.bool_type();
+
+            #[cfg(feature = "typed-pointers")]
+            let memcpy_name = "llvm.memcpy.p0i8.p0i8.i64";
+            #[cfg(not(feature = "typed-pointers"))]
+            let memcpy_name = "llvm.memcpy.p0.p0.i64";
 
             let memcpy_type = context.void_type().fn_type(
                 &[
@@ -601,10 +1020,10 @@ impl<'ctx> InstructionStrategy<'ctx> for MemCopyStrategy {
             );
 
             let memcpy_fn = module
-                .get_function("llvm.memcpy.p0i8.p0i8.i64")
+                .get_function(memcpy_name)
                 .unwrap_or_else(|| {
                     module.add_function(
-                        "llvm.memcpy.p0i8.p0i8.i64",
+                        memcpy_name,
                         memcpy_type,
                         Some(inkwell::module::Linkage::External),
                     )
@@ -643,11 +1062,9 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
             let offset_val =
                 operand_to_llvm(context, builder, ssa_storage, offset).into_int_value();
 
-            // GEPI (GetElementPtr) for i8*
+            // GEPI (GetElementPtr) for byte arrays (arena/string buffers)
             let offset_ptr = unsafe {
-                builder
-                    .build_in_bounds_gep(ptr_val, &[offset_val], "offset_ptr")
-                    .unwrap()
+                build_byte_gep(context, builder, ptr_val, offset_val, "offset_ptr")
             };
 
             let ptr_ssa = get_or_create_ssa(
@@ -655,7 +1072,7 @@ impl<'ctx> InstructionStrategy<'ctx> for PointerOffsetStrategy {
                 builder,
                 ssa_storage,
                 *dest,
-                offset_ptr.get_type().as_basic_type_enum(),
+                onu_i8ptr(context).as_basic_type_enum(),
             );
             builder.build_store(ptr_ssa, offset_ptr).unwrap();
         }
@@ -680,29 +1097,28 @@ impl<'ctx> InstructionStrategy<'ctx> for LoadStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
         if let MirInstruction::Load { dest, ptr, typ } = inst {
             let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
 
-            // Cast the raw i8* to the target element pointer type.
-            // For i64 values: i8* → i64* so that build_load reads 8 bytes.
-            let dest_llvm_type = match typ {
-                OnuType::I64 => context.i64_type().as_basic_type_enum(),
-                OnuType::Boolean => context.bool_type().as_basic_type_enum(),
-                _ => context.i64_type().as_basic_type_enum(), // Fallback
-            };
-            let typed_ptr = builder
-                .build_pointer_cast(
-                    ptr_val,
-                    dest_llvm_type.ptr_type(inkwell::AddressSpace::default()),
-                    "typed_ptr",
-                )
-                .unwrap();
+            // Cast the raw ptr to the target element pointer type (LLVM 14/15 typed ptr)
+            // or load directly using the explicit type (LLVM 16+ opaque ptr).
+            let dest_llvm_type = crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(context, typ, registry)
+                .unwrap_or_else(|| context.i64_type().as_basic_type_enum());
+            let typed_ptr = cast_to_typed_ptr(context, builder, ptr_val, dest_llvm_type, "typed_ptr");
 
-            let loaded_val = builder.build_load(typed_ptr, "loaded_val").unwrap();
+            let loaded_val = build_typed_load(context, builder, dest_llvm_type, typed_ptr, "loaded_val");
+            if let inkwell::values::BasicValueEnum::IntValue(iv) = loaded_val {
+                if iv.get_type().get_bit_width() == 64 {
+                    unsafe {
+                        let load_inst = loaded_val.as_value_ref();
+                        llvm_sys::core::LLVMSetAlignment(load_inst, 8);
+                    }
+                }
+            }
             let ssa_ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, dest_llvm_type);
             builder.build_store(ssa_ptr, loaded_val).unwrap();
         }
@@ -726,11 +1142,10 @@ impl<'ctx> InstructionStrategy<'ctx> for StoreStrategy {
             let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
             let val = operand_to_llvm(context, builder, ssa_storage, value);
 
-            // If storing i64 to i8*, we might need a cast if LLVM is strict,
-            // but usually build_store handles basic values.
-            // However, we want to store it as a byte if it's for itoa.
-            let val_to_store = if ptr_val.get_type().get_element_type().is_int_type() {
-                let target_type = ptr_val.get_type().get_element_type().into_int_type();
+            // Truncate to the pointer element type when storing narrower values.
+            // store_int_element_type() returns None for LLVM 16+ opaque pointers
+            // (the value type drives the store width directly).
+            let val_to_store = if let Some(target_type) = store_int_element_type(ptr_val) {
                 if val.get_type().into_int_type().get_bit_width() > target_type.get_bit_width() {
                     builder
                         .build_int_truncate(val.into_int_value(), target_type, "store_trunc")
@@ -762,7 +1177,7 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
         context: &'ctx Context,
         _module: &Module<'ctx>,
         builder: &Builder<'ctx>,
-        _registry: &RegistryService,
+        registry: &RegistryService,
         ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
         inst: &MirInstruction,
     ) -> Result<(), OnuError> {
@@ -770,20 +1185,116 @@ impl<'ctx> InstructionStrategy<'ctx> for TypedStoreStrategy {
             let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
             let val = operand_to_llvm(context, builder, ssa_storage, value);
 
-            // Cast the i8* to the element pointer type matching the value width.
-            let dest_llvm_type = match typ {
-                OnuType::I64 => context.i64_type().as_basic_type_enum(),
-                OnuType::Boolean => context.bool_type().as_basic_type_enum(),
-                _ => context.i64_type().as_basic_type_enum(),
+            // Cast the raw ptr to the element pointer type (LLVM 14/15) or store
+            // directly using the value type (LLVM 16+ — cast_to_typed_ptr is a no-op).
+            let dest_llvm_type =
+                crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                    context, typ, registry,
+                )
+                .unwrap_or_else(|| context.i64_type().as_basic_type_enum());
+            let typed_ptr = cast_to_typed_ptr(context, builder, ptr_val, dest_llvm_type, "typed_store_ptr");
+
+            // Guard: if the source value is wider than the destination type, truncate
+            // before storing.  This is the key case for the occupancy flag: the MIR
+            // emits MirLiteral::I64(1) (i64) but the destination is typed as I8 (i8*).
+            // LLVM requires the stored value width to match the pointer element type.
+            let val_to_store = if val.is_int_value() && dest_llvm_type.is_int_type() {
+                let src_bits = val.into_int_value().get_type().get_bit_width();
+                let dst_bits = dest_llvm_type.into_int_type().get_bit_width();
+                if src_bits > dst_bits {
+                    builder
+                        .build_int_truncate(
+                            val.into_int_value(),
+                            dest_llvm_type.into_int_type(),
+                            "typed_store_trunc",
+                        )
+                        .unwrap()
+                        .into()
+                } else {
+                    val
+                }
+            } else {
+                val
             };
-            let typed_ptr = builder
-                .build_pointer_cast(
-                    ptr_val,
-                    dest_llvm_type.ptr_type(inkwell::AddressSpace::default()),
-                    "typed_store_ptr",
+            let store_inst = builder.build_store(typed_ptr, val_to_store).unwrap();
+            if val_to_store.is_int_value() && val_to_store.into_int_value().get_type().get_bit_width() == 64 {
+                unsafe {
+                    llvm_sys::core::LLVMSetAlignment(store_inst.as_value_ref(), 8);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct MemSetStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for MemSetStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::MemSet { ptr, value, size } = inst {
+            let ptr_val = operand_to_llvm(context, builder, ssa_storage, ptr).into_pointer_value();
+            let value_val = operand_to_llvm(context, builder, ssa_storage, value).into_int_value();
+            let size_val = operand_to_llvm(context, builder, ssa_storage, size).into_int_value();
+
+            // LLVM intrinsic for memset: @llvm.memset.p0.i64 (LLVM 16+) / @llvm.memset.p0i8.i64 (LLVM 14/15)
+            let i8_ptr_type = onu_i8ptr(context);
+            let i8_type = context.i8_type();
+            let i64_type = context.i64_type();
+            let bool_type = context.bool_type();
+
+            #[cfg(feature = "typed-pointers")]
+            let memset_name = "llvm.memset.p0i8.i64";
+            #[cfg(not(feature = "typed-pointers"))]
+            let memset_name = "llvm.memset.p0.i64";
+
+            let memset_type = context.void_type().fn_type(
+                &[
+                    i8_ptr_type.into(),
+                    i8_type.into(),
+                    i64_type.into(),
+                    bool_type.into(),
+                ],
+                false,
+            );
+
+            let memset_fn = module
+                .get_function(memset_name)
+                .unwrap_or_else(|| {
+                    module.add_function(
+                        memset_name,
+                        memset_type,
+                        Some(inkwell::module::Linkage::External),
+                    )
+                });
+
+            // Ensure value is i8
+            let val_i8 = if value_val.get_type().get_bit_width() > 8 {
+                builder
+                    .build_int_truncate(value_val, i8_type, "memset_val_trunc")
+                    .unwrap()
+            } else {
+                value_val
+            };
+
+            builder
+                .build_call(
+                    memset_fn,
+                    &[
+                        ptr_val.into(),
+                        val_i8.into(),
+                        size_val.into(),
+                        context.bool_type().const_int(0, false).into(), // isvolatile = false
+                    ],
+                    "memset_call",
                 )
                 .unwrap();
-            builder.build_store(typed_ptr, val).unwrap();
         }
         Ok(())
     }
@@ -887,7 +1398,7 @@ pub fn operand_to_llvm<'ctx>(
                 let length = context.i64_type().const_int(s.len() as u64, false);
                 let global_str = builder.build_global_string_ptr(s, "strtmp").unwrap();
                 let i64_type = context.i64_type();
-                let i8_ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
+                let i8_ptr_type = onu_i8ptr(context);
                 let bool_type = context.bool_type();
                 let is_dynamic = bool_type.const_int(0, false); // Literal strings are not dynamic
 
@@ -896,7 +1407,7 @@ pub fn operand_to_llvm<'ctx>(
                     false,
                 );
 
-                // Achievement: Use const_named_struct to ensure this is a compile-time constant
+                // Use const_named_struct to ensure this is a compile-time constant
                 let string_val = string_struct_type.const_named_struct(&[
                     length.into(),
                     global_str.as_pointer_value().into(),
@@ -906,12 +1417,21 @@ pub fn operand_to_llvm<'ctx>(
                 string_val.into()
             }
             MirLiteral::Nothing => context.i64_type().const_int(0, false).into(),
+            MirLiteral::WideInt(val_str, bits) => {
+                context.custom_width_int_type(*bits).const_int_from_string(val_str, inkwell::types::StringRadix::Decimal).unwrap().into()
+            }
         },
-        MirOperand::Variable(id, _) => {
+        MirOperand::Variable(id, _consuming) => {
             let ptr = ssa_storage
                 .get(id)
                 .expect(&format!("SSA variable {} not found", id));
-            builder.build_load(*ptr, &format!("v{}", id)).unwrap()
+            // For typed pointers (LLVM 14/15) build_load infers type from the alloca.
+            // For opaque pointers (LLVM 16+) we explicitly pass i64 as the default;
+            // struct values are loaded correctly because get_or_create_ssa tracks them.
+            #[cfg(feature = "typed-pointers")]
+            { builder.build_load(*ptr, &format!("v{}", id)).unwrap() }
+            #[cfg(not(feature = "typed-pointers"))]
+            { build_typed_load(context, builder, context.i64_type(), *ptr, &format!("v{}", id)) }
         }
     }
 }
@@ -940,4 +1460,45 @@ pub fn get_or_create_ssa<'ctx>(
     let ptr = temp_builder.build_alloca(typ, &format!("v{}", id)).unwrap();
     ssa_storage.insert(id, ptr);
     ptr
+}
+
+/// Strategy for the `BitCast` MIR instruction.
+///
+/// Reinterprets the bit-pattern of the source operand as the target type,
+/// using LLVM's `bitcast` instruction.  This is the codegen implementation
+/// of the Clean Architecture boundary described in the problem statement:
+/// it allows the compiler to safely transition from a "Mathematical Integer"
+/// (e.g. WideInt(1024)) to a "Memory Detail" (e.g. an array of i64 limbs).
+pub struct BitCastStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for BitCastStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::BitCast { dest, src, to_type } = inst {
+            let src_val = operand_to_llvm(context, builder, ssa_storage, src);
+            let target_llvm_type =
+                crate::adapters::codegen::typemapper::LlvmTypeMapper::onu_to_llvm(
+                    context, to_type, registry,
+                )
+                .ok_or_else(|| OnuError::CodeGenError {
+                    message: format!("BitCast: cannot map target type {:?} to LLVM", to_type),
+                })?;
+
+            let cast_val = builder
+                .build_bit_cast(src_val, target_llvm_type, "bitcast_tmp")
+                .map_err(|e| OnuError::CodeGenError {
+                    message: format!("BitCast build failed: {:?}", e),
+                })?;
+
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, cast_val.get_type());
+            builder.build_store(ptr, cast_val).unwrap();
+        }
+        Ok(())
+    }
 }

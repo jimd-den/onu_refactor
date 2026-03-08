@@ -44,6 +44,7 @@ impl LoweringService {
             args: header.takes.iter().map(Self::lower_argument).collect(),
             return_type: header.delivers.0.clone(),
             diminishing: header.diminishing.clone(),
+            memo_cache_size: header.memo_cache_size,
         }
     }
 
@@ -114,6 +115,11 @@ impl LoweringService {
                     "opposes" => Some(HirBinOp::NotEqual),
                     "falls-short-of" => Some(HirBinOp::LessThan),
                     "exceeds" => Some(HirBinOp::GreaterThan),
+                    "bit-and-with" => Some(HirBinOp::BitAnd),
+                    "bit-or-with" => Some(HirBinOp::BitOr),
+                    "bit-xor-with" => Some(HirBinOp::BitXor),
+                    "shifted-right-by" => Some(HirBinOp::Shr),
+                    "shifted-left-by" => Some(HirBinOp::Shl),
                     _ => None,
                 };
 

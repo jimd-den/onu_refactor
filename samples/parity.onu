@@ -18,7 +18,7 @@ the behavior called is-even
     takes:
         an integer called n
     delivers: an integer
-    with diminishing: n
+    with no guaranteed termination:
     as:
         if n matches 0
             then 1
@@ -30,7 +30,7 @@ the behavior called is-odd
     takes:
         an integer called n
     delivers: an integer
-    with diminishing: n
+    with no guaranteed termination:
     as:
         if n matches 0
             then 0

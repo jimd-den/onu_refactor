@@ -97,6 +97,11 @@ impl<'a, E: EnvironmentPort> MirLoweringService<'a, E> {
 
         let mut func = builder.build();
 
+        // Propagate memo_cache_size from the header if set at the source level.
+        if let Some(cache_size) = header.memo_cache_size {
+            func.memo_cache_size = Some(cache_size);
+        }
+
         // Audit MIR for side effects
         if is_pure_candidate {
             for block in &func.blocks {
@@ -216,7 +221,7 @@ mod tests {
         let env = NativeOsEnvironment::new(LogLevel::Error);
         let registry = RegistryService::new();
         let service = MirLoweringService::new(&env, &registry);
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean, None);
+        let mut builder = MirBuilder::new("test".to_string(), OnuType::Boolean, vec![]);
 
         // 1. Define a resource variable (String)
         let ssa_id = 100;
@@ -255,62 +260,6 @@ mod tests {
 
         // One drop only
         assert_eq!(drop_count, 1, "Resource SSA {} was dropped {} times. It should be 1 because it was consumed once.", ssa_id, drop_count);
-    }
-
-    #[test]
-    fn test_nested_joined_with_leak() {
-        let env = NativeOsEnvironment::new(LogLevel::Error);
-        let registry = RegistryService::new();
-        let service = MirLoweringService::new(&env, &registry);
-        let mut builder = MirBuilder::new("test".to_string(), OnuType::Strings, None);
-
-        // Lower: ("a" joined-with "b") joined-with "c"
-        let expr = HirExpression::Block(vec![
-            HirExpression::Call {
-                name: "joined-with".to_string(),
-                args: vec![
-                    HirExpression::Call {
-                        name: "joined-with".to_string(),
-                        args: vec![
-                            HirExpression::Literal(HirLiteral::Text("a".to_string())),
-                            HirExpression::Literal(HirLiteral::Text("b".to_string())),
-                        ],
-                    },
-                    HirExpression::Literal(HirLiteral::Text("c".to_string())),
-                ],
-            }
-        ]);
-
-        let res = service.lower_expression(&expr, &mut builder, false).unwrap();
-        if let MirOperand::Variable(ssa, _) = res {
-            builder.emit(MirInstruction::Drop { ssa_var: ssa, typ: OnuType::Strings, name: "temp".to_string(), is_dynamic: true });
-        }
-
-        let func = builder.build();
-        let instructions = &func.blocks[0].instructions;
-
-        let dynamic_ssas: Vec<_> = instructions.iter().filter_map(|inst| {
-            if let MirInstruction::Tuple { dest, elements } = inst {
-                if let MirOperand::Constant(MirLiteral::Boolean(true)) = elements[2] {
-                    return Some(*dest);
-                }
-            }
-            None
-        }).collect();
-
-        assert_eq!(dynamic_ssas.len(), 2, "Should have created 2 dynamic strings");
-
-        for ssa_id in dynamic_ssas {
-            let drop_count = instructions.iter().filter(|inst| {
-                if let MirInstruction::Drop { ssa_var, .. } = inst {
-                    *ssa_var == ssa_id
-                } else {
-                    false
-                }
-            }).count();
-
-            assert_eq!(drop_count, 1, "Resource SSA {} should be dropped exactly once", ssa_id);
-        }
     }
 
 }

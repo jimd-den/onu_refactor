@@ -22,7 +22,8 @@ pub struct HirBehaviorHeader {
     pub is_effect: bool,
     pub args: Vec<HirArgument>,
     pub return_type: OnuType,
-    pub diminishing: Option<String>,
+    pub diminishing: Vec<String>,
+    pub memo_cache_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,6 +43,11 @@ pub enum HirBinOp {
     NotEqual,
     LessThan,
     GreaterThan,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shr,
+    Shl,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,0 +1,382 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Cryptographic Seal
+-- Concern: SHA-256 benchmark generating 1000 randomized digests versus C.
+--
+-- Uses native bitwise ops (bit-and-with, bit-or-with, bit-xor-with,
+-- shifted-right-by, shifted-left-by) throughout.  No libc, pure LLVM.
+-- Inputs: 1000 values from a 32-bit LCG seeded at 42, each padded to a
+-- single 512-bit block.  Output: 1000 × 64-character lower-case hex digests.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called Sha256Benchmark
+    with concern: benchmark SHA-256 hash generation against C
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Shapes
+-- ─────────────────────────────────────────────────────────────────────────
+
+-- Eight 32-bit SHA-256 working variables (stored in i64 [0, 2^32-1])
+the shape called HashState
+    takes:
+        an integer called sa
+        an integer called sb
+        an integer called sc
+        an integer called sd
+        an integer called se
+        an integer called sf
+        an integer called sg
+        an integer called sh
+
+-- Sixteen-word sliding schedule window (positions w0..wf = indices 0..15)
+the shape called W16
+    takes:
+        an integer called w0
+        an integer called w1
+        an integer called w2
+        an integer called w3
+        an integer called w4
+        an integer called w5
+        an integer called w6
+        an integer called w7
+        an integer called w8
+        an integer called w9
+        an integer called wa
+        an integer called wb
+        an integer called wc
+        an integer called wd
+        an integer called we
+        an integer called wf
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 32-bit mask: keep only the low 32 bits of a 64-bit value
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called mask32
+    with intent: truncate a 64-bit value to its low 32 bits
+    takes:
+        an integer called v
+    delivers: an integer
+    as:
+        v bit-and-with 4294967295
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- ROTR32: right-rotate a 32-bit word by n positions
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called rotr32
+    with intent: right-rotate a 32-bit word by n bits
+    takes:
+        an integer called x
+        an integer called n
+    delivers: an integer
+    as:
+        derivation: hi derives-from x shifted-right-by n
+        derivation: lo derives-from (x shifted-left-by (32 decreased-by n)) bit-and-with 4294967295
+        hi bit-or-with lo
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Message-schedule sigma functions (lowercase, FIPS 180-4)
+-- sigma0(x) = ROTR(x,7)  XOR ROTR(x,18) XOR SHR(x,3)
+-- sigma1(x) = ROTR(x,17) XOR ROTR(x,19) XOR SHR(x,10)
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called sigma-lo-0
+    with intent: SHA-256 lowercase sigma-0 for message schedule expansion
+    takes:
+        an integer called x
+    delivers: an integer
+    as:
+        derivation: r7  derives-from x utilizes rotr32 7
+        derivation: r18 derives-from x utilizes rotr32 18
+        derivation: s3  derives-from x shifted-right-by 3
+        (r7 bit-xor-with r18) bit-xor-with s3
+
+the behavior called sigma-lo-1
+    with intent: SHA-256 lowercase sigma-1 for message schedule expansion
+    takes:
+        an integer called x
+    delivers: an integer
+    as:
+        derivation: r17 derives-from x utilizes rotr32 17
+        derivation: r19 derives-from x utilizes rotr32 19
+        derivation: s10 derives-from x shifted-right-by 10
+        (r17 bit-xor-with r19) bit-xor-with s10
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Compression Sigma functions (uppercase, FIPS 180-4)
+-- Sigma0(x) = ROTR(x,2)  XOR ROTR(x,13) XOR ROTR(x,22)
+-- Sigma1(x) = ROTR(x,6)  XOR ROTR(x,11) XOR ROTR(x,25)
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called sigma-hi-0
+    with intent: SHA-256 uppercase Sigma-0 for compression rounds
+    takes:
+        an integer called x
+    delivers: an integer
+    as:
+        derivation: r2  derives-from x utilizes rotr32 2
+        derivation: r13 derives-from x utilizes rotr32 13
+        derivation: r22 derives-from x utilizes rotr32 22
+        (r2 bit-xor-with r13) bit-xor-with r22
+
+the behavior called sigma-hi-1
+    with intent: SHA-256 uppercase Sigma-1 for compression rounds
+    takes:
+        an integer called x
+    delivers: an integer
+    as:
+        derivation: r6  derives-from x utilizes rotr32 6
+        derivation: r11 derives-from x utilizes rotr32 11
+        derivation: r25 derives-from x utilizes rotr32 25
+        (r6 bit-xor-with r11) bit-xor-with r25
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Ch(e,f,g) = (e AND f) XOR (NOT32(e) AND g)
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called ch
+    with intent: SHA-256 choice function
+    takes:
+        an integer called e
+        an integer called f
+        an integer called g
+    delivers: an integer
+    as:
+        derivation: not-e derives-from 4294967295 decreased-by e
+        (e bit-and-with f) bit-xor-with (not-e bit-and-with g)
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Maj(a,b,c) = (a AND b) XOR (a AND c) XOR (b AND c)
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called maj
+    with intent: SHA-256 majority function
+    takes:
+        an integer called a
+        an integer called b
+        an integer called c
+    delivers: an integer
+    as:
+        derivation: ab derives-from a bit-and-with b
+        derivation: ac derives-from a bit-and-with c
+        derivation: bc derives-from b bit-and-with c
+        (ab bit-xor-with ac) bit-xor-with bc
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- SHA-256 round constants K[0..63]
+-- Returns the round constant for round t via a read-only
+-- `@sha256_K = internal constant [64 x i64]` LLVM global: O(1) indexed
+-- load that fits in 1-2 L1 cache lines.  Memory-safe: global is read-only
+-- by LLVM construction.
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called sha256-k
+    with intent: return the SHA-256 round constant for round t via constant table load
+    takes:
+        an integer called t
+    delivers: an integer
+    as:
+        t utilizes sha256-k-table
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Advance the 16-word schedule window by one step.
+-- Computes W[t+16] = sigma1(W[t+14]) + W[t+9] + sigma0(W[t+1]) + W[t]
+-- then shifts the window: {W[t+1], ..., W[t+15], W[t+16]}
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called advance-w16
+    with intent: slide the 16-word schedule window forward by one round
+    takes:
+        a W16 called s via observation
+    delivers: a W16
+    as:
+        derivation: slo1-we derives-from (s utilizes we) utilizes sigma-lo-1
+        derivation: sw9     derives-from s utilizes w9
+        derivation: slo0-w1 derives-from (s utilizes w1) utilizes sigma-lo-0
+        derivation: sw0     derives-from s utilizes w0
+        derivation: nw-sum  derives-from slo1-we added-to sw9 added-to slo0-w1 added-to sw0
+        derivation: new-w   derives-from nw-sum utilizes mask32
+        (s utilizes w1) utilizes W16
+            (s utilizes w2)
+            (s utilizes w3)
+            (s utilizes w4)
+            (s utilizes w5)
+            (s utilizes w6)
+            (s utilizes w7)
+            (s utilizes w8)
+            (s utilizes w9)
+            (s utilizes wa)
+            (s utilizes wb)
+            (s utilizes wc)
+            (s utilizes wd)
+            (s utilizes we)
+            (s utilizes wf)
+            new-w
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 64-round SHA-256 compression loop (tail-recursive, TCO'd to a branch).
+-- rr  = rounds remaining (64 → 0)
+-- rnd = current round index (0 → 63), used to look up K and track progress
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called sha256-compress
+    with intent: run all 64 rounds of SHA-256 compression recursively
+    takes:
+        an integer called rr
+        an integer called rnd
+        a W16 called sched via observation
+        a HashState called state via observation
+    delivers: a HashState
+    with no guaranteed termination
+    as:
+        if rr matches 0
+        then state
+        else
+            -- Extract working variables
+            derivation: va derives-from state utilizes sa
+            derivation: vb derives-from state utilizes sb
+            derivation: vc derives-from state utilizes sc
+            derivation: vd derives-from state utilizes sd
+            derivation: ve derives-from state utilizes se
+            derivation: vf derives-from state utilizes sf
+            derivation: vg derives-from state utilizes sg
+            derivation: vh derives-from state utilizes sh
+            -- Current schedule word and round constant
+            derivation: wt  derives-from sched utilizes w0
+            derivation: kt  derives-from rnd utilizes sha256-k
+            -- T1 = h + Sigma1(e) + Ch(e,f,g) + K[t] + W[t]
+            derivation: s1e    derives-from ve utilizes sigma-hi-1
+            derivation: chefg  derives-from ve utilizes ch vf vg
+            derivation: t1-sum derives-from vh added-to s1e added-to chefg added-to kt added-to wt
+            derivation: t1     derives-from t1-sum utilizes mask32
+            -- T2 = Sigma0(a) + Maj(a,b,c)
+            derivation: s0a    derives-from va utilizes sigma-hi-0
+            derivation: majabc derives-from va utilizes maj vb vc
+            derivation: t2-sum derives-from s0a added-to majabc
+            derivation: t2     derives-from t2-sum utilizes mask32
+            -- New e = d + T1 (mod 2^32)
+            derivation: ne-sum derives-from vd added-to t1
+            derivation: ne     derives-from ne-sum utilizes mask32
+            -- New a = T1 + T2 (mod 2^32)
+            derivation: na-sum derives-from t1 added-to t2
+            derivation: na     derives-from na-sum utilizes mask32
+            -- New state: a'=na, b'=a, c'=b, d'=c, e'=ne, f'=e, g'=f, h'=g
+            derivation: nstate derives-from na utilizes HashState va vb vc ne ve vf vg
+            -- Advance schedule window and recurse
+            derivation: nsched derives-from sched utilizes advance-w16
+            (rr decreased-by 1) utilizes sha256-compress (rnd added-to 1) nsched nstate
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Hash one 512-bit block via SHA-256 (Davies-Meyer finalisation)
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called sha256-block
+    with intent: compute SHA-256 digest of a single 512-bit message block
+    takes:
+        a W16 called msg via observation
+    delivers: a HashState
+    as:
+        -- SHA-256 initial hash values H0..H7
+        derivation: init derives-from 1779033703 utilizes HashState
+            3144134277
+            1013904242
+            2773480762
+            1359893119
+            2600822924
+            528734635
+            1541459225
+        -- Run 64 compression rounds
+        derivation: comp derives-from 64 utilizes sha256-compress 0 msg init
+        -- Davies-Meyer add-back (mod 2^32)
+        derivation: ra derives-from ((comp utilizes sa) added-to 1779033703) utilizes mask32
+        derivation: rb derives-from ((comp utilizes sb) added-to 3144134277) utilizes mask32
+        derivation: rc derives-from ((comp utilizes sc) added-to 1013904242) utilizes mask32
+        derivation: rd derives-from ((comp utilizes sd) added-to 2773480762) utilizes mask32
+        derivation: re derives-from ((comp utilizes se) added-to 1359893119) utilizes mask32
+        derivation: rf derives-from ((comp utilizes sf) added-to 2600822924) utilizes mask32
+        derivation: rg derives-from ((comp utilizes sg) added-to 528734635)  utilizes mask32
+        derivation: rh derives-from ((comp utilizes sh) added-to 1541459225) utilizes mask32
+        ra utilizes HashState rb rc rd re rf rg rh
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Hex output — optimized single-buffer path
+--
+-- OPTIMIZATION: replaced:
+--   • `nibble-hex` + `char-from-code` (allocates 1-char arena string each)
+--   • `word-hex8` (separate function call + 39-byte arena segment per word)
+--   • `hash-hex` (8 word-hex8 calls + 5 memcpy to concatenate)
+-- With:
+--   • One 64-byte arena allocation (`joined-with ""` on a 64-char literal)
+--   • 8 `write-hex-word` stdlib calls that write nibbles in-place (no alloc)
+--   • Zero memcpy calls
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called hash-hex
+    with intent: encode a HashState as a 64-character hex digest via single-buffer in-place writes
+    takes:
+        a HashState called hs via observation
+    delivers: a string
+    as:
+        -- One arena allocation for the entire 64-char output buffer.
+        derivation: buf derives-from "0000000000000000000000000000000000000000000000000000000000000000" joined-with ""
+        -- write-hex-word(buf, word, byte_offset) — pure in-place stores, no new allocation.
+        derivation: b0 derives-from buf utilizes write-hex-word (hs utilizes sa) 0
+        derivation: b1 derives-from b0  utilizes write-hex-word (hs utilizes sb) 8
+        derivation: b2 derives-from b1  utilizes write-hex-word (hs utilizes sc) 16
+        derivation: b3 derives-from b2  utilizes write-hex-word (hs utilizes sd) 24
+        derivation: b4 derives-from b3  utilizes write-hex-word (hs utilizes se) 32
+        derivation: b5 derives-from b4  utilizes write-hex-word (hs utilizes sf) 40
+        derivation: b6 derives-from b5  utilizes write-hex-word (hs utilizes sg) 48
+        derivation: b7 derives-from b6  utilizes write-hex-word (hs utilizes sh) 56
+        b7
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- LCG-next: 32-bit linear congruential generator
+-- next(seed) = (seed * 1664525 + 1013904223) mod 2^32
+-- ─────────────────────────────────────────────────────────────────────────
+the behavior called lcg-next
+    with intent: advance a 32-bit LCG by one step
+    takes:
+        an integer called seed
+    delivers: an integer
+    as:
+        (seed scales-by 1664525 added-to 1013904223) bit-and-with 4294967295
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Hash loop: compute and print `count` SHA-256 digests from successive LCG values
+-- Each message: W[0]=seed, W[1]=0x80000000 (padding), W[2..14]=0, W[15]=32 (bit-length)
+-- ─────────────────────────────────────────────────────────────────────────
+the effect behavior called hash-loop
+    with intent: print count SHA-256 digests of successive LCG-generated inputs
+    takes:
+        an integer called seed
+        an integer called count
+    delivers: nothing
+    with no guaranteed termination
+    as:
+        if count matches 0
+        then nothing
+        else
+            derivation: next-seed derives-from seed utilizes lcg-next
+            -- Build one 512-bit message block: msg | 0x80000000 | 0…0 | 32
+            derivation: msg derives-from next-seed utilizes W16
+                2147483648
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                0
+                32
+            derivation: digest  derives-from msg utilizes sha256-block
+            derivation: hex-str derives-from digest utilizes hash-hex
+            derivation: dummy   derives-from nothing broadcasts hex-str
+            next-seed utilizes hash-loop (count decreased-by 1)
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Entry point
+-- ─────────────────────────────────────────────────────────────────────────
+the effect behavior called run
+    with intent: SHA-256 benchmark entry point
+    takes: nothing
+    delivers: an integer
+    as:
+        derivation: d1 derives-from nothing broadcasts "SHA-256 Benchmark (1000 hashes, pure LLVM):"
+        42 utilizes hash-loop 1000
+        0

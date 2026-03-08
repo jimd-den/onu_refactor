@@ -17,7 +17,12 @@ pub struct MirFunction {
     pub return_type: OnuType,
     pub blocks: Vec<BasicBlock>,
     pub is_pure_data_leaf: bool,
-    pub diminishing: Option<String>,
+    pub diminishing: Vec<String>,
+    /// Override the memoization cache entry count.  When `None` the MemoPass
+    /// uses its internal default (10 000).  IntegerUpgradePass sets this to
+    /// `max_call_arg + 1` so that the per-entry WideInt allocation stays well
+    /// within the 1 MB arena.
+    pub memo_cache_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +50,7 @@ pub enum MirInstruction {
         op: MirBinOp,
         lhs: MirOperand,
         rhs: MirOperand,
+        dest_type: OnuType,
     },
     Call {
         dest: usize,
@@ -73,6 +79,18 @@ pub enum MirInstruction {
     Alloc {
         dest: usize,
         size_bytes: MirOperand,
+    },
+    /// Declares (or references) a named LLVM global zeroed byte-array of `size_bytes` bytes
+    /// and yields a pointer to its first element in SSA `dest`.
+    ///
+    /// Unlike `Alloc` (which bumps the per-call arena), `GlobalAlloc` is backed by an
+    /// LLVM module-level global — it is allocated exactly once (zero-initialised by the
+    /// OS/loader) and persists for the lifetime of the program.  This is the correct
+    /// backing store for memo caches that must survive across many calls to the wrapper.
+    GlobalAlloc {
+        dest: usize,
+        size_bytes: usize,
+        name: String,
     },
     MemCopy {
         dest: MirOperand,
@@ -104,6 +122,45 @@ pub enum MirInstruction {
         value: MirOperand,
         typ: OnuType,
     },
+    MemSet {
+        ptr: MirOperand,
+        value: MirOperand,
+        size: MirOperand,
+    },
+    Promote {
+        dest: usize,
+        src: MirOperand,
+        to_type: OnuType,
+    },
+    /// Reinterpret the bit-pattern of `src` as `to_type` (equivalent to LLVM `bitcast`).
+    /// Used by the wide-int legalization layer to transition between a "Mathematical Integer"
+    /// (e.g. WideInt(1024)) and a lower-level representation such as a byte array,
+    /// satisfying the Clean Architecture boundary between the domain model and the
+    /// memory-detail (limb) layer.
+    BitCast {
+        dest: usize,
+        src: MirOperand,
+        to_type: OnuType,
+    },
+    /// Load one i64 element from a compile-time constant array.
+    ///
+    /// Emits:
+    ///   `@name = internal constant [N x i64] [i64 v0, i64 v1, …]`  (once per module)
+    ///   `%gep  = getelementptr inbounds [N x i64], [N x i64]* @name, i64 0, i64 <index>`
+    ///   `%dest = load i64, i64* %gep`
+    ///
+    /// The global is read-only, so this is pure LLVM with no arena allocation and full
+    /// memory safety.  Used to replace deeply nested if-else constant-table lookups (e.g.
+    /// sha256-k) with a single indexed load that LLVM places in L1 cache.
+    ConstantTableLoad {
+        dest: usize,
+        /// Name of the LLVM global (must be unique per table).
+        name: String,
+        /// The compile-time constant values that populate the table.
+        values: Vec<i64>,
+        /// Runtime index into the table.
+        index: MirOperand,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,6 +173,17 @@ pub enum MirBinOp {
     Ne,
     Gt,
     Lt,
+    /// Bitwise AND.  Used by HashMemoStrategy to reduce a hash value to a
+    /// power-of-2 table slot with a single instruction (`and rX, mask`).
+    And,
+    /// Bitwise OR.
+    Or,
+    /// Bitwise XOR.
+    Xor,
+    /// Logical (unsigned) right shift – fills high bits with 0.
+    Shr,
+    /// Left shift.
+    Shl,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +199,7 @@ pub enum MirLiteral {
     Boolean(bool),
     Text(String),
     Nothing,
+    WideInt(String, u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]

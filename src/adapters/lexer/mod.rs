@@ -70,8 +70,9 @@ impl<'a> LexerInternal<'a> {
 
     fn skip_whitespace_and_comments(&mut self) {
         loop {
+            // Skip horizontal whitespace only — newlines are emitted as Token::NewLine.
             while let Some(c) = self.peek_char() {
-                if c.is_whitespace() {
+                if c.is_whitespace() && c != '\n' {
                     self.input.next();
                 } else {
                     break;
@@ -106,8 +107,13 @@ impl<'a> LexerInternal<'a> {
         let first_char = self.peek_char()?;
 
         let token = match first_char {
+            '\n' => { self.input.next(); Token::NewLine }
             '(' => { self.input.next(); Token::Delimiter('(') }
             ')' => { self.input.next(); Token::Delimiter(')') }
+            '[' => { self.input.next(); Token::Delimiter('[') }
+            ']' => { self.input.next(); Token::Delimiter(']') }
+            ';' => { self.input.next(); Token::Delimiter(';') }
+            ',' => { self.input.next(); Token::Delimiter(',') }
             ':' => { self.input.next(); Token::Operator(":".to_string()) }
             '"' => self.lex_string(),
             c if c.is_ascii_digit() => self.lex_number(),
@@ -177,6 +183,11 @@ impl<'a> LexerInternal<'a> {
             ("opposes", Token::Opposes),
             ("init-of", Token::InitOf),
             ("tail-of", Token::TailOf),
+            ("bit-and-with", Token::BitAndWith),
+            ("bit-or-with", Token::BitOrWith),
+            ("bit-xor-with", Token::BitXorWith),
+            ("shifted-right-by", Token::ShiftedRightBy),
+            ("shifted-left-by", Token::ShiftedLeftBy),
             ("duplicated-as", Token::DuplicatedAs),
         ];
 
@@ -223,6 +234,10 @@ impl<'a> LexerInternal<'a> {
             "nothing" => Token::Nothing,
             "true" => Token::Literal(Literal::Boolean(true)),
             "false" => Token::Literal(Literal::Boolean(false)),
+            "write" => Token::Write,
+            "to" => Token::To,
+            "read" => Token::Read,
+            "from" => Token::From,
             _ => Token::Identifier(s),
         }
     }

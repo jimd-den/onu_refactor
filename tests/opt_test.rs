@@ -12,7 +12,9 @@ fn test_multiple_returns_phi_detection() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     // Register symbols
     pipeline.registry.symbols_mut().add_signature("test", BehaviorSignature {
@@ -27,7 +29,8 @@ fn test_multiple_returns_phi_detection() {
         intent: "Test".to_string(),
         takes: vec![], 
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -65,7 +68,9 @@ fn test_multiple_returns_direct_ret() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     pipeline.registry.symbols_mut().add_signature("test", BehaviorSignature {
         return_type: OnuType::I64,
@@ -79,7 +84,8 @@ fn test_multiple_returns_direct_ret() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -105,7 +111,9 @@ fn test_ackermann_specialization() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     // Register symbols
     pipeline.registry.symbols_mut().add_signature("test_op", BehaviorSignature {
@@ -123,7 +131,8 @@ fn test_ackermann_specialization() {
             Argument { name: "b".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
         ],
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -151,7 +160,9 @@ fn test_comparison_specialization() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     // Register symbols
     pipeline.registry.symbols_mut().add_signature("test_cmp", BehaviorSignature {
@@ -169,7 +180,8 @@ fn test_comparison_specialization() {
             Argument { name: "b".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
         ],
         delivers: ReturnType(OnuType::Boolean),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     
@@ -196,7 +208,9 @@ fn test_pure_data_leaf_attributes() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     // Register symbols
     pipeline.registry.symbols_mut().add_signature("pure_fn", BehaviorSignature {
@@ -213,7 +227,8 @@ fn test_pure_data_leaf_attributes() {
             Argument { name: "n".to_string(), type_info: TypeInfo { onu_type: OnuType::I64, display_name: "integer".to_string(), via_role: None, is_observation: false } }
         ],
         delivers: ReturnType(OnuType::I64),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     

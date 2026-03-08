@@ -1,0 +1,59 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Balancing Act (Tak Function)
+-- Concern: Benchmarking the overhead of recursive function calls.
+--
+-- Imagine a three-way balance scale. You have three stone weights: X, Y, Z.
+-- The "balancing act" works by one rule:
+--
+-- - If the first weight (X) is light enough to rest below the second (Y),
+--   the third weight (Z) becomes the new balance point. Done.
+-- - Otherwise, all three sides must be re-balanced with slightly lighter
+--   versions before finding the new balance point.
+--
+-- This creates a storm of nested re-balancing calls. Without a memory of
+-- past results, tak(18, 12, 6) triggers hundreds of thousands of calls.
+-- With a 3-dimensional memory cache, it collapses to sub-millisecond speed.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called BalancingAct
+    with concern: benchmarking three-way recursive function call overhead
+
+-- The three-way balancing rule.
+-- If X is no longer heavier than Y, the balance rests at Z.
+-- Otherwise, recursively re-balance all three sides and try again.
+the behavior called find-balance
+    with intent: find the balance point of three recursive stone weights
+    takes:
+        an integer called weight-x
+        an integer called weight-y
+        an integer called weight-z
+    delivers: an integer
+    with diminishing: weight-x, weight-y, weight-z
+    as:
+        if weight-x exceeds weight-y
+            then
+                -- Recurse: find three new reduced weights, then balance them
+                derivation: new-x derives-from (weight-x decreased-by 1) utilizes find-balance weight-y weight-z
+                derivation: new-y derives-from (weight-y decreased-by 1) utilizes find-balance weight-z weight-x
+                derivation: new-z derives-from (weight-z decreased-by 1) utilizes find-balance weight-x weight-y
+                new-x utilizes find-balance new-y new-z
+            else weight-z
+
+the effect behavior called run
+    with intent: run the heavy tak(18,12,6) benchmark showing memoization speed
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2 derives-from nothing broadcasts "  THE BALANCING ACT (Tak Function)"
+        derivation: d3 derives-from nothing broadcasts "  Three-way recursive balancing"
+        derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        -- Heavy benchmark: tak(18, 12, 6) — millions of calls without memo, sub-ms with it
+        derivation: result derives-from an integer 18 utilizes find-balance 12 6
+        derivation: label  derives-from a string "Balance(18, 12, 6) = "
+        derivation: msg    derives-from label joined-with (result utilizes as-text)
+        broadcasts msg
+
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing

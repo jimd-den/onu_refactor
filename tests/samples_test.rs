@@ -13,7 +13,9 @@ fn run_sample_test(sample_name: &str) {
     
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = OnuCodegen::new();
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
     
     let sample_path = format!("samples/{}.onu", sample_name);
     assert!(Path::new(&sample_path).exists(), "Sample file not found: {}", sample_path);

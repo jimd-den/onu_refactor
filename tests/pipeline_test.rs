@@ -21,7 +21,9 @@ fn test_pipeline_stages() {
     let options = CompilationOptions::default();
     let env = NativeOsEnvironment::new(options.log_level);
     let codegen = MockCodegen;
-    let mut pipeline = CompilationPipeline::new(env, codegen, options);
+    let lexer = Box::new(onu_refactor::adapters::lexer::OnuLexer::new(options.log_level));
+    let parser = Box::new(onu_refactor::adapters::parser::OnuParser::new(options.log_level));
+    let mut pipeline = CompilationPipeline::new(env, codegen, lexer, parser, options);
 
     let source = "the module called Test with concern: nothing
 the behavior called run with intent: nothing as: nothing";
@@ -74,7 +76,8 @@ fn test_synthetic_argument_injection() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     let body = Expression::Nothing;
@@ -100,7 +103,8 @@ fn test_broadcasts_lowering() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     let body = Expression::Emit(Box::new(Expression::Text("Hello".to_string())));
@@ -133,7 +137,8 @@ fn test_drop_lowering() {
         intent: "Test".to_string(),
         takes: vec![],
         delivers: ReturnType(OnuType::Nothing),
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         skip_termination_check: false,
     };
     let body = Expression::Drop(Box::new(Expression::Identifier("x".to_string())));

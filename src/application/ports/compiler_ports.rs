@@ -48,6 +48,26 @@ pub enum Token {
     InitOf,
     TailOf,
     DuplicatedAs,
+    // --- Bitwise Operators ---
+    BitAndWith,
+    BitOrWith,
+    BitXorWith,
+    ShiftedRightBy,
+    ShiftedLeftBy,
+    // --- SVO I/O Keywords ---
+    Write,
+    To,
+    Read,
+    From,
+    /// Emitted by the lexer for every `\n` character.
+    ///
+    /// Most parser contexts skip `NewLine` transparently (via `peek()`/`advance()`).
+    /// The `with intent:` header parser is the sole consumer: it treats every
+    /// token up to the first `NewLine` as freeform prose (like a line comment)
+    /// and discards them, which prevents header keywords that appear inside an
+    /// intent description (e.g. "… it *takes* a …") from being mis-parsed as
+    /// actual `takes:` clauses.
+    NewLine,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -63,7 +83,9 @@ pub trait LexerPort {
 }
 
 pub trait ParserPort {
+    fn scan_headers(&self, tokens: &[Token], registry: &mut crate::application::use_cases::registry_service::RegistryService) -> Result<(), OnuError>;
     fn parse(&self, tokens: Vec<Token>) -> Result<Vec<Discourse>, OnuError>;
+    fn parse_with_registry(&self, tokens: Vec<Token>, registry: &mut crate::application::use_cases::registry_service::RegistryService) -> Result<Vec<Discourse>, OnuError>;
 }
 
 pub trait CodegenPort {

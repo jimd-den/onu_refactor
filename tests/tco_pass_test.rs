@@ -40,7 +40,8 @@ fn make_self_tail_call_function() -> MirFunction {
         ],
         return_type: OnuType::I64,
         is_pure_data_leaf: true,
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         blocks: vec![
             // Block 0: condition check
             BasicBlock {
@@ -52,6 +53,7 @@ fn make_self_tail_call_function() -> MirFunction {
                         op: MirBinOp::Eq,
                         lhs: MirOperand::Variable(0, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                        dest_type: OnuType::Boolean,
                     },
                 ],
                 terminator: MirTerminator::CondBranch {
@@ -76,6 +78,7 @@ fn make_self_tail_call_function() -> MirFunction {
                         op: MirBinOp::Div,
                         lhs: MirOperand::Variable(0, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(2)),
+                        dest_type: OnuType::I64,
                     },
                     // count_next = count + 1
                     MirInstruction::BinaryOperation {
@@ -83,6 +86,7 @@ fn make_self_tail_call_function() -> MirFunction {
                         op: MirBinOp::Add,
                         lhs: MirOperand::Variable(1, false),
                         rhs: MirOperand::Constant(MirLiteral::I64(1)),
+                        dest_type: OnuType::I64,
                     },
                     // result = collatz-steps(n_half, count_next)  ← SELF TAIL CALL
                     MirInstruction::Call {
@@ -170,28 +174,29 @@ fn tco_pass_introduces_loop_branch() {
     );
 }
 
-/// GREEN CONTRACT: The transformed function must assign new argument values
-/// before the loop back-edge, so the next iteration sees the updated arguments.
-/// This is verified by finding Assign instructions in the rewritten block.
+/// GREEN CONTRACT: After TcoPass, the block that was the tail-call site must
+/// contain Assign instructions (updating argument slots) before branching back
+/// into the loop body.  The back-edge targets the original entry block (id=1),
+/// skipping the empty loop-head dispatcher (id=0) for efficiency.  This is
+/// intentional: the loop-head (id=0) holds the initial parameter bindings
+/// inserted by InlinePass; the back-edge must NOT re-execute those.
 #[test]
 fn tco_pass_emits_argument_assignments_before_loop_back() {
     let func = make_self_tail_call_function();
-    let arg_shadow_ssa_vars: Vec<usize> = func.args.iter().map(|a| a.ssa_var).collect();
+    let _arg_shadow_ssa_vars: Vec<usize> = func.args.iter().map(|a| a.ssa_var).collect();
     let transformed = TcoPass::run_function(func);
 
-    // Find the block that had the self-tail-call (block 2) or its replacement.
-    // It must now contain Assign instructions for the argument slots.
-    // Find the block that branches BACK to the loop head (id 0).
-    // The loop head itself also has Branch(1), so we specifically look for
-    // a block that branches to id 0 AND has non-empty instructions — that is
-    // the rewritten recursive block, not the empty loop head dispatcher.
+    // The tail-call block now branches back to the original entry (id=1), NOT to
+    // the loop-head (id=0).  id=0 is the empty dispatcher inserted by TcoPass;
+    // bypassing it on the back-edge avoids re-executing initial arg assignments
+    // that InlinePass injects into the first callee block during inlining.
     let loop_back_block = transformed.blocks.iter().find(|block| {
-        matches!(block.terminator, MirTerminator::Branch(0)) && !block.instructions.is_empty()
+        matches!(block.terminator, MirTerminator::Branch(1)) && !block.instructions.is_empty()
     });
 
     assert!(
         loop_back_block.is_some(),
-        "No non-empty block branching back to the loop head (id=0) was found"
+        "No non-empty block branching back to the original entry (id=1) was found"
     );
 
     let loop_back_block = loop_back_block.unwrap();
@@ -236,7 +241,8 @@ fn tco_pass_is_identity_for_non_recursive_functions() {
         ],
         return_type: OnuType::I64,
         is_pure_data_leaf: true,
-        diminishing: None,
+        diminishing: vec![],
+        memo_cache_size: None,
         blocks: vec![BasicBlock {
             id: 0,
             instructions: vec![MirInstruction::BinaryOperation {
@@ -244,6 +250,7 @@ fn tco_pass_is_identity_for_non_recursive_functions() {
                 op: MirBinOp::Add,
                 lhs: MirOperand::Variable(0, false),
                 rhs: MirOperand::Variable(1, false),
+                dest_type: OnuType::I64,
             }],
             terminator: MirTerminator::Return(MirOperand::Variable(2, false)),
         }],

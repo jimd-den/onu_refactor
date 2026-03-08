@@ -3,16 +3,15 @@ pub mod application;
 pub mod domain;
 pub mod infrastructure;
 
-use crate::adapters::lexer::OnuLexer;
-use crate::adapters::parser::OnuParser;
 use crate::application::options::{CompilationOptions, CompilerStage, LogLevel};
-use crate::application::ports::compiler_ports::{CodegenPort, LexerPort};
+use crate::application::ports::compiler_ports::{CodegenPort, LexerPort, ParserPort};
 use crate::application::ports::environment::EnvironmentPort;
 use crate::application::use_cases::analysis_service::AnalysisService;
 use crate::application::use_cases::lowering_service::LoweringService;
 use crate::application::use_cases::mir_lowering_service::MirLoweringService;
 use crate::application::use_cases::module_service::ModuleService;
 use crate::application::use_cases::registry_service::RegistryService;
+use crate::application::use_cases::safety_pass;
 use crate::domain::entities::ast::Discourse;
 use crate::domain::entities::core_module::{CoreModule, StandardMathModule};
 use crate::domain::entities::error::OnuError;
@@ -24,12 +23,18 @@ pub struct CompilationPipeline<E: EnvironmentPort, C: CodegenPort> {
     pub codegen: C,
     pub options: CompilationOptions,
     pub registry: RegistryService,
-    pub lexer: OnuLexer,
-    pub parser: OnuParser,
+    pub lexer: Box<dyn LexerPort>,
+    pub parser: Box<dyn ParserPort>,
 }
 
 impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
-    pub fn new(env: E, codegen: C, options: CompilationOptions) -> Self {
+    pub fn new(
+        env: E,
+        codegen: C,
+        lexer: Box<dyn LexerPort>,
+        parser: Box<dyn ParserPort>,
+        options: CompilationOptions,
+    ) -> Self {
         let mut registry = RegistryService::new();
         registry.log_level = options.log_level;
         let module_service = ModuleService::new(&env, options.log_level);
@@ -39,13 +44,17 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         module_service.register_module(&mut registry, &StandardMathModule);
         module_service.register_module(&mut registry, &OnuIoModule);
 
+        // Pre-register multi-arg stdlib op signatures so the parser knows
+        // their arity before scan_headers / parse_with_registry runs.
+        crate::application::use_cases::stdlib::StdlibOpRegistry::register_signatures(&mut registry);
+
         Self {
             env,
             codegen,
             options: options.clone(),
             registry,
-            lexer: OnuLexer::new(options.log_level),
-            parser: OnuParser::new(options.log_level),
+            lexer,
+            parser,
         }
     }
 
@@ -72,6 +81,26 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         let hir_discourses = self.lower_hir(discourses)?;
         if self.options.stop_after == Some(CompilerStage::Analysis) {
             return Ok(());
+        }
+
+        // Safety pass: enforce S-1/S-2/S-3 grammar rules.
+        // Warnings are printed; hard errors abort compilation with a clear message.
+        match safety_pass::run(&hir_discourses) {
+            Ok(diagnostics) => {
+                for d in &diagnostics {
+                    eprintln!("[onu warning] {}", d.message);
+                }
+            }
+            Err(e) => {
+                // Format and print the full error before returning so the
+                // user sees the complete bilingual message in the terminal.
+                let msg = match &e {
+                    OnuError::GrammarViolation { message, .. } => message.clone(),
+                    other => format!("{:?}", other),
+                };
+                eprintln!("\n{}\n", msg);
+                return Err(e);
+            }
         }
 
         let mir = self.lower_mir(hir_discourses)?;
@@ -139,6 +168,7 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         hir_discourses: Vec<HirDiscourse>,
     ) -> Result<crate::domain::entities::mir::MirProgram, OnuError> {
         use crate::application::use_cases::inline_pass::InlinePass;
+        use crate::application::use_cases::integer_upgrade_pass::IntegerUpgradePass;
         use crate::application::use_cases::memo_pass::MemoPass;
         use crate::application::use_cases::tco_pass::TcoPass;
 
@@ -146,21 +176,39 @@ impl<E: EnvironmentPort, C: CodegenPort> CompilationPipeline<E, C> {
         let mir_lowering_service = MirLoweringService::new(&self.env, &self.registry);
         let mir = mir_lowering_service.lower_program(&hir_discourses)?;
 
-        // Stage 2: Loop-lower self-tail-calls.
+        // Stage 2: Automatically promote doubly-recursive pure functions from
+        // I64 to WideInt(bits) when call-site literals imply overflow.
+        // Must run before MemoPass so that the wrapper caches WideInt values,
+        // and before TcoPass so the doubly-recursive call structure is still
+        // visible for candidate detection.
+        let mir = IntegerUpgradePass::run(mir);
+
+        // Stage 3: Memoize recursive pure functions annotated with
+        // `with diminishing:`. Must run BEFORE TcoPass: TcoPass erases
+        // tail-recursive Call instructions into Branch loops, so any
+        // memoizable call that is also tail-recursive would be missed.
+        let mir = MemoPass::run(mir, &self.registry);
+
+        // Stage 4: Loop-lower self-tail-calls.
         // Recursion → loop so the body becomes finite and inlineable.
+        // Acts on .inner functions (produced by MemoPass) as well as
+        // non-memoized tail-recursive helpers (e.g. collatz-steps).
         let mir = TcoPass::run(mir);
 
-        // Stage 3: Inline pure loop-shaped callees into their callers.
+        // Stage 5: Inline pure loop-shaped callees into their callers.
         // Now that single-recursive functions are loops, InlinePass can fuse them.
         let mir = InlinePass::run(mir);
 
-        // Stage 4: Second TcoPass — catches tail calls exposed by inlining.
+        // Stage 6: Second TcoPass — catches tail calls exposed by inlining.
         let mir = TcoPass::run(mir);
 
-        // Stage 5: Memoize doubly-recursive pure functions annotated with
-        // `with diminishing:`. Converts O(2^n) call trees to O(n) via a
-        // stack-allocated lookup table.
-        let mir = MemoPass::run(mir);
+        // Stage 7: Operation Legalization — replace any WideInt (> 128-bit)
+        // division or modulo with a call to a compiler-internal helper
+        // (__onu_wide_div_N / __onu_wide_mod_N) so the LLVM backend never sees
+        // an sdiv/srem on a type wider than i128 (for which no runtime library
+        // helper exists).
+        use crate::application::use_cases::wide_div_legalization_pass::WideDivLegalizationPass;
+        let mir = WideDivLegalizationPass::run(mir);
 
         Ok(mir)
     }

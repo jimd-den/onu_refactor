@@ -1,0 +1,73 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Discourse Unit: The Euclidean Measure
+-- Concern: Finding the largest shared scale between two different lengths.
+--
+-- Imagine two lengths of rope. A carpenter needs the longest single ruler
+-- that measures both exactly -- no remainder left over.
+--
+-- The ancient discovery: any ruler that fits both lengths also fits their
+-- difference. So we keep subtracting the shorter from the longer until
+-- nothing remains. Whatever length survives IS the common measure.
+--
+-- 1. The Exact Fit:  When the shorter length reaches zero, the longer
+--                    length IS the shared ruler.
+-- 2. The Reduction:  Replace the longer with the remainder after fitting
+--                    the shorter as many times as possible. Keep going.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+the module called EuclideanMeasure
+    with concern: finding the largest common scale between two lengths
+
+-- Rule 1: The Exact Fit
+-- When no remainder survives, the current length is the shared ruler.
+-- Rule 2: The Reduction
+-- Replace the longer with the remainder, and keep fitting.
+the behavior called find-common-measure
+    with intent: find the largest ruler that exactly divides both rope lengths
+    takes:
+        an integer called longer-length
+        an integer called shorter-length
+    delivers: an integer
+    with no guaranteed termination
+    as:
+        if shorter-length matches 0
+            then longer-length
+            else
+                -- The remainder after fitting the shorter into the longer
+                derivation: quotient  derives-from longer-length partitions-by shorter-length
+                derivation: product   derives-from quotient scales-by shorter-length
+                derivation: remainder derives-from longer-length decreased-by product
+                shorter-length utilizes find-common-measure remainder
+
+the effect behavior called run
+    with intent: demonstrate finding the common measure between several rope pairs
+    takes: nothing
+    delivers: nothing
+    as:
+        derivation: d1 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        derivation: d2 derives-from nothing broadcasts "  THE EUCLIDEAN MEASURE"
+        derivation: d3 derives-from nothing broadcasts "  Finding the Greatest Common Ruler"
+        derivation: d4 derives-from nothing broadcasts "═══════════════════════════════════════════"
+
+        -- Two rope lengths: 48 and 18. Largest ruler that fits both: 6
+        derivation: r1 derives-from an integer 48 utilizes find-common-measure 18
+        derivation: m1 derives-from "Common measure of 48 and 18:   " joined-with (r1 utilizes as-text)
+        derivation: p1 derives-from nothing broadcasts m1
+
+        -- Rope lengths 252 and 105. Largest ruler: 21
+        derivation: r2 derives-from an integer 252 utilizes find-common-measure 105
+        derivation: m2 derives-from "Common measure of 252 and 105:  " joined-with (r2 utilizes as-text)
+        derivation: p2 derives-from nothing broadcasts m2
+
+        -- Rope lengths 1071 and 462. Largest ruler: 21
+        derivation: r3 derives-from an integer 1071 utilizes find-common-measure 462
+        derivation: m3 derives-from "Common measure of 1071 and 462: " joined-with (r3 utilizes as-text)
+        derivation: p3 derives-from nothing broadcasts m3
+
+        -- Large rope lengths: 1000000 and 999999. Largest ruler: 1
+        derivation: r4 derives-from an integer 1000000 utilizes find-common-measure 999999
+        derivation: m4 derives-from "Common measure of 1M and (1M-1): " joined-with (r4 utilizes as-text)
+        derivation: p4 derives-from nothing broadcasts m4
+
+        derivation: d5 derives-from nothing broadcasts "═══════════════════════════════════════════"
+        nothing
