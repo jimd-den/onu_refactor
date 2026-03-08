@@ -8,3 +8,6 @@ cbenchmark
 test_output/
 *.ll
 cbench_collatz
+dhat.out.*
+massif.out.*
+hello_world_bin

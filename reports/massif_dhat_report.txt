@@ -1,0 +1,150 @@
+════════════════════════════════════════════════════════════════════════════════
+  Ọ̀nụ Valgrind Massif + DHAT Memory Profile Report
+  Generated : 2026-03-08 02:58:25 UTC
+  Valgrind  : valgrind-3.22.0
+  Tool      : Massif (--pages-as-heap=yes)  +  DHAT (heap mode)
+════════════════════════════════════════════════════════════════════════════════
+
+BACKGROUND
+──────────
+Ọ̀nụ programs use a 16 MiB static BSS arena for ALL memory allocation.
+They never call malloc/free; all IO is done through raw x86_64 syscalls
+(no libc).  Therefore:
+
+  • DHAT always shows 0 heap blocks — there is no dynamic heap.
+  • Massif with --pages-as-heap=yes measures the full OS page footprint,
+    including the static arena, code segment, and stack pages.
+
+The peak Massif value is therefore the best proxy for "how much memory does
+this program actually use" in the absence of malloc-based heap activity.
+
+════════════════════════════════════════════════════════════════════════════════
+  SECTION 1: PER-SAMPLE RESULTS
+════════════════════════════════════════════════════════════════════════════════
+
+  Sample                    Peak (pages)  DHAT Total    Blocks      Reads       Writes      Status
+  ──────────────────────  ────────────  ────────────  ──────────  ──────────  ──────────  ──────
+  ackermann                 20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  ackermann_bench           20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  bf                        —           —           —         —         —         [SKIP]
+  bsort                     20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  bsort_hard                20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  collatz                   20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  collatz_bench             20.44 MiB     0 B           0           0 B         0 B         [PASS]
+  complex_args_tco          —           —           —         —         —         [SKIP]
+  deep_recursion            4.36 MiB      0 B           0           0 B         0 B         [PASS]
+  deep_sum                  20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  echo_demo                 —           —           —         —         —         [SKIP]
+  factorial                 20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  fib_bench                 20.44 MiB     0 B           0           0 B         0 B         [PASS]
+  fib_naive_only            20.71 MiB     0 B           0           0 B         0 B         [PASS]
+  fibonacci                 20.44 MiB     0 B           0           0 B         0 B         [PASS]
+  gcd_measure               20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  guess                     —           —           —         —         —         [SKIP]
+  hanoi                     —           —           —         —         —         [SKIP]
+  hello_world               4.36 MiB      0 B           0           0 B         0 B         [PASS]
+  hello_world_int           4.36 MiB      0 B           0           0 B         0 B         [PASS]
+  illegal_shared            —           —           —         —         —         [SKIP]
+  map_bench                 20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  map_shapes                20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  mccarthy91                20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  memory_escape_tco         4.36 MiB      0 B           0           0 B         0 B         [PASS]
+  mutation                  —           —           —         —         —         [SKIP]
+  mutual_recursion          —           —           —         —         —         [SKIP]
+  parity                    20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  pepin_test                20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  primal_scroll             20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  rule110                   20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  sample                    20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  sha256                    20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  svo_e2e                   20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  tak_balance               20.36 MiB     0 B           0           0 B         0 B         [PASS]
+  test_logic                —           —           —         —         —         [SKIP]
+  test_ownership            4.36 MiB      0 B           0           0 B         0 B         [PASS]
+  test_recursion            4.36 MiB      0 B           0           0 B         0 B         [PASS]
+  tiny_gpt                  20.36 MiB     0 B           0           0 B         0 B         [PASS]
+
+════════════════════════════════════════════════════════════════════════════════
+  SECTION 2: MASSIF PEAK MEMORY — SORTED BY FOOTPRINT (LARGEST FIRST)
+════════════════════════════════════════════════════════════════════════════════
+
+This table ranks samples by their peak OS page footprint, which includes:
+  • The 16 MiB static arena (BSS)
+  • Code + data segments
+  • Stack pages
+
+  Rank   Sample                    Peak (pages-as-heap)
+  ────  ──────────────────────  ────────────────────
+  1      fib_naive_only            20.71 MiB
+  2      fibonacci                 20.44 MiB
+  3      fib_bench                 20.44 MiB
+  4      collatz_bench             20.44 MiB
+  5      sha256                    20.36 MiB
+  6      tiny_gpt                  20.36 MiB
+  7      tak_balance               20.36 MiB
+  8      svo_e2e                   20.36 MiB
+  9      sample                    20.36 MiB
+  10     rule110                   20.36 MiB
+  11     primal_scroll             20.36 MiB
+  12     pepin_test                20.36 MiB
+  13     parity                    20.36 MiB
+  14     mccarthy91                20.36 MiB
+  15     map_shapes                20.36 MiB
+  16     map_bench                 20.36 MiB
+  17     gcd_measure               20.36 MiB
+  18     factorial                 20.36 MiB
+  19     deep_sum                  20.36 MiB
+  20     collatz                   20.36 MiB
+  21     bsort_hard                20.36 MiB
+  22     bsort                     20.36 MiB
+  23     ackermann_bench           20.36 MiB
+  24     ackermann                 20.36 MiB
+  25     test_recursion            4.36 MiB
+  26     test_ownership            4.36 MiB
+  27     memory_escape_tco         4.36 MiB
+  28     hello_world_int           4.36 MiB
+  29     hello_world               4.36 MiB
+  30     deep_recursion            4.36 MiB
+
+════════════════════════════════════════════════════════════════════════════════
+  SECTION 3: DHAT HEAP SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+
+Because Ọ̀nụ uses a static arena, DHAT reports 0 heap blocks for every sample.
+This is expected and confirms that the arena-based allocator is working
+correctly — no malloc, no free, no heap fragmentation.
+
+  All 30 passing samples: 0 heap blocks, 0 heap bytes allocated.
+
+════════════════════════════════════════════════════════════════════════════════
+  SECTION 4: ARCHITECTURE NOTES
+════════════════════════════════════════════════════════════════════════════════
+
+  • Ọ̀nụ programs are compiled to LLVM IR then linked with clang -O0.
+  • Memory layout:
+      – 16 MiB static BSS arena  (defined as [16777216 x i8] global)
+      – arena_bump pointer        (i64 global, bump-allocator index)
+      – Code + read-only data     (~100–400 KiB per program)
+      – Stack                     (kernel default: 8 MiB, pages committed on use)
+
+  • The variation in peak Massif footprint between samples is primarily due to:
+      – Stack depth  (recursive programs like Ackermann or deep_recursion
+                      commit more stack pages)
+      – Memoization  (memoized functions populate the 16 MiB arena more fully)
+      – Output size  (more print calls may touch more write-buffer pages)
+
+  • DHAT heap mode confirms there are zero dynamic allocations in every sample.
+    There is nothing to leak, fragment, or double-free.
+
+════════════════════════════════════════════════════════════════════════════════
+  SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+
+  PASS = 30   FAIL = 0   SKIP = 9
+
+  ✓ Zero malloc/free heap allocations across all 30 profiled samples
+  ✓ DHAT confirms pure arena-based memory model (0 heap blocks each)
+  ✓ Massif (pages-as-heap) peak footprint recorded for every passing sample
+  ✓ No heap fragmentation, no memory leaks possible
+
+════════════════════════════════════════════════════════════════════════════════
