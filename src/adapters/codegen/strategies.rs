@@ -1502,3 +1502,221 @@ impl<'ctx> InstructionStrategy<'ctx> for BitCastStrategy {
         Ok(())
     }
 }
+
+// ── Phase 1: Region-Based Memory Management Strategies ──────────────────
+
+/// Strategy for `MirInstruction::SaveArena`.
+///
+/// Snapshots the current arena bump pointer so that a later `RestoreArena`
+/// can reclaim all memory allocated in between — O(1) region-based deallocation.
+pub struct SaveArenaStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for SaveArenaStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::SaveArena { dest } = inst {
+            let arena_ptr_global = module
+                .get_global("onu_arena_ptr")
+                .unwrap()
+                .as_pointer_value();
+
+            // Load the current bump pointer value.
+            let current_ptr = builder
+                .build_load(arena_ptr_global, "saved_arena_ptr")
+                .unwrap()
+                .into_pointer_value();
+
+            let ptr = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                current_ptr.get_type().as_basic_type_enum(),
+            );
+            builder.build_store(ptr, current_ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
+/// Strategy for `MirInstruction::RestoreArena`.
+///
+/// Resets the arena bump pointer to a previously saved value, instantly
+/// freeing all memory allocated since the matching `SaveArena`.
+pub struct RestoreArenaStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for RestoreArenaStrategy {
+    fn generate(
+        &self,
+        _context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::RestoreArena { saved } = inst {
+            let saved_ptr =
+                operand_to_llvm(_context, builder, ssa_storage, saved).into_pointer_value();
+
+            let arena_ptr_global = module
+                .get_global("onu_arena_ptr")
+                .unwrap()
+                .as_pointer_value();
+
+            // Write the saved pointer back, resetting the arena.
+            builder.build_store(arena_ptr_global, saved_ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
+/// Strategy for `MirInstruction::StackAlloc`.
+///
+/// Emits an LLVM `alloca` for a fixed-size byte buffer on the stack.
+/// LLVM's SROA (Scalar Replacement of Aggregates) pass will further
+/// promote small allocations to registers / CPU cache.  This avoids
+/// bumping the global arena entirely.
+pub struct StackAllocStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for StackAllocStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        _module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::StackAlloc { dest, size_bytes } = inst {
+            let i8_type = context.i8_type();
+            let array_type = i8_type.array_type(*size_bytes as u32);
+
+            // Emit alloca in the entry block for SROA eligibility.
+            let current_bb = builder.get_insert_block().unwrap();
+            let function = current_bb.get_parent().unwrap();
+            let entry_bb = function.get_first_basic_block().unwrap();
+
+            let temp_builder = context.create_builder();
+            if let Some(first_inst) = entry_bb.get_first_instruction() {
+                temp_builder.position_before(&first_inst);
+            } else {
+                temp_builder.position_at_end(entry_bb);
+            }
+
+            let alloca = temp_builder.build_alloca(array_type, "stack_buf").unwrap();
+
+            // GEP to get an i8* pointer to element 0.
+            let zero = context.i64_type().const_zero();
+            let ptr = unsafe {
+                builder
+                    .build_in_bounds_gep(alloca, &[zero, zero], "stack_buf_ptr")
+                    .unwrap()
+            };
+
+            let slot = get_or_create_ssa(
+                context,
+                builder,
+                ssa_storage,
+                *dest,
+                ptr.get_type().as_basic_type_enum(),
+            );
+            builder.build_store(slot, ptr).unwrap();
+        }
+        Ok(())
+    }
+}
+
+// ── Phase 3: Target-Independent Intrinsic Strategies ────────────────────
+
+/// Strategy for `MirInstruction::FunnelShiftRight`.
+///
+/// Emits a call to `@llvm.fshr.iN`, which LLVM maps to the single fastest
+/// native rotation instruction on every major architecture (e.g. `ror` on
+/// x86, `extr` on ARM).  When `hi == lo`, this is a pure rotate-right.
+pub struct FunnelShiftRightStrategy;
+impl<'ctx> InstructionStrategy<'ctx> for FunnelShiftRightStrategy {
+    fn generate(
+        &self,
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
+        _registry: &RegistryService,
+        ssa_storage: &mut HashMap<usize, PointerValue<'ctx>>,
+        inst: &MirInstruction,
+    ) -> Result<(), OnuError> {
+        if let MirInstruction::FunnelShiftRight { dest, hi, lo, amount, width } = inst {
+            let int_type = context.custom_width_int_type(*width);
+            let fn_name = format!("llvm.fshr.i{}", width);
+
+            // Declare the intrinsic if not already present.
+            let intrinsic_fn = if let Some(f) = module.get_function(&fn_name) {
+                f
+            } else {
+                let fn_type = int_type.fn_type(
+                    &[int_type.into(), int_type.into(), int_type.into()],
+                    false,
+                );
+                module.add_function(&fn_name, fn_type, None)
+            };
+
+            let hi_val = operand_to_llvm(context, builder, ssa_storage, hi).into_int_value();
+            let lo_val = operand_to_llvm(context, builder, ssa_storage, lo).into_int_value();
+            let amt_val = operand_to_llvm(context, builder, ssa_storage, amount).into_int_value();
+
+            // Truncate or extend operands to the target width if needed.
+            let hi_cast = if hi_val.get_type().get_bit_width() != *width {
+                builder.build_int_truncate(hi_val, int_type, "fshr_hi_trunc").unwrap()
+            } else {
+                hi_val
+            };
+            let lo_cast = if lo_val.get_type().get_bit_width() != *width {
+                builder.build_int_truncate(lo_val, int_type, "fshr_lo_trunc").unwrap()
+            } else {
+                lo_val
+            };
+            let amt_cast = if amt_val.get_type().get_bit_width() != *width {
+                builder.build_int_truncate(amt_val, int_type, "fshr_amt_trunc").unwrap()
+            } else {
+                amt_val
+            };
+
+            let call_val = builder
+                .build_call(
+                    intrinsic_fn,
+                    &[hi_cast.into(), lo_cast.into(), amt_cast.into()],
+                    "fshr_result",
+                )
+                .unwrap();
+
+            let result = match call_val.try_as_basic_value() {
+                inkwell::values::ValueKind::Basic(v) => v,
+                _ => context.custom_width_int_type(*width).const_zero().into(),
+            };
+
+            // Zero-extend back to i64 if width < 64 so the rest of the pipeline
+            // operates on uniform i64 SSA values.
+            let final_val = if *width < 64 {
+                builder
+                    .build_int_z_extend(
+                        result.into_int_value(),
+                        context.i64_type(),
+                        "fshr_zext",
+                    )
+                    .unwrap()
+                    .into()
+            } else {
+                result
+            };
+
+            let ptr = get_or_create_ssa(context, builder, ssa_storage, *dest, final_val.get_type());
+            builder.build_store(ptr, final_val).unwrap();
+        }
+        Ok(())
+    }
+}

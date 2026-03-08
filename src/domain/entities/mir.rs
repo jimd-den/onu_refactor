@@ -161,6 +161,52 @@ pub enum MirInstruction {
         /// Runtime index into the table.
         index: MirOperand,
     },
+
+    // ── Phase 1: Region-Based Memory Management ─────────────────────────
+
+    /// Save the current arena bump pointer onto an implicit stack so that all
+    /// allocations made after this point can be reclaimed in O(1) by the
+    /// corresponding `RestoreArena`.
+    ///
+    /// Emits: `%dest = load i8*, i8** @onu_arena_ptr`
+    SaveArena {
+        dest: usize,
+    },
+
+    /// Restore the arena bump pointer to a previously saved value, instantly
+    /// freeing all memory allocated since the matching `SaveArena`.
+    ///
+    /// Emits: `store i8* %saved, i8** @onu_arena_ptr`
+    RestoreArena {
+        saved: MirOperand,
+    },
+
+    /// Stack-promote a fixed-size allocation.  When the compiler can prove
+    /// (via escape analysis) that a buffer of `size_bytes` does not escape the
+    /// current function, it emits an LLVM `alloca` instead of bumping the
+    /// global arena.  LLVM's SROA pass may further promote this to registers.
+    ///
+    /// Emits: `%dest = alloca [size_bytes x i8]`
+    StackAlloc {
+        dest: usize,
+        size_bytes: usize,
+    },
+
+    // ── Phase 3: Target-Independent Idiom Recognition ───────────────────
+
+    /// Funnel-shift-right: `fshr(a, b, amount)` returns the low `width` bits
+    /// of `(a concat b) >> amount`.  When `a == b`, this compiles to a single
+    /// hardware rotate-right instruction on every major architecture.
+    ///
+    /// Emits: `%dest = call iN @llvm.fshr.iN(iN %hi, iN %lo, iN %amount)`
+    FunnelShiftRight {
+        dest: usize,
+        hi: MirOperand,
+        lo: MirOperand,
+        amount: MirOperand,
+        /// Bit-width of the rotation (e.g. 32 for rotr32).
+        width: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -679,6 +679,38 @@ impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
                 &mut self.ssa_storage,
                 inst,
             ),
+            MirInstruction::SaveArena { .. } => SaveArenaStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::RestoreArena { .. } => RestoreArenaStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::StackAlloc { .. } => StackAllocStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
+            MirInstruction::FunnelShiftRight { .. } => FunnelShiftRightStrategy.generate(
+                self.context,
+                &self.module,
+                &self.builder,
+                self.registry,
+                &mut self.ssa_storage,
+                inst,
+            ),
         }
     }
 
