@@ -95,7 +95,7 @@ function onuLinter(view) {
     const raw = OnuCompiler.lint(source);
     const diags = JSON.parse(raw);
     return diags.map(d => {
-      // Convert (line, col) → CM6 character offsets
+      // OnuCompiler.lint() returns 0-based line numbers; CM6 doc.line() is 1-based.
       const lineObj = view.state.doc.line(Math.max(1, (d.line || 0) + 1));
       const from = lineObj.from + Math.max(0, d.col || 0);
       return {

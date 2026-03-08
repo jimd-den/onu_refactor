@@ -817,7 +817,6 @@ impl<'p> WasmContext<'p> {
                         if operand_wasm_type(lo, ssa_types) == ValType::I32 {
                             insns.i64_extend_i32_u();
                         }
-                        let _ = lo; // suppress unused-variable lint
                         self.emit_operand(insns, amount, lm, ssa_types);
                         if operand_wasm_type(amount, ssa_types) == ValType::I32 {
                             insns.i64_extend_i32_u();

@@ -3,7 +3,7 @@
  *
  * Phase 4: Offline PWA Architecture
  *
- * Install event:   Downloads and caches exactly three files so the entire
+ * Install event:   Downloads and caches five files so the entire
  *                  playground works in Airplane Mode after the first visit.
  * Fetch event:     Serves from the local cache first ("cache-first" strategy).
  *                  Falls back to the network for anything not cached.

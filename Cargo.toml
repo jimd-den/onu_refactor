@@ -22,7 +22,10 @@ edition = "2024"
 #
 #   # 1. Install wasm-pack:  cargo install wasm-pack
 #   # 2. Build the compiler: wasm-pack build --no-default-features --features wasm
-#   # 3. Copy pkg/ artefacts into web/:
+#   #    wasm-pack derives output filenames from the Cargo package name, so it
+#   #    produces pkg/onu_refactor_bg.wasm and pkg/onu_refactor.js.
+#   #    The web/ directory expects them renamed as onu_compiler_bg.wasm / onu_compiler.js:
+#   # 3. Copy and rename artefacts:
 #   #      cp pkg/onu_refactor_bg.wasm web/onu_compiler_bg.wasm
 #   #      cp pkg/onu_refactor.js      web/onu_compiler.js
 #   # 4. Serve web/ on Netlify or locally:  npx serve web/
