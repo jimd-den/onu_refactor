@@ -2,36 +2,60 @@
 ///
 /// This implements the CodegenPort using the Inkwell library
 /// to translate MIR into LLVM Bitcode.
+///
+/// All LLVM-specific code is gated on `#[cfg(feature = "llvm")]` so the crate
+/// can be compiled without LLVM for the `wasm32-unknown-unknown` target.
+pub mod platform; // always compiled — contains wasm32 emitter
+
+#[cfg(feature = "llvm")]
 pub mod compat;
-pub mod platform;
+#[cfg(feature = "llvm")]
 pub mod strategies;
+#[cfg(feature = "llvm")]
 pub mod typemapper;
 
+#[cfg(feature = "llvm")]
 use crate::adapters::codegen::strategies::*;
+#[cfg(feature = "llvm")]
 use crate::adapters::codegen::compat::{arena_ptr_initializer, onu_i8ptr};
+#[cfg(feature = "llvm")]
 use crate::adapters::codegen::typemapper::LlvmTypeMapper;
+#[cfg(feature = "llvm")]
 use crate::application::ports::compiler_ports::CodegenPort;
+#[cfg(feature = "llvm")]
 use crate::application::use_cases::registry_service::RegistryService;
+#[cfg(feature = "llvm")]
 use crate::domain::entities::error::OnuError;
+#[cfg(feature = "llvm")]
 use crate::domain::entities::mir::*;
+#[cfg(feature = "llvm")]
 use crate::domain::entities::ARENA_SIZE_BYTES;
+#[cfg(feature = "llvm")]
 use inkwell::builder::Builder;
+#[cfg(feature = "llvm")]
 use inkwell::context::Context;
+#[cfg(feature = "llvm")]
 use inkwell::module::{Linkage, Module};
+#[cfg(feature = "llvm")]
 use inkwell::types::BasicType;
+#[cfg(feature = "llvm")]
 use inkwell::values::PointerValue;
+#[cfg(feature = "llvm")]
 use std::collections::HashMap;
 
+#[cfg(feature = "llvm")]
 pub struct OnuCodegen {
     pub registry: Option<RegistryService>,
 }
 
+#[cfg(feature = "llvm")]
 impl OnuCodegen {
     pub fn new() -> Self {
         Self { registry: None }
     }
 }
 
+#[cfg(feature = "llvm")]
 impl CodegenPort for OnuCodegen {
     fn generate(&self, program: &MirProgram) -> Result<String, OnuError> {
         let context = Context::create();
@@ -106,6 +130,7 @@ impl CodegenPort for OnuCodegen {
     }
 }
 
+#[cfg(feature = "llvm")]
 struct LlvmGenerator<'ctx, 'a> {
     context: &'ctx Context,
     module: Module<'ctx>,
@@ -115,6 +140,7 @@ struct LlvmGenerator<'ctx, 'a> {
     blocks: HashMap<usize, inkwell::basic_block::BasicBlock<'ctx>>,
 }
 
+#[cfg(feature = "llvm")]
 impl<'ctx, 'a> LlvmGenerator<'ctx, 'a> {
     fn generate(&mut self, program: &MirProgram) -> Result<(), OnuError> {
         // Before generating MIR functions, emit any wide-integer division helpers

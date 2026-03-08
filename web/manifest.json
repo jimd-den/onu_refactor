@@ -1,0 +1,27 @@
+{
+  "name": "Ọ̀nụ Playground",
+  "short_name": "Ọ̀nụ",
+  "description": "Sub-millisecond, offline-capable Ọ̀nụ Discourse compiler running entirely in your browser via WebAssembly.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#1a1a2e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["developer", "productivity", "education"],
+  "lang": "en",
+  "dir": "ltr"
+}

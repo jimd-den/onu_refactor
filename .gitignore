@@ -8,3 +8,11 @@ cbenchmark
 test_output/
 *.ll
 cbench_collatz
+# WASM playground build artifacts
+/web/onu_compiler_bg.wasm
+/web/onu_compiler.js
+/web/onu_compiler_bg.js
+/web/onu_compiler.d.ts
+/web/icon-192.png
+/web/icon-512.png
+/pkg/

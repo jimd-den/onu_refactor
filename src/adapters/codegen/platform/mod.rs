@@ -7,10 +7,16 @@
 /// Adding a new architecture (e.g. AArch64) requires only a new implementation
 /// of this trait; all codegen strategies remain untouched.
 
+pub mod wasm32; // always compiled — pure Rust, no LLVM dependency
+
+#[cfg(feature = "llvm")]
 pub mod x86_64;
 
+#[cfg(feature = "llvm")]
 use inkwell::builder::Builder;
+#[cfg(feature = "llvm")]
 use inkwell::context::Context;
+#[cfg(feature = "llvm")]
 use inkwell::values::{IntValue, PointerValue};
 
 /// Architecture-agnostic syscall generation port.
@@ -18,6 +24,7 @@ use inkwell::values::{IntValue, PointerValue};
 /// Each method emits LLVM IR (typically inline assembly) for a single
 /// kernel-level IO operation.  The implementations are stateless — all
 /// LLVM handles are passed in as parameters.
+#[cfg(feature = "llvm")]
 pub trait PlatformSyscalls {
     /// Emit a *write* syscall: send `len` bytes from `buf` to file descriptor `fd`.
     ///
@@ -48,6 +55,7 @@ pub trait PlatformSyscalls {
 /// Factory: returns the syscall provider for the current compilation target.
 ///
 /// Currently only x86_64 is supported.  Future architectures are added here.
+#[cfg(feature = "llvm")]
 pub fn create_syscalls() -> Box<dyn PlatformSyscalls> {
     Box::new(x86_64::X86_64Syscalls)
 }

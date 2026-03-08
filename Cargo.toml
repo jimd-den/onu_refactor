@@ -17,8 +17,20 @@ edition = "2024"
 # NOTE: LLVM 15 requires the `typed-pointers` inkwell sub-feature (deprecated
 # but still present).  LLVM 16+ requires a codegen refactor to opaque pointers.
 #
+# ── WebAssembly Playground ────────────────────────────────────────────────────
+# To build the offline browser playground (NO LLVM required):
+#
+#   # 1. Install wasm-pack:  cargo install wasm-pack
+#   # 2. Build the compiler: wasm-pack build --no-default-features --features wasm
+#   # 3. Copy pkg/ artefacts into web/:
+#   #      cp pkg/onu_refactor_bg.wasm web/onu_compiler_bg.wasm
+#   #      cp pkg/onu_refactor.js      web/onu_compiler.js
+#   # 4. Serve web/ on Netlify or locally:  npx serve web/
 [features]
 default = ["llvm14"]
+# ── LLVM relay feature ────────────────────────────────────────────────────────
+# `llvm` activates the inkwell LLVM backend.  Every `llvmN` feature implies it.
+llvm = ["dep:inkwell"]
 # ── local relay flag ─────────────────────────────────────────────────────────
 # `typed-pointers` is set whenever the selected LLVM version uses the
 # typed-pointer inkwell API (LLVM 14 and LLVM 15 with typed-pointers).
@@ -26,15 +38,26 @@ default = ["llvm14"]
 # to pick the right API at compile time.  LLVM 16+ leaves this flag unset,
 # activating the opaque-pointer path in compat.rs.
 typed-pointers = ["inkwell/typed-pointers"]
-llvm14  = ["inkwell/llvm14-0", "typed-pointers"]   # LLVM 14 — typed only
-llvm15  = ["inkwell/llvm15-0", "typed-pointers"]   # LLVM 15 — opt into typed
-llvm16  = ["inkwell/llvm16-0"]                     # LLVM 16 — opaque only
-llvm17  = ["inkwell/llvm17-0"]                     # LLVM 17 — opaque only
-llvm18  = ["inkwell/llvm18-1"]                     # LLVM 18 — opaque only
-llvm19  = ["inkwell/llvm19-1"]                     # LLVM 19 — opaque only
-llvm20  = ["inkwell/llvm20-1"]                     # LLVM 20 — opaque only
+llvm14  = ["llvm", "inkwell/llvm14-0", "typed-pointers"]   # LLVM 14 — typed only
+llvm15  = ["llvm", "inkwell/llvm15-0", "typed-pointers"]   # LLVM 15 — opt into typed
+llvm16  = ["llvm", "inkwell/llvm16-0"]                     # LLVM 16 — opaque only
+llvm17  = ["llvm", "inkwell/llvm17-0"]                     # LLVM 17 — opaque only
+llvm18  = ["llvm", "inkwell/llvm18-1"]                     # LLVM 18 — opaque only
+llvm19  = ["llvm", "inkwell/llvm19-1"]                     # LLVM 19 — opaque only
+llvm20  = ["llvm", "inkwell/llvm20-1"]                     # LLVM 20 — opaque only
+# ── WebAssembly Playground ────────────────────────────────────────────────────
+# `wasm` enables the wasm-bindgen façade used by the browser playground.
+# Build with: cargo build --target wasm32-unknown-unknown --no-default-features --features wasm
+# (LLVM is NOT required for the wasm target — only wasm-encoder is used.)
+wasm = ["dep:wasm-bindgen", "dep:js-sys"]
 
 [dependencies]
 chrono = { version = "0.4.44", features = ["serde"] }
 either = "1.15.0"
-inkwell = { version = "0.8.0", default-features = false, features = ["target-all"] }
+# inkwell is optional: only present when an llvmN feature is active
+inkwell = { version = "0.8.0", default-features = false, features = ["target-all"], optional = true }
+# ── Direct WASM emitter (pure Rust, always compiled) ─────────────────────────
+wasm-encoder = "0.245.1"
+# ── wasm-bindgen façade (only needed for the browser playground) ──────────────
+wasm-bindgen = { version = "0.2.114", optional = true }
+js-sys        = { version = "0.3.91", optional = true }
